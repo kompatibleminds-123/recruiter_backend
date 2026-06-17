@@ -733,6 +733,69 @@ textarea { min-height: 92px; resize: vertical; }
   max-height: 280px;
 }
 .agenda-summary-grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); margin-bottom: 0.9rem; }
+.dashboard-agenda-shell {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.dashboard-agenda-topbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+.dashboard-agenda-intro {
+  display: grid;
+  gap: 0.3rem;
+}
+.dashboard-agenda-controls {
+  flex-wrap: wrap;
+}
+.dashboard-agenda-overview {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1.75fr) minmax(280px, 0.95fr);
+  align-items: stretch;
+}
+.dashboard-agenda-cards {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.dashboard-agenda-spotlight {
+  border: 1px solid #e2e9f6;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #f7faff 100%);
+  padding: 1rem;
+  display: grid;
+  gap: 0.8rem;
+  box-shadow: 0 10px 24px rgba(26, 47, 94, 0.08);
+}
+.dashboard-agenda-spotlight__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.dashboard-agenda-spotlight__head h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: #1f3359;
+}
+.dashboard-agenda-spotlight__head span {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 0.65rem;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: #e8f0ff;
+  color: #1d4ed8;
+  font-weight: 800;
+}
+.agenda-item--compact {
+  padding: 0.7rem 0.8rem;
+}
 .agenda-header {
   display: flex;
   justify-content: space-between;
@@ -839,16 +902,116 @@ textarea { min-height: 92px; resize: vertical; }
   font-size: 0.88rem;
   color: var(--muted);
 }
+.dashboard-funnel-shell {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.dashboard-funnel-toolbar {
+  display: grid;
+  gap: 0.8rem;
+  border: 1px solid #e2e9f6;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  padding: 1rem;
+}
+.dashboard-funnel-filters {
+  margin-bottom: 0;
+}
+.dashboard-funnel-track {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.85rem;
+  align-items: center;
+  margin-top: 0.2rem;
+}
+.dashboard-funnel-step-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  min-width: 0;
+}
+.dashboard-funnel-step {
+  min-height: 102px;
+  width: 100%;
+  border: 1px solid #e0e8f7;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #f7faff 100%);
+  padding: 1rem;
+  display: grid;
+  align-content: space-between;
+  text-align: left;
+  box-shadow: 0 10px 24px rgba(26, 47, 94, 0.07);
+}
+.dashboard-funnel-step--button {
+  cursor: pointer;
+  color: inherit;
+}
+.dashboard-funnel-step--button:hover {
+  border-color: #c8d8f4;
+  transform: translateY(-1px);
+}
+.dashboard-funnel-step__eyebrow {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #4a5e85;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.dashboard-funnel-step__value {
+  font-size: 2rem;
+  line-height: 1;
+  font-weight: 900;
+  color: #10284f;
+}
+.dashboard-funnel-connector {
+  width: 100%;
+  min-width: 26px;
+  height: 2px;
+  background: linear-gradient(90deg, #d9e5fb 0%, #c4d6fb 100%);
+  border-radius: 999px;
+  flex: 1;
+}
+.dashboard-ratio-row {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 14px;
+}
 @media (max-width: 900px) {
   .agenda-header {
     align-items: stretch;
     flex-direction: column;
+  }
+  .dashboard-agenda-topbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .dashboard-agenda-overview {
+    grid-template-columns: 1fr;
+  }
+  .dashboard-agenda-cards {
+    grid-template-columns: 1fr 1fr;
   }
   .agenda-split-grid {
     grid-template-columns: 1fr;
   }
   .agenda-item {
     flex-direction: column;
+  }
+  .dashboard-funnel-track {
+    grid-template-columns: 1fr;
+  }
+  .dashboard-funnel-step-wrap {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .dashboard-funnel-connector {
+    width: 2px;
+    height: 20px;
+    min-width: 2px;
+    justify-self: center;
   }
 }
 .compact-empty {
@@ -2366,6 +2529,9 @@ textarea { min-height: 92px; resize: vertical; }
 
 @media (max-width: 680px) {
   .reports-client-chart-grid {
+    grid-template-columns: 1fr;
+  }
+  .dashboard-agenda-cards {
     grid-template-columns: 1fr;
   }
   .reports-bar-row {

@@ -22598,49 +22598,86 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           <Route path="/dashboard" element={
             <div className="page-grid">
               <Section kicker="Today" title="Today's Agenda">
-                <div className="agenda-header">
-                  <p className="muted">
-                    {`${agendaRange === "today" ? "Today" : agendaRange === "tomorrow" ? "Tomorrow" : "Next 7 days"}: ${displayPendingNotes} pending note(s) | ${displayScheduledInterviewCount} interview(s) | ${displayUpcomingJoiningCount} joining(s)`}
-                  </p>
-                  <div className="button-row tight" style={{ alignItems: "center" }}>
-                    {dashboardAgendaLoading ? (
-                      <span className="muted" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        <span className="parse-progress-spinner" aria-hidden="true" />
-                        Updating...
-                      </span>
-                    ) : null}
-                    <select
-                      value={agendaRange}
-                      onChange={(e) => {
-                        const nextRange = e.target.value;
-                        setAgendaRange(nextRange);
-                        void loadDashboardAgenda(nextRange).catch(() => null);
-                      }}
-                    >
-                      <option value="today">Today</option>
-                      <option value="tomorrow">Tomorrow</option>
-                      <option value="next7days">Next 7 days</option>
-                    </select>
+                <div className="dashboard-agenda-shell">
+                  <div className="dashboard-agenda-topbar">
+                    <div className="dashboard-agenda-intro">
+                      <p className="muted">
+                        {`${agendaRange === "today" ? "Today" : agendaRange === "tomorrow" ? "Tomorrow" : "Next 7 days"}: ${displayPendingNotes} pending note(s) | ${displayScheduledInterviewCount} interview(s) | ${displayUpcomingJoiningCount} joining(s)`}
+                      </p>
+                    </div>
+                    <div className="button-row tight dashboard-agenda-controls" style={{ alignItems: "center" }}>
+                      {dashboardAgendaLoading ? (
+                        <span className="muted" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                          <span className="parse-progress-spinner" aria-hidden="true" />
+                          Updating...
+                        </span>
+                      ) : null}
+                      <select
+                        value={agendaRange}
+                        onChange={(e) => {
+                          const nextRange = e.target.value;
+                          setAgendaRange(nextRange);
+                          void loadDashboardAgenda(nextRange).catch(() => null);
+                        }}
+                      >
+                        <option value="today">Today</option>
+                        <option value="tomorrow">Tomorrow</option>
+                        <option value="next7days">Next 7 days</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="dashboard-agenda-overview">
+                    <div className="dashboard-agenda-cards">
+                      <div className="metric-card compact-metric">
+                        <div className="metric-label">Pending notes</div>
+                        <div className="metric-value">{displayPendingNotes}</div>
+                      </div>
+                      <div className="metric-card compact-metric">
+                        <div className="metric-label">Scheduled interviews</div>
+                        <div className="metric-value">{displayScheduledInterviewCount}</div>
+                      </div>
+                      <div className="metric-card compact-metric">
+                        <div className="metric-label">Upcoming joinings</div>
+                        <div className="metric-value">{displayUpcomingJoiningCount}</div>
+                      </div>
+                      <div className="metric-card compact-metric">
+                        <div className="metric-label">Pending applicants</div>
+                        <div className="metric-value">{displayPendingAssignments}</div>
+                      </div>
+                    </div>
+                    <aside className="dashboard-agenda-spotlight">
+                      <div className="dashboard-agenda-spotlight__head">
+                        <h3>Upcoming joinings</h3>
+                        <span>{displayUpcomingJoiningItems.length || 0}</span>
+                      </div>
+                      {displayUpcomingJoiningItems.length ? (
+                        <div className="stack-list compact">
+                          {displayUpcomingJoiningItems.slice(0, 3).map((item) => (
+                            <article key={`joining-spotlight-${item.id}`} className="agenda-item agenda-item--compact">
+                              <div>
+                                <span className="agenda-item__title">{item.candidateName || "Candidate"}</span>
+                                <span className="agenda-item__subtitle">{item.role || item.jdTitle || "Untitled role"}</span>
+                                <span className="agenda-item__time">{new Date(item.at || item.followUpAt || item.interviewAt).toLocaleString()}</span>
+                              </div>
+                              <div className="button-row tight">
+                                <button
+                                  disabled={Boolean(agendaOpeningAssessmentIds[String(item.id || "")])}
+                                  onClick={() => void openAgendaAssessmentStatus(item)}
+                                >
+                                  {agendaOpeningAssessmentIds[String(item.id || "")] ? "Opening..." : "Update"}
+                                </button>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="empty-state compact-empty">No joinings in this range yet.</div>
+                      )}
+                    </aside>
                   </div>
                 </div>
-                <div className="agenda-summary-grid">
-                  <div className="metric-card compact-metric">
-                    <div className="metric-label">Pending notes</div>
-                    <div className="metric-value">{displayPendingNotes}</div>
-                  </div>
-                  <div className="metric-card compact-metric">
-                    <div className="metric-label">Scheduled interviews</div>
-                    <div className="metric-value">{displayScheduledInterviewCount}</div>
-                  </div>
-                  <div className="metric-card compact-metric">
-                    <div className="metric-label">Upcoming joinings</div>
-                    <div className="metric-value">{displayUpcomingJoiningCount}</div>
-                  </div>
-                  <div className="metric-card compact-metric">
-                    <div className="metric-label">Pending applicants</div>
-                    <div className="metric-value">{displayPendingAssignments}</div>
-                  </div>
-                </div>
+
                 <div className="stack-list compact">
                   {!!displayOverdueFollowUpItems.length && (
                     <div className="agenda-block agenda-block--overdue">
@@ -22748,15 +22785,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 </div>
               </Section>
               <Section kicker="Performance" title="Recruitment Dashboard">
-                <div className="form-grid three-col">
-                  <label><span>Date from</span><input type="date" value={dashboardFilters.dateFrom} onChange={(e) => setDashboardFilters((c) => ({ ...c, dateFrom: e.target.value, quickRange: "custom" }))} /></label>
-                  <label><span>Date to</span><input type="date" value={dashboardFilters.dateTo} onChange={(e) => setDashboardFilters((c) => ({ ...c, dateTo: e.target.value, quickRange: "custom" }))} /></label>
-                  <label><span>Client</span><select value={dashboardFilters.clientLabel} onChange={(e) => setDashboardFilters((c) => ({ ...c, clientLabel: e.target.value }))}><option value="">All clients</option>{(state.dashboard?.availableClients || []).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-                  <label><span>Recruiter</span><select value={dashboardFilters.recruiterLabel} onChange={(e) => setDashboardFilters((c) => ({ ...c, recruiterLabel: e.target.value }))}><option value="">All recruiters</option>{(state.dashboard?.availableRecruiters || []).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-                  <label><span>Quick range</span><select value={dashboardFilters.quickRange} onChange={(e) => applyDashboardQuickRange(e.target.value)}><option value="all">All time</option><option value="last_7_days">Last 7 days</option><option value="this_month">This month</option><option value="custom">Custom</option></select></label>
-                  <div className="button-row align-end"><button onClick={() => void applyDashboardFilters()}>Apply</button></div>
+                <div className="dashboard-funnel-shell">
+                  <div className="dashboard-funnel-toolbar">
+                    <div className="form-grid three-col dashboard-funnel-filters">
+                      <label><span>Date from</span><input type="date" value={dashboardFilters.dateFrom} onChange={(e) => setDashboardFilters((c) => ({ ...c, dateFrom: e.target.value, quickRange: "custom" }))} /></label>
+                      <label><span>Date to</span><input type="date" value={dashboardFilters.dateTo} onChange={(e) => setDashboardFilters((c) => ({ ...c, dateTo: e.target.value, quickRange: "custom" }))} /></label>
+                      <label><span>Client</span><select value={dashboardFilters.clientLabel} onChange={(e) => setDashboardFilters((c) => ({ ...c, clientLabel: e.target.value }))}><option value="">All clients</option>{(state.dashboard?.availableClients || []).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                      <label><span>Recruiter</span><select value={dashboardFilters.recruiterLabel} onChange={(e) => setDashboardFilters((c) => ({ ...c, recruiterLabel: e.target.value }))}><option value="">All recruiters</option>{(state.dashboard?.availableRecruiters || []).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                      <label><span>Quick range</span><select value={dashboardFilters.quickRange} onChange={(e) => applyDashboardQuickRange(e.target.value)}><option value="all">All time</option><option value="last_7_days">Last 7 days</option><option value="this_month">This month</option><option value="custom">Custom</option></select></label>
+                      <div className="button-row align-end"><button onClick={() => void applyDashboardFilters()}>Apply</button></div>
+                    </div>
+                    <p className="muted">Under Interview Process excludes shortlisted, offered, hold, not responding, dropped, screening reject, interview reject, duplicate, and joined.</p>
+                  </div>
                 </div>
-                <p className="muted">Under Interview Process excludes shortlisted, offered, hold, not responding, dropped, screening reject, interview reject, duplicate, and joined.</p>
                 {!hasDashboardData ? (
                   <div className="reports-skeleton-grid" aria-hidden="true">
                     <div className="reports-skeleton-card" />
@@ -22767,37 +22808,36 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <div className="reports-skeleton-card" />
                   </div>
                 ) : null}
-                <div className="reports-kpi-grid">
-                  {primaryKpiCards.map((item) => {
+                <div className="dashboard-funnel-track">
+                  {primaryKpiCards.map((item, index) => {
                     const isClickable = !DASHBOARD_TOP_NON_CLICKABLE_METRICS.has(String(item.key || "").trim());
-                    return isClickable ? (
-                    <button
-                      key={item.key}
-                      type="button"
-                      className="reports-kpi-card"
-                      onClick={() => void openDashboardDrilldown({ title: item.label, metric: item.drillMetric, groupType: "all" })}
-                      style={{ textAlign: "left", cursor: "pointer" }}
-                    >
-                      <div className="reports-kpi-card__top">
-                        <span className="reports-kpi-card__icon" style={{ width: "auto", padding: "10px 14px", borderRadius: "999px" }}>{item.label}</span>
+                    const cardBody = (
+                      <>
+                        <div className="dashboard-funnel-step__eyebrow">{item.label}</div>
+                        <div className="dashboard-funnel-step__value">{item.value}</div>
+                      </>
+                    );
+                    return (
+                      <div key={item.key} className="dashboard-funnel-step-wrap">
+                        {isClickable ? (
+                          <button
+                            type="button"
+                            className="dashboard-funnel-step dashboard-funnel-step--button"
+                            onClick={() => void openDashboardDrilldown({ title: item.label, metric: item.drillMetric, groupType: "all" })}
+                          >
+                            {cardBody}
+                          </button>
+                        ) : (
+                          <article className="dashboard-funnel-step">
+                            {cardBody}
+                          </article>
+                        )}
+                        {index < primaryKpiCards.length - 1 ? <div className="dashboard-funnel-connector" aria-hidden="true" /> : null}
                       </div>
-                      <div className="reports-kpi-card__value">{item.value}</div>
-                    </button>
-                    ) : (
-                    <article
-                      key={item.key}
-                      className="reports-kpi-card"
-                      style={{ textAlign: "left" }}
-                    >
-                      <div className="reports-kpi-card__top">
-                        <span className="reports-kpi-card__icon" style={{ width: "auto", padding: "10px 14px", borderRadius: "999px" }}>{item.label}</span>
-                      </div>
-                      <div className="reports-kpi-card__value">{item.value}</div>
-                    </article>
                     );
                   })}
                 </div>
-                <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: "14px", marginTop: "14px" }}>
+                <div className="dashboard-ratio-row">
                   {ratioKpiCards.map((item) => (
                     <article
                       key={item.key}
