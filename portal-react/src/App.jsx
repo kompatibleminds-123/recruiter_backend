@@ -22838,7 +22838,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <article
                       key={item.key}
                       className={`reports-kpi-card dashboard-ratio-card dashboard-ratio-card--${item.key}`}
-                      style={{ width: "min(220px, 100%)", minHeight: "unset", padding: "14px 16px" }}
                     >
                       <div className="reports-kpi-card__value">{item.value}</div>
                       <div className="reports-kpi-card__label">{item.label}</div>

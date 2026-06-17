@@ -969,6 +969,28 @@ textarea { min-height: 92px; resize: vertical; }
   align-items: center;
   margin-top: 0.2rem;
 }
+.dashboard-ratio-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-top: 1rem;
+  align-items: stretch;
+}
+.dashboard-ratio-card {
+  width: 100%;
+  min-height: 92px;
+  padding: 14px 16px;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+}
+.dashboard-ratio-card .reports-kpi-card__value {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+.dashboard-ratio-card .reports-kpi-card__label {
+  margin-top: 0.35rem;
+}
 .dashboard-funnel-track--compact {
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 0.7rem;
@@ -1115,6 +1137,9 @@ textarea { min-height: 92px; resize: vertical; }
   .agenda-item {
     flex-direction: column;
   }
+  .dashboard-ratio-row {
+    grid-template-columns: 1fr 1fr;
+  }
   .dashboard-funnel-track {
     grid-template-columns: 1fr;
   }
@@ -1130,6 +1155,11 @@ textarea { min-height: 92px; resize: vertical; }
     height: 20px;
     min-width: 2px;
     justify-self: center;
+  }
+}
+@media (max-width: 640px) {
+  .dashboard-ratio-row {
+    grid-template-columns: 1fr;
   }
 }
 .compact-empty {
