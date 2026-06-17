@@ -984,8 +984,8 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .dashboard-funnel-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
-  gap: 1.4rem;
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  gap: 1.25rem;
   align-items: start;
   margin-top: 0.35rem;
 }
@@ -994,106 +994,80 @@ textarea { min-height: 92px; resize: vertical; }
   border-radius: 22px;
   background: #fff;
   box-shadow: 0 8px 30px rgba(0,0,0,0.04);
-  padding: 1.2rem 1.2rem 1.5rem;
-}
-.dashboard-funnel-visual__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-.dashboard-funnel-visual__header h3 {
-  margin: 0.15rem 0 0;
-  font-size: 1.12rem;
-  color: #10284f;
-}
-.dashboard-funnel-kicker {
-  display: inline-block;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: #5c6f92;
+  padding: 1.15rem 1rem 1.35rem;
 }
 .dashboard-funnel-layer-wrap {
   display: grid;
   justify-items: center;
-  gap: 0.48rem;
+  gap: 0.55rem;
 }
 .dashboard-funnel-rate {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding-top: 0.05rem;
-  text-align: center;
-}
-.dashboard-funnel-rate__value {
-  font-size: 1rem;
-  color: #10284f;
-  font-weight: 800;
-  white-space: nowrap;
+  display: grid;
+  justify-items: center;
+  gap: 0.12rem;
+  padding-top: 0.1rem;
 }
 .dashboard-funnel-rate__label {
   font-size: 0.72rem;
   color: #5b6b88;
   font-weight: 700;
-  letter-spacing: 0.04em;
   text-transform: uppercase;
-  line-height: 1.25;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+.dashboard-funnel-rate__value {
+  font-size: 0.98rem;
+  color: #16305d;
+  font-weight: 800;
 }
 .dashboard-funnel-layer {
-  min-height: 78px;
+  min-height: 72px;
   border: 0;
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.8rem;
-  padding: 1rem 1.2rem;
+  gap: 0.7rem;
+  padding: 0.95rem 1.1rem;
   margin-inline: auto;
-  clip-path: polygon(7% 0, 93% 0, 100% 100%, 0 100%);
-  box-shadow: 0 16px 34px rgba(41, 68, 134, 0.14);
+  clip-path: polygon(6% 0, 94% 0, 100% 100%, 0 100%);
+  box-shadow: 0 12px 28px rgba(41, 68, 134, 0.12);
   text-align: left;
-  transition: transform 140ms ease, box-shadow 140ms ease;
 }
 .dashboard-funnel-layer--button {
   cursor: pointer;
 }
 .dashboard-funnel-layer:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 20px 40px rgba(41, 68, 134, 0.18);
+  transform: translateY(-1px);
 }
-.dashboard-funnel-layer--totalCandidates { background: linear-gradient(135deg, #2f6fe4 0%, #3a7bff 100%); }
-.dashboard-funnel-layer--sharedProfiles { background: linear-gradient(135deg, #4464df 0%, #5f74f2 100%); }
-.dashboard-funnel-layer--interviews { background: linear-gradient(135deg, #5b5fe4 0%, #7271f0 100%); }
-.dashboard-funnel-layer--shortlisted { background: linear-gradient(135deg, #8556db 0%, #9d62e6 100%); }
-.dashboard-funnel-layer--offers { background: linear-gradient(135deg, #c45ab4 0%, #d96c9c 100%); }
-.dashboard-funnel-layer--joined { background: linear-gradient(135deg, #21a578 0%, #38c18f 100%); }
+.dashboard-funnel-layer--totalCandidates { background: linear-gradient(135deg, #2557d6 0%, #3a7bff 100%); }
+.dashboard-funnel-layer--sharedProfiles { background: linear-gradient(135deg, #4960df 0%, #5a6ef4 100%); }
+.dashboard-funnel-layer--interviews { background: linear-gradient(135deg, #635ce7 0%, #7068f4 100%); }
+.dashboard-funnel-layer--shortlisted { background: linear-gradient(135deg, #8958de 0%, #975fe6 100%); }
+.dashboard-funnel-layer--offers { background: linear-gradient(135deg, #b954ce 0%, #ca60d8 100%); }
+.dashboard-funnel-layer--joined { background: linear-gradient(135deg, #18a36c 0%, #34c88a 100%); }
 .dashboard-funnel-layer .dashboard-funnel-step__icon {
   flex: 0 0 auto;
-  background: rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.16);
   color: #fff;
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   box-shadow: none;
 }
 .dashboard-funnel-layer__copy {
   display: grid;
-  gap: 0.12rem;
-  justify-items: start;
+  gap: 0.08rem;
 }
 .dashboard-funnel-layer__copy strong {
-  font-size: 1.7rem;
+  font-size: 1.55rem;
   line-height: 1;
   font-weight: 900;
 }
 .dashboard-funnel-layer__copy span {
-  font-size: 0.8rem;
+  font-size: 0.84rem;
   line-height: 1.2;
-  font-weight: 800;
-  letter-spacing: 0.06em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 .dashboard-funnel-sidepanel {
@@ -1109,11 +1083,6 @@ textarea { min-height: 92px; resize: vertical; }
   margin: 0;
   font-size: 1rem;
   color: #10284f;
-}
-.dashboard-funnel-sidepanel__caption {
-  margin: -0.2rem 0 0;
-  color: #60708c;
-  font-size: 0.88rem;
 }
 .dashboard-funnel-sidepanel__list {
   display: grid;
