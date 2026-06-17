@@ -22247,7 +22247,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   ];
   const dashboardFunnelStages = primaryKpiCards.map((item, index) => ({
     ...item,
-    widthPct: [100, 84, 68, 54, 42, 32][index] || 32,
+    widthPct: [100, 84, 70, 56, 44, 34][index] || 34,
     isClickable: !DASHBOARD_TOP_NON_CLICKABLE_METRICS.has(String(item.key || "").trim()),
     conversionLabel: index > 0 ? ratioKpiCards[index - 1]?.label || "" : "",
     conversionValue: index > 0 ? ratioKpiCards[index - 1]?.value || "" : ""
@@ -22537,10 +22537,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   const displayScheduledInterviewItems = dashboardAgendaLists.interviews || dashboardAgendaSnapshotForDisplay?.scheduledInterviewItems || scheduledInterviewItems;
   const displayUpcomingJoiningItems = dashboardAgendaLists.joinings || upcomingJoinings.slice(0, 5);
   const agendaKpiCards = [
-    { key: "pendingNotes", label: "Pending Notes", value: displayPendingNotes, icon: "\u{1F4DD}" },
-    { key: "pendingApplicants", label: "Pending Applicants", value: displayPendingAssignments, icon: "\u{1F465}" },
-    { key: "scheduledInterviews", label: "Interviews Today", value: displayScheduledInterviewCount, icon: "\u{1F4C5}" },
-    { key: "upcomingJoinings", label: "Joining", value: displayUpcomingJoiningCount, icon: "\u2713" }
+    { key: "pendingNotes", label: "Pending Notes", value: displayPendingNotes, icon: "PN" },
+    { key: "scheduledInterviews", label: "Interviews Today", value: displayScheduledInterviewCount, icon: "IV" },
+    { key: "upcomingJoinings", label: "Joining", value: displayUpcomingJoiningCount, icon: "JN" },
+    { key: "pendingApplicants", label: "Pending Applicants", value: displayPendingAssignments, icon: "AP" }
   ];
 
   return (
@@ -22774,7 +22774,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           <div key={stage.key} className="dashboard-funnel-compact-row">
                             {index > 0 ? (
                               <div className="dashboard-funnel-rate dashboard-funnel-rate--compact">
-                                <span className="dashboard-funnel-rate__arrow" aria-hidden="true">↓</span>
+                                <span className="dashboard-funnel-rate__arrow" aria-hidden="true">?</span>
                                 <span className="dashboard-funnel-rate__value">{stage.conversionValue}</span>
                                 <strong className="dashboard-funnel-rate__label">{stage.conversionLabel}</strong>
                               </div>
@@ -29457,6 +29457,7 @@ export default function App() {
           ? <PortalErrorBoundary><MarketingPortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
         : <PortalErrorBoundary><PortalApp token={token} onLogout={logout} /></PortalErrorBoundary>;
 }
+
 
 
 
