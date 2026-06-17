@@ -965,7 +965,7 @@ textarea { min-height: 92px; resize: vertical; }
 .dashboard-funnel-track {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 0.9rem;
+  gap: 1rem;
   align-items: center;
   margin-top: 0.35rem;
 }
@@ -976,19 +976,19 @@ textarea { min-height: 92px; resize: vertical; }
 .dashboard-funnel-step-wrap {
   display: flex;
   align-items: center;
-  gap: 0.7rem;
+  gap: 0.95rem;
   min-width: 0;
 }
 .dashboard-funnel-step-wrap--compact {
   align-items: stretch;
 }
 .dashboard-funnel-step {
-  min-height: 104px;
+  min-height: 112px;
   width: 100%;
   border: 1px solid #e0e8f7;
-  border-radius: 22px;
+  border-radius: 24px;
   background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
-  padding: 0.95rem 0.95rem;
+  padding: 1rem 1rem;
   display: grid;
   align-content: space-between;
   text-align: left;
@@ -1058,7 +1058,7 @@ textarea { min-height: 92px; resize: vertical; }
   line-height: 1.2;
 }
 .dashboard-funnel-step__value {
-  font-size: 1.85rem;
+  font-size: 2rem;
   line-height: 1;
   font-weight: 900;
   color: #10284f;
@@ -1066,39 +1066,33 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .dashboard-funnel-connector {
   width: 100%;
-  min-width: 28px;
-  height: 2px;
+  min-width: 48px;
+  height: 3px;
   background: linear-gradient(90deg, #dbe5fb 0%, #c6d6fb 100%);
   border-radius: 999px;
   flex: 1;
 }
-.dashboard-ratio-row {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.75rem;
-  margin-top: 0.8rem;
-}
-.dashboard-ratio-card {
-  border: 1px solid #e0e8f7;
-  border-radius: 16px;
-  background: #ffffff;
-  padding: 0.7rem 0.9rem;
-  box-shadow: 0 6px 18px rgba(26, 47, 94, 0.04);
-  min-height: 78px;
+.dashboard-funnel-connector-wrap {
   display: grid;
   align-content: center;
-  gap: 0.12rem;
+  justify-items: center;
+  gap: 0.24rem;
+  flex: 1;
+  min-width: 120px;
 }
-.dashboard-ratio-card__value {
-  font-size: 1.1rem;
-  color: #10284f;
+.dashboard-funnel-connector__label {
+  font-size: 0.68rem;
+  line-height: 1.15;
+  text-transform: none;
+  letter-spacing: 0.01em;
+  color: #5f7192;
+  text-align: center;
+  max-width: 110px;
+}
+.dashboard-funnel-connector__value {
+  font-size: 0.92rem;
+  color: #15376b;
   font-weight: 800;
-}
-.dashboard-ratio-card__label {
-  font-size: 0.82rem;
-  line-height: 1.25;
-  color: #4a5e85;
-  font-weight: 700;
 }
 @media (max-width: 900px) {
   .agenda-header {
@@ -1131,14 +1125,14 @@ textarea { min-height: 92px; resize: vertical; }
     flex-direction: column;
     align-items: stretch;
   }
+  .dashboard-funnel-connector-wrap {
+    min-width: 100%;
+  }
   .dashboard-funnel-connector {
     width: 2px;
     height: 22px;
     min-width: 2px;
     justify-self: center;
-  }
-  .dashboard-ratio-row {
-    grid-template-columns: 1fr 1fr;
   }
 }
 .compact-empty {
