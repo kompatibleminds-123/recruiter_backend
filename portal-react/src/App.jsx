@@ -22245,6 +22245,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     { key: "offerConversionRate", label: "Offer Conversion Rate", value: `${safePct(Number(dashboardOverall.offers || 0), Number(dashboardOverall.shortlisted || 0))}%` },
     { key: "joiningRate", label: "Joining Rate", value: `${safePct(Number(dashboardOverall.joined || 0), Number(dashboardOverall.offers || 0))}%` }
   ];
+  const dashboardFunnelStages = primaryKpiCards.map((item, index) => ({
+    ...item,
+    widthPct: [100, 84, 68, 54, 42, 32][index] || 32,
+    isClickable: !DASHBOARD_TOP_NON_CLICKABLE_METRICS.has(String(item.key || "").trim()),
+    conversionLabel: index > 0 ? ratioKpiCards[index - 1]?.label || "" : "",
+    conversionValue: index > 0 ? ratioKpiCards[index - 1]?.value || "" : ""
+  }));
   const clientLeaderboardShared = [...dashboardClientGroupsDisplay]
     .sort((a, b) => Number(b?.sharedProfiles || 0) - Number(a?.sharedProfiles || 0))
     ;
@@ -22801,45 +22808,61 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <div className="reports-skeleton-card" />
                   </div>
                 ) : null}
-                <div className="dashboard-funnel-track">
-                  {primaryKpiCards.map((item, index) => {
-                    const isClickable = !DASHBOARD_TOP_NON_CLICKABLE_METRICS.has(String(item.key || "").trim());
-                    const cardBody = (
-                      <>
-                        <div className="dashboard-funnel-step__header">
-                          <span className={`dashboard-funnel-step__icon dashboard-funnel-step__icon--${item.key}`} aria-hidden="true">{item.icon}</span>
-                          <div className="dashboard-funnel-step__eyebrow">{item.label}</div>
+                <div className="dashboard-funnel-hero">
+                  <div className="dashboard-funnel-visual" aria-label="Recruitment funnel">
+                    {dashboardFunnelStages.map((stage, index) => {
+                      const stageBody = (
+                        <>
+                          <span className={`dashboard-funnel-step__icon dashboard-funnel-step__icon--${stage.key}`} aria-hidden="true">{stage.icon}</span>
+                          <div className="dashboard-funnel-layer__copy">
+                            <strong>{stage.value}</strong>
+                            <span>{stage.label}</span>
+                          </div>
+                        </>
+                      );
+                      return (
+                        <div key={stage.key} className="dashboard-funnel-layer-wrap">
+                          {index > 0 ? (
+                            <div className="dashboard-funnel-rate">
+                              <span className="dashboard-funnel-rate__label">{stage.conversionLabel}</span>
+                              <strong className="dashboard-funnel-rate__value">{stage.conversionValue}</strong>
+                            </div>
+                          ) : null}
+                          {stage.isClickable ? (
+                            <button
+                              type="button"
+                              className={`dashboard-funnel-layer dashboard-funnel-layer--${stage.key}`}
+                              style={{ width: `${stage.widthPct}%` }}
+                              onClick={() => void openDashboardDrilldown({ title: stage.label, metric: stage.drillMetric, groupType: "all" })}
+                            >
+                              {stageBody}
+                            </button>
+                          ) : (
+                            <article
+                              className={`dashboard-funnel-layer dashboard-funnel-layer--${stage.key}`}
+                              style={{ width: `${stage.widthPct}%` }}
+                            >
+                              {stageBody}
+                            </article>
+                          )}
                         </div>
-                        <div className="dashboard-funnel-step__value">{item.value}</div>
-                      </>
-                    );
-                    return (
-                      <div key={item.key} className="dashboard-funnel-step-wrap">
-                        {isClickable ? (
-                          <button
-                            type="button"
-                            className="dashboard-funnel-step dashboard-funnel-step--button"
-                            onClick={() => void openDashboardDrilldown({ title: item.label, metric: item.drillMetric, groupType: "all" })}
-                          >
-                            {cardBody}
-                          </button>
-                        ) : (
-                          <article className="dashboard-funnel-step">
-                            {cardBody}
-                          </article>
-                        )}
-                        {index < primaryKpiCards.length - 1 ? <div className="dashboard-funnel-connector" aria-hidden="true" /> : null}
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="dashboard-ratio-row">
-                  {ratioKpiCards.map((item) => (
-                    <article key={item.key} className="dashboard-ratio-card">
-                      <div className="dashboard-ratio-card__value">{item.value}</div>
-                      <div className="dashboard-ratio-card__label">{item.label}</div>
-                    </article>
-                  ))}
+                      );
+                    })}
+                  </div>
+                  <aside className="dashboard-funnel-sidepanel">
+                    <h3>Funnel Summary</h3>
+                    <div className="dashboard-funnel-sidepanel__list">
+                      {dashboardFunnelStages.map((stage) => (
+                        <div key={`summary-${stage.key}`} className="dashboard-funnel-sidepanel__row">
+                          <div className="dashboard-funnel-sidepanel__label">
+                            <span className={`dashboard-funnel-step__icon dashboard-funnel-step__icon--${stage.key}`} aria-hidden="true">{stage.icon}</span>
+                            <span>{stage.label}</span>
+                          </div>
+                          <strong>{stage.value}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  </aside>
                 </div>
                 <div className="reports-view-tabs">
                   <button className={reportsTab === "client" ? "active" : ""} onClick={() => handleReportsTabChange("client")}>Client View</button>
@@ -22848,119 +22871,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               </Section>
               <div className="dashboard-breakdown-stack">
                 {reportsTab !== "recruiter" ? (
-                <Section kicker="Breakdown" title="Client Breakdown">
-                  <div className="reports-leaderboard-strip">
-                    <article className="reports-leaderboard-card">
-                      <h4>All Clients by Shared</h4>
-                      <ol>
-                        {clientLeaderboardShared.map((item) => (
-                          <li key={`client-shared-${item.label}`}>
-                            <span>{item.label}</span>
-                            <strong>{item?.sharedProfiles || item?.metrics?.converted || 0}</strong>
-                          </li>
-                        ))}
-                        {!clientLeaderboardShared.length ? <li><span>No data</span><strong>0</strong></li> : null}
-                      </ol>
-                    </article>
-                    <article className="reports-leaderboard-card">
-                      <h4>All Clients by Interviews</h4>
-                      <ol>
-                        {clientLeaderboardInterviews.map((item) => (
-                          <li key={`client-int-${item.label}`}>
-                            <span>{item.label}</span>
-                            <strong>{item?.interviews || item?.metrics?.under_interview_process || 0}</strong>
-                          </li>
-                        ))}
-                        {!clientLeaderboardInterviews.length ? <li><span>No data</span><strong>0</strong></li> : null}
-                      </ol>
-                    </article>
-                    <article className="reports-leaderboard-card">
-                      <h4>All Clients by Joinings</h4>
-                      <ol>
-                        {clientLeaderboardJoinings.map((item) => (
-                          <li key={`client-join-${item.label}`}>
-                            <span>{item.label}</span>
-                            <strong>{item?.joined || item?.metrics?.joined || 0}</strong>
-                          </li>
-                        ))}
-                        {!clientLeaderboardJoinings.length ? <li><span>No data</span><strong>0</strong></li> : null}
-                      </ol>
-                    </article>
-                  </div>
-                  <div className="reports-client-chart-grid">
-                    <article className="reports-chart-card" style={{ minHeight: "100%" }}>
-                      <h4>Client-wise Sourced vs Shared</h4>
-                      <p className="muted">CV submission ratio graph</p>
-                      {!clientChartRows.length ? <div className="empty-state compact-empty">No chart data.</div> : (
-                        <div className="reports-funnel-list">
-                          {clientChartRows.map((row) => (
-                            <div key={`client-bars-${row.label}`} className="reports-funnel-item">
-                              <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.shared}</strong></div>
-                              <div className="reports-stacked-track">
-                                <i
-                                  className="reports-stacked-track__base"
-                                  style={{ width: `${Math.max(4, Math.round((row.sourced / maxClientSourced) * 100))}%` }}
-                                />
-                                <i
-                                  className="reports-stacked-track__fill"
-                                  style={{ width: `${row.sourced > 0 ? Math.max(2, Math.round((row.shared / row.sourced) * Math.max(4, Math.round((row.sourced / maxClientSourced) * 100)))) : 0}%` }}
-                                />
-                              </div>
-                              <div className="reports-conversion-pill" style={{ marginTop: "8px" }}>{row.cvSubmissionRatio}%</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </article>
-                    <article className="reports-chart-card" style={{ minHeight: "100%" }}>
-                      <h4>Client Pipeline Funnel (Shared to Interview)</h4>
-                      <p className="muted">Interview conversion ratio graph</p>
-                      {!clientChartRows.length ? <div className="empty-state compact-empty">No funnel data.</div> : (
-                        <div className="reports-funnel-list">
-                          {clientChartRows.map((row) => (
-                            <div key={`client-funnel-${row.label}`} className="reports-funnel-item">
-                              <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.interviews}</strong></div>
-                              <div className="reports-stacked-track">
-                                <i
-                                  className="reports-stacked-track__base"
-                                  style={{ width: `${Math.max(4, Math.round((row.shared / maxClientSharedForFunnel) * 100))}%` }}
-                                />
-                                <i
-                                  className="reports-stacked-track__fill"
-                                  style={{ width: `${row.shared > 0 ? Math.max(2, Math.round((row.interviews / row.shared) * Math.max(4, Math.round((row.shared / maxClientSharedForFunnel) * 100)))) : 0}%` }}
-                                />
-                              </div>
-                              <div className="reports-conversion-pill" style={{ marginTop: "8px" }}>{row.interviewConversionRatio}%</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </article>
-                    <article className="reports-chart-card" style={{ minHeight: "100%" }}>
-                      <h4>Client Pipeline Funnel (Joining to Shared)</h4>
-                      <p className="muted">Join conversion rate</p>
-                      {!clientChartRows.length ? <div className="empty-state compact-empty">No joining data.</div> : (
-                        <div className="reports-funnel-list">
-                          {clientChartRows.map((row) => (
-                            <div key={`client-joining-${row.label}`} className="reports-funnel-item">
-                              <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.joined}</strong></div>
-                              <div className="reports-stacked-track">
-                                <i
-                                  className="reports-stacked-track__base"
-                                  style={{ width: `${Math.max(4, Math.round((row.shared / maxClientSharedForFunnel) * 100))}%` }}
-                                />
-                                <i
-                                  className="reports-stacked-track__fill"
-                                  style={{ width: `${row.shared > 0 ? Math.max(2, Math.round((row.joined / row.shared) * Math.max(4, Math.round((row.shared / maxClientSharedForFunnel) * 100)))) : 0}%` }}
-                                />
-                              </div>
-                              <div className="reports-conversion-pill" style={{ marginTop: "8px" }}>{row.joiningConversionRatio}%</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </article>
-                  </div>
+                <Section kicker="Breakdown" title="Client Performance">
                   <div className="stack-list">
                     {!dashboardClientGroupsDisplay.length ? <div className="empty-state">No client breakdown available.</div> : dashboardClientGroupsDisplay.map((group) => (
                       <details className="dashboard-group" key={group.label}>
@@ -23042,135 +22953,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 </Section>
                 ) : null}
                 {reportsTab !== "client" ? (
-                <Section kicker="Breakdown" title="Recruiter Breakdown">
-                  <div className="reports-leaderboard-strip">
-                    <article className="reports-leaderboard-card">
-                      <h4>All Recruiters by Shared</h4>
-                      <ol>
-                        {recruiterLeaderboardShared.map((item) => (
-                          <li key={`recruiter-shared-${item.label}`}>
-                            <span>{item.label}</span>
-                            <strong>{item?.sharedProfiles || item?.metrics?.converted || 0}</strong>
-                          </li>
-                        ))}
-                        {!recruiterLeaderboardShared.length ? <li><span>No data</span><strong>0</strong></li> : null}
-                      </ol>
-                    </article>
-                    <article className="reports-leaderboard-card">
-                      <h4>All Recruiters by Interviews</h4>
-                      <ol>
-                        {recruiterLeaderboardInterviews.map((item) => (
-                          <li key={`recruiter-int-${item.label}`}>
-                            <span>{item.label}</span>
-                            <strong>{item?.interviews || item?.metrics?.under_interview_process || 0}</strong>
-                          </li>
-                        ))}
-                        {!recruiterLeaderboardInterviews.length ? <li><span>No data</span><strong>0</strong></li> : null}
-                      </ol>
-                    </article>
-                    <article className="reports-leaderboard-card">
-                      <h4>All Recruiters by Joinings</h4>
-                      <ol>
-                        {recruiterLeaderboardJoinings.map((item) => (
-                          <li key={`recruiter-join-${item.label}`}>
-                            <span>{item.label}</span>
-                            <strong>{item?.joined || item?.metrics?.joined || 0}</strong>
-                          </li>
-                        ))}
-                        {!recruiterLeaderboardJoinings.length ? <li><span>No data</span><strong>0</strong></li> : null}
-                      </ol>
-                    </article>
-                  </div>
-                  <div className="reports-client-chart-grid">
-                    <article className="reports-chart-card" style={{ minHeight: "100%" }}>
-                      <h4>Recruiter Performance (Score)</h4>
-                      {!recruiterLeaderboardRanked.length ? <div className="empty-state compact-empty">No chart data.</div> : (
-                        <div className="reports-funnel-list">
-                          {recruiterLeaderboardRanked.map((row) => (
-                            <div key={`score-${row.label}`} className="reports-funnel-item">
-                              <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.performanceScore}</strong></div>
-                              <div className="reports-funnel-track"><i style={{ width: `${Math.max(4, Math.round((row.performanceScore / maxRecruiterScore) * 100))}%` }} /></div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      <p className="muted reports-formula-note">
-                        Score = 20% CV submission rate + 30% interview ratio + 30% shortlist rate + 20% joining rate.
-                      </p>
-                    </article>
-                    <article className="reports-chart-card" style={{ minHeight: "100%" }}>
-                      <h4>Recruiter-wise Sourced vs Shared</h4>
-                      <p className="muted">CV submission ratio graph</p>
-                      {!recruiterChartRows.length ? <div className="empty-state compact-empty">No chart data.</div> : (
-                        <div className="reports-funnel-list">
-                          {recruiterChartRows.map((row) => (
-                            <div key={`recruiter-bars-${row.label}`} className="reports-funnel-item">
-                              <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.shared}</strong></div>
-                              <div className="reports-stacked-track">
-                                <i
-                                  className="reports-stacked-track__base"
-                                  style={{ width: `${Math.max(4, Math.round((row.sourced / maxRecruiterSourced) * 100))}%` }}
-                                />
-                                <i
-                                  className="reports-stacked-track__fill"
-                                  style={{ width: `${row.sourced > 0 ? Math.max(2, Math.round((row.shared / row.sourced) * Math.max(4, Math.round((row.sourced / maxRecruiterSourced) * 100)))) : 0}%` }}
-                                />
-                              </div>
-                              <div className="reports-conversion-pill" style={{ marginTop: "8px" }}>{row.conversionPct}%</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </article>
-                    <article className="reports-chart-card" style={{ minHeight: "100%" }}>
-                      <h4>Recruiter Pipeline Funnel (Shared to Interview)</h4>
-                      <p className="muted">Interview conversion ratio graph</p>
-                      {!recruiterChartRows.length ? <div className="empty-state compact-empty">No funnel data.</div> : (
-                        <div className="reports-funnel-list">
-                          {recruiterChartRows.map((row) => (
-                            <div key={`recruiter-funnel-${row.label}`} className="reports-funnel-item">
-                              <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.interviews}</strong></div>
-                              <div className="reports-stacked-track">
-                                <i
-                                  className="reports-stacked-track__base"
-                                  style={{ width: `${Math.max(4, Math.round((row.shared / maxRecruiterShared) * 100))}%` }}
-                                />
-                                <i
-                                  className="reports-stacked-track__fill"
-                                  style={{ width: `${row.shared > 0 ? Math.max(2, Math.round((row.interviews / row.shared) * Math.max(4, Math.round((row.shared / maxRecruiterShared) * 100)))) : 0}%` }}
-                                />
-                              </div>
-                              <div className="reports-conversion-pill" style={{ marginTop: "8px" }}>{row.interviewPct}%</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </article>
-                    <article className="reports-chart-card" style={{ minHeight: "100%" }}>
-                      <h4>Recruiter Pipeline Funnel (Joining to Shared)</h4>
-                      <p className="muted">Join conversion rate</p>
-                      {!recruiterChartRows.length ? <div className="empty-state compact-empty">No funnel data.</div> : (
-                        <div className="reports-funnel-list">
-                          {recruiterChartRows.map((row) => (
-                            <div key={`recruiter-joining-${row.label}`} className="reports-funnel-item">
-                              <div className="reports-funnel-item__head"><span>{row.label}</span><strong>{row.joined}</strong></div>
-                              <div className="reports-stacked-track">
-                                <i
-                                  className="reports-stacked-track__base"
-                                  style={{ width: `${Math.max(4, Math.round((row.shared / maxRecruiterShared) * 100))}%` }}
-                                />
-                                <i
-                                  className="reports-stacked-track__fill"
-                                  style={{ width: `${row.shared > 0 ? Math.max(2, Math.round((row.joined / row.shared) * Math.max(4, Math.round((row.shared / maxRecruiterShared) * 100)))) : 0}%` }}
-                                />
-                              </div>
-                              <div className="reports-conversion-pill" style={{ marginTop: "8px" }}>{row.joiningPct}%</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </article>
-                  </div>
+                <Section kicker="Breakdown" title="Recruiter Performance">
                   <div className="stack-list">
                     {!dashboardRecruiterGroupsDisplay.length ? <div className="empty-state">No recruiter breakdown available.</div> : dashboardRecruiterGroupsDisplay.map((group) => (
                       <details className="dashboard-group" key={group.label}>
