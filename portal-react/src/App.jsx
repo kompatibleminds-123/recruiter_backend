@@ -22537,11 +22537,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   const displayScheduledInterviewItems = dashboardAgendaLists.interviews || dashboardAgendaSnapshotForDisplay?.scheduledInterviewItems || scheduledInterviewItems;
   const displayUpcomingJoiningItems = dashboardAgendaLists.joinings || upcomingJoinings.slice(0, 5);
   const agendaKpiCards = [
-    { key: "pendingNotes", label: "Pending Notes", value: displayPendingNotes, icon: "📝" },
-    { key: "scheduledInterviews", label: "Interviews Today", value: displayScheduledInterviewCount, icon: "📅" },
-    { key: "upcomingJoinings", label: "Joining", value: displayUpcomingJoiningCount, icon: "?" },
-    { key: "pendingApplicants", label: "Pending Applicants", value: displayPendingAssignments, icon: "??" },
-    { key: "interviewFeedbackAwaited", label: "Interview Feedback Awaited", value: displayInterviewFeedbackAwaited, icon: "??" }
+    { key: "pendingNotes", label: "Pending Notes", value: displayPendingNotes, icon: "\u{1F4DD}" },
+    { key: "pendingApplicants", label: "Pending Applicants", value: displayPendingAssignments, icon: "\u{1F465}" },
+    { key: "scheduledInterviews", label: "Interviews Today", value: displayScheduledInterviewCount, icon: "\u{1F4C5}" },
+    { key: "upcomingJoinings", label: "Joining", value: displayUpcomingJoiningCount, icon: "\u2713" }
   ];
 
   return (
@@ -22633,7 +22632,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </div>
 
                   <div className="dashboard-agenda-overview">
-                    <div className="dashboard-agenda-cards dashboard-agenda-cards--five">
+                    <div className="dashboard-agenda-cards dashboard-agenda-cards--four">
                       {agendaKpiCards.map((card) => (
                         <article key={card.key} className={`metric-card compact-metric dashboard-agenda-metric dashboard-agenda-metric--${card.key}`}>
                           <div className="dashboard-agenda-metric__top">
@@ -22773,6 +22772,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         );
                         return (
                           <div key={stage.key} className="dashboard-funnel-compact-row">
+                            {index > 0 ? (
+                              <div className="dashboard-funnel-rate dashboard-funnel-rate--compact">
+                                <span className="dashboard-funnel-rate__arrow" aria-hidden="true">↓</span>
+                                <span className="dashboard-funnel-rate__value">{stage.conversionValue}</span>
+                                <strong className="dashboard-funnel-rate__label">{stage.conversionLabel}</strong>
+                              </div>
+                            ) : null}
                             {stage.isClickable ? (
                               <button
                                 type="button"
@@ -22790,13 +22796,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                 {stageBody}
                               </article>
                             )}
-                            {index > 0 ? (
-                              <div className="dashboard-funnel-rate dashboard-funnel-rate--compact">
-                                <span className="dashboard-funnel-rate__arrow" aria-hidden="true">↓</span>
-                                <span className="dashboard-funnel-rate__value">{stage.conversionValue}</span>
-                                <strong className="dashboard-funnel-rate__label">{stage.conversionLabel}</strong>
-                              </div>
-                            ) : null}
                           </div>
                         );
                       })}
