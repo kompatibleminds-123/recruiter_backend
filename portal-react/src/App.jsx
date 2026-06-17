@@ -22804,6 +22804,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <div className="dashboard-funnel-track">
                   {primaryKpiCards.map((item, index) => {
                     const isClickable = !DASHBOARD_TOP_NON_CLICKABLE_METRICS.has(String(item.key || "").trim());
+                    const connectorMetric = ratioKpiCards[index] || null;
                     const cardBody = (
                       <>
                         <div className="dashboard-funnel-step__header">
@@ -22828,21 +22829,16 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             {cardBody}
                           </article>
                         )}
-                        {index < primaryKpiCards.length - 1 ? <div className="dashboard-funnel-connector" aria-hidden="true" /> : null}
+                        {index < primaryKpiCards.length - 1 && connectorMetric ? (
+                          <div className="dashboard-funnel-connector-wrap" aria-hidden="true">
+                            <div className="dashboard-funnel-connector" />
+                            <div className="dashboard-funnel-connector__value">{connectorMetric.value}</div>
+                            <div className="dashboard-funnel-connector__label">{connectorMetric.label}</div>
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}
-                </div>
-                <div className="dashboard-ratio-row">
-                  {ratioKpiCards.map((item) => (
-                    <article
-                      key={item.key}
-                      className={`reports-kpi-card dashboard-ratio-card dashboard-ratio-card--${item.key}`}
-                    >
-                      <div className="reports-kpi-card__value">{item.value}</div>
-                      <div className="reports-kpi-card__label">{item.label}</div>
-                    </article>
-                  ))}
                 </div>
                 <div className="reports-view-tabs">
                   <button className={reportsTab === "client" ? "active" : ""} onClick={() => handleReportsTabChange("client")}>Client View</button>
