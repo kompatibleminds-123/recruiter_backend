@@ -8256,6 +8256,8 @@ function finalizeDashboardFunnelBucket(bucket = {}) {
 function createDashboardAgendaItem(raw = {}, kind = "") {
   return {
     id: String(raw?.id || raw?.assessment_id || raw?.candidate_id || "").trim(),
+    candidateId: String(raw?.candidateId || raw?.candidate_id || "").trim(),
+    assessmentId: String(raw?.assessmentId || raw?.assessment_id || raw?.id || "").trim(),
     candidateName: String(raw?.candidateName || raw?.candidate_name || raw?.name || "").trim(),
     role: String(raw?.jdTitle || raw?.jd_title || raw?.role || raw?.position || "").trim(),
     clientName: String(raw?.clientName || raw?.client_name || "").trim(),

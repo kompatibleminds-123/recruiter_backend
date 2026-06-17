@@ -7302,7 +7302,7 @@ function compactDashboardAgendaItem(item = {}) {
     title: String(item?.title || "").trim(),
     subtitle: String(item?.subtitle || "").trim(),
     when: String(item?.when || "").trim(),
-    candidateId: String(item?.candidateId || item?.raw?.id || item?.raw?.candidateId || "").trim(),
+    candidateId: String(item?.candidateId || item?.raw?.candidateId || "").trim(),
     assessmentId: String(item?.assessmentId || item?.raw?.id || item?.raw?.assessmentId || "").trim()
   };
 }
