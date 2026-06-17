@@ -22753,67 +22753,55 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </div>
                 ) : null}
                 <div className="dashboard-funnel-hero">
-                  <div className="dashboard-funnel-visual" aria-label="Recruitment funnel">
-                    <div className="dashboard-funnel-visual__header">
+                  <div className="dashboard-funnel-visual dashboard-funnel-visual--compact" aria-label="Recruitment funnel">
+                    <div className="dashboard-funnel-visual__header dashboard-funnel-visual__header--compact">
                       <div>
                         <span className="dashboard-funnel-kicker">Recruitment Funnel</span>
                         <h3>Overall hiring progression</h3>
                       </div>
                     </div>
-                    {dashboardFunnelStages.map((stage, index) => {
-                      const stageBody = (
-                        <>
-                          <span className={`dashboard-funnel-step__icon dashboard-funnel-step__icon--${stage.key}`} aria-hidden="true">{stage.icon}</span>
-                          <div className="dashboard-funnel-layer__copy">
-                            <strong>{stage.value}</strong>
-                            <span>{stage.label}</span>
-                          </div>
-                        </>
-                      );
-                      return (
-                        <div key={stage.key} className="dashboard-funnel-layer-wrap">
-                          {index > 0 ? (
-                            <div className="dashboard-funnel-rate">
-                              <span className="dashboard-funnel-rate__value">{stage.conversionValue}</span>
-                              <strong className="dashboard-funnel-rate__label">{stage.conversionLabel}</strong>
-                            </div>
-                          ) : null}
-                          {stage.isClickable ? (
-                            <button
-                              type="button"
-                              className={`dashboard-funnel-layer dashboard-funnel-layer--${stage.key}`}
-                              style={{ width: `${stage.widthPct}%` }}
-                              onClick={() => void openDashboardDrilldown({ title: stage.label, metric: stage.drillMetric, groupType: "all" })}
-                            >
-                              {stageBody}
-                            </button>
-                          ) : (
-                            <article
-                              className={`dashboard-funnel-layer dashboard-funnel-layer--${stage.key}`}
-                              style={{ width: `${stage.widthPct}%` }}
-                            >
-                              {stageBody}
-                            </article>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <aside className="dashboard-funnel-sidepanel">
-                    <h3>Stage Summary</h3>
-                    <p className="dashboard-funnel-sidepanel__caption">Counts stay aligned with your current dashboard filters.</p>
-                    <div className="dashboard-funnel-sidepanel__list">
-                      {dashboardFunnelStages.map((stage) => (
-                        <div key={`summary-${stage.key}`} className="dashboard-funnel-sidepanel__row">
-                          <div className="dashboard-funnel-sidepanel__label">
+                    <div className="dashboard-funnel-compact">
+                      {dashboardFunnelStages.map((stage, index) => {
+                        const stageBody = (
+                          <>
                             <span className={`dashboard-funnel-step__icon dashboard-funnel-step__icon--${stage.key}`} aria-hidden="true">{stage.icon}</span>
-                            <span>{stage.label}</span>
+                            <div className="dashboard-funnel-layer__copy dashboard-funnel-layer__copy--compact">
+                              <strong>{stage.value}</strong>
+                              <span>{stage.label}</span>
+                            </div>
+                          </>
+                        );
+                        return (
+                          <div key={stage.key} className="dashboard-funnel-compact-row">
+                            {stage.isClickable ? (
+                              <button
+                                type="button"
+                                className={`dashboard-funnel-layer dashboard-funnel-layer--${stage.key} dashboard-funnel-layer--compact`}
+                                style={{ width: `${stage.widthPct}%` }}
+                                onClick={() => void openDashboardDrilldown({ title: stage.label, metric: stage.drillMetric, groupType: "all" })}
+                              >
+                                {stageBody}
+                              </button>
+                            ) : (
+                              <article
+                                className={`dashboard-funnel-layer dashboard-funnel-layer--${stage.key} dashboard-funnel-layer--compact`}
+                                style={{ width: `${stage.widthPct}%` }}
+                              >
+                                {stageBody}
+                              </article>
+                            )}
+                            {index > 0 ? (
+                              <div className="dashboard-funnel-rate dashboard-funnel-rate--compact">
+                                <span className="dashboard-funnel-rate__arrow" aria-hidden="true">↓</span>
+                                <span className="dashboard-funnel-rate__value">{stage.conversionValue}</span>
+                                <strong className="dashboard-funnel-rate__label">{stage.conversionLabel}</strong>
+                              </div>
+                            ) : null}
                           </div>
-                          <strong>{stage.value}</strong>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
-                  </aside>
+                  </div>
                 </div>
                 <div className="reports-view-tabs">
                   <button className={reportsTab === "client" ? "active" : ""} onClick={() => handleReportsTabChange("client")}>Client View</button>
