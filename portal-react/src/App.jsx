@@ -22531,6 +22531,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   const displayScheduledInterviewCount = Number(dashboardAgendaCounts.scheduledInterviews ?? dashboardAgendaSnapshotForDisplay?.scheduledInterviewCount ?? todaysInterviews.length ?? 0);
   const displayUpcomingJoiningCount = Number(dashboardAgendaCounts.upcomingJoinings ?? dashboardAgendaSnapshotForDisplay?.upcomingJoiningCount ?? upcomingJoinings.length ?? 0);
   const displayPendingAssignments = Number(dashboardAgendaCounts.pendingApplicants ?? dashboardAgendaSnapshotForDisplay?.pendingAssignmentCount ?? pendingAssignments ?? 0);
+  const displayInterviewFeedbackAwaited = Number(dashboardAgendaCounts.interviewFeedbackAwaited ?? dashboardAgendaSnapshotForDisplay?.interviewFeedbackAwaitedCount ?? 0);
   const displayOverdueFollowUpItems = dashboardAgendaLists.followUps || dashboardAgendaSnapshotForDisplay?.overdueFollowUps || overdueFollowUps.slice(0, 5);
   const displayScheduledFollowUpItems = dashboardAgendaSnapshotForDisplay?.scheduledFollowUpItems || scheduledFollowUpItems;
   const displayScheduledInterviewItems = dashboardAgendaLists.interviews || dashboardAgendaSnapshotForDisplay?.scheduledInterviewItems || scheduledInterviewItems;
@@ -22538,8 +22539,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   const agendaKpiCards = [
     { key: "pendingNotes", label: "Pending Notes", value: displayPendingNotes, icon: "📝" },
     { key: "scheduledInterviews", label: "Interviews Today", value: displayScheduledInterviewCount, icon: "📅" },
-    { key: "upcomingJoinings", label: "Joining This Week", value: displayUpcomingJoiningCount, icon: "🟢" },
-    { key: "pendingApplicants", label: "Pending Applicants", value: displayPendingAssignments, icon: "👤" }
+    { key: "upcomingJoinings", label: "Joining", value: displayUpcomingJoiningCount, icon: "?" },
+    { key: "pendingApplicants", label: "Pending Applicants", value: displayPendingAssignments, icon: "??" },
+    { key: "interviewFeedbackAwaited", label: "Interview Feedback Awaited", value: displayInterviewFeedbackAwaited, icon: "??" }
   ];
 
   return (
@@ -22607,11 +22609,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               <Section kicker="Today" title="Today's Agenda">
                 <div className="dashboard-agenda-shell">
                   <div className="dashboard-agenda-topbar">
-                    <div className="dashboard-agenda-intro">
-                      <p className="muted">
-                        {`${agendaRange === "today" ? "Today" : agendaRange === "tomorrow" ? "Tomorrow" : "Next 7 days"}: ${displayPendingNotes} pending note(s) | ${displayScheduledInterviewCount} interview(s) | ${displayUpcomingJoiningCount} joining(s)`}
-                      </p>
-                    </div>
+                    <div className="dashboard-agenda-intro" />
                     <div className="button-row tight dashboard-agenda-controls" style={{ alignItems: "center" }}>
                       {dashboardAgendaLoading ? (
                         <span className="muted" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
@@ -22653,7 +22651,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <div className="card agenda-panel-card">
                     <div className="dashboard-agenda-panel-head">
                       <h4>Scheduled follow-ups</h4>
-                      <span>{displayScheduledFollowUpItems.length + displayOverdueFollowUpItems.length}</span>
                     </div>
                     <div className="stack-list compact">
                       {[...displayOverdueFollowUpItems, ...displayScheduledFollowUpItems].slice(0, 4).map((item) => (
@@ -22677,7 +22674,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <div className="card agenda-panel-card">
                     <div className="dashboard-agenda-panel-head">
                       <h4>{agendaRange === "today" ? "Today's interviews" : agendaRange === "tomorrow" ? "Tomorrow's interviews" : "Upcoming interviews"}</h4>
-                      <span>{displayScheduledInterviewItems.length}</span>
                     </div>
                     <div className="stack-list compact">
                       {displayScheduledInterviewItems.slice(0, 4).map((item) => (
@@ -22703,10 +22699,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </div>
                   </div>
 
-                  <div className="card agenda-panel-card">
+                  <div className="card agenda-panel-card agenda-panel-card--full">
                     <div className="dashboard-agenda-panel-head">
-                      <h4>Upcoming joinings</h4>
-                      <span>{displayUpcomingJoiningItems.length}</span>
+                      <h4>Joinings</h4>
                     </div>
                     <div className="stack-list compact">
                       {displayUpcomingJoiningItems.slice(0, 4).map((item) => (
