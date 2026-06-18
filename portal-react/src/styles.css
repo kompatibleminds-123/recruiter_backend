@@ -763,40 +763,54 @@ textarea { min-height: 92px; resize: vertical; }
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 .dashboard-agenda-metric {
-  min-height: 54px;
-  padding: 0.55rem 0.75rem;
-  border-radius: 16px;
-  box-shadow: 0 6px 16px rgba(26, 47, 94, 0.05);
+  min-height: 120px;
+  padding: 1rem 1.1rem 0.95rem;
+  border-radius: 20px;
+  border: 1px solid #e9eef7;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}
+.dashboard-agenda-metric:hover {
+  transform: scale(1.01);
+  border-color: #dfe8f6;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
 }
 .dashboard-agenda-metric__top {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.8rem;
 }
 .dashboard-agenda-metric__icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 10px;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
   display: inline-grid;
   place-items: center;
-  font-size: 0.82rem;
+  flex: 0 0 auto;
+  font-size: 1rem;
   background: #eef4ff;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
 }
 .dashboard-agenda-metric__value {
-  margin-top: 0.22rem;
-  font-size: 1.05rem;
-  line-height: 1;
-  font-weight: 900;
+  margin-top: 0.9rem;
+  font-size: 2.25rem;
+  line-height: 1.02;
+  font-weight: 800;
   color: #10284f;
 }
 .dashboard-agenda-metric .metric-label {
-  font-size: 0.86rem;
-  letter-spacing: 0.08em;
+  margin-top: 0;
+  font-size: 0.98rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: #3d5b8c;
+  line-height: 1.2;
 }
 .dashboard-agenda-metric--pendingNotes .dashboard-agenda-metric__icon {
-  background: #f2ebff;
-  color: #7c3aed;
+  background: #fff4df;
+  color: #d97706;
 }
 .dashboard-agenda-metric--scheduledInterviews .dashboard-agenda-metric__icon {
   background: #eaf2ff;
@@ -807,12 +821,20 @@ textarea { min-height: 92px; resize: vertical; }
   color: #16a34a;
 }
 .dashboard-agenda-metric--pendingApplicants .dashboard-agenda-metric__icon {
-  background: #fff1f2;
-  color: #db2777;
+  background: #f3ecff;
+  color: #7c3aed;
 }
 .dashboard-agenda-metric--interviewFeedbackAwaited .dashboard-agenda-metric__icon {
   background: #fff7e8;
   color: #d97706;
+}
+.dashboard-agenda-metric--scheduledInterviews {
+  border-top: 3px solid rgba(37, 99, 235, 0.18);
+  box-shadow: 0 10px 28px rgba(37, 99, 235, 0.06);
+}
+.dashboard-agenda-metric--upcomingJoinings {
+  border-top: 3px solid rgba(22, 163, 74, 0.18);
+  box-shadow: 0 10px 28px rgba(22, 163, 74, 0.06);
 }
 .dashboard-agenda-panels {
   display: grid;
