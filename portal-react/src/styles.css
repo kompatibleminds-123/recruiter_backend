@@ -1042,13 +1042,15 @@ textarea { min-height: 92px; resize: vertical; }
   gap: 0.45rem;
 }
 .dashboard-snake-card__label {
-  font-size: 0.72rem;
+  font-size: 0.64rem;
   font-weight: 800;
   color: #4a5e85;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  line-height: 1.2;
-  word-break: break-word;
+  letter-spacing: 0.035em;
+  line-height: 1.1;
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
 }
 .dashboard-snake-card__value {
   font-size: 1.28rem;
