@@ -22731,101 +22731,51 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </div>
                 ) : null}
                 <div className="dashboard-snake-funnel">
-                  <div className="dashboard-snake-funnel__row dashboard-snake-funnel__row--top">
-                    {primaryKpiCards.slice(0, 4).map((item, index) => {
-                      const isClickable = !DASHBOARD_TOP_NON_CLICKABLE_METRICS.has(String(item.key || "").trim());
-                      const cardBody = (
-                        <>
-                          <div className="dashboard-snake-card__header">
-                            <span className={`dashboard-funnel-step__icon dashboard-funnel-step__icon--${item.key}`} aria-hidden="true">{item.icon}</span>
-                            <div className="dashboard-snake-card__label">{item.label}</div>
-                          </div>
-                          <div className="dashboard-snake-card__value">{item.value}</div>
-                        </>
-                      );
-                      return (
-                        <div key={item.key} className="dashboard-snake-funnel__cell">
-                          {isClickable ? (
-                            <button
-                              type="button"
-                              className="dashboard-snake-card dashboard-snake-card--button"
-                              onClick={() => void openDashboardDrilldown({ title: item.label, metric: item.drillMetric, groupType: "all" })}
-                            >
-                              {cardBody}
-                            </button>
-                          ) : (
-                            <article className="dashboard-snake-card">
-                              {cardBody}
-                            </article>
-                          )}
-                          {index < 3 ? (
-                            <div className="dashboard-snake-connector dashboard-snake-connector--horizontal" aria-hidden="true">
-                              <div className="dashboard-snake-connector__line" />
-                              <div className="dashboard-snake-connector__meta">
-                                <span className="dashboard-snake-connector__value">{ratioKpiCards[index]?.value || "0%"}</span>
-                                <span className="dashboard-snake-connector__label">{ratioKpiCards[index]?.label || ""}</span>
-                              </div>
-                            </div>
-                          ) : null}
+                  {primaryKpiCards.map((item, index) => {
+                    const isClickable = !DASHBOARD_TOP_NON_CLICKABLE_METRICS.has(String(item.key || "").trim());
+                    const cardBody = (
+                      <>
+                        <div className="dashboard-snake-card__header">
+                          <span className={`dashboard-funnel-step__icon dashboard-funnel-step__icon--${item.key}`} aria-hidden="true">{item.icon}</span>
+                          <div className="dashboard-snake-card__label">{item.label}</div>
                         </div>
-                      );
-                    })}
-                  </div>
-                  <div className="dashboard-snake-funnel__drop" aria-hidden="true">
-                    <div className="dashboard-snake-funnel__drop-line" />
-                    <div className="dashboard-snake-connector__meta dashboard-snake-connector__meta--drop">
-                      <span className="dashboard-snake-connector__value">{ratioKpiCards[3]?.value || "0%"}</span>
-                      <span className="dashboard-snake-connector__label">{ratioKpiCards[3]?.label || ""}</span>
-                    </div>
-                  </div>
-                  <div className="dashboard-snake-funnel__row dashboard-snake-funnel__row--bottom">
-                    {[primaryKpiCards[5], primaryKpiCards[4]].map((item, index) => {
-                      if (!item) return null;
-                      const isClickable = !DASHBOARD_TOP_NON_CLICKABLE_METRICS.has(String(item.key || "").trim());
-                      const cardBody = (
-                        <>
-                          <div className="dashboard-snake-card__header">
-                            <span className={`dashboard-funnel-step__icon dashboard-funnel-step__icon--${item.key}`} aria-hidden="true">{item.icon}</span>
-                            <div className="dashboard-snake-card__label">{item.label}</div>
-                          </div>
-                          <div className="dashboard-snake-card__value">{item.value}</div>
-                        </>
-                      );
-                      return (
-                        <div key={item.key} className="dashboard-snake-funnel__cell dashboard-snake-funnel__cell--bottom">
-                          {isClickable ? (
-                            <button
-                              type="button"
-                              className="dashboard-snake-card dashboard-snake-card--button"
-                              onClick={() => void openDashboardDrilldown({ title: item.label, metric: item.drillMetric, groupType: "all" })}
-                            >
-                              {cardBody}
-                            </button>
-                          ) : (
-                            <article className="dashboard-snake-card">
-                              {cardBody}
-                            </article>
-                          )}
-                          {index === 0 ? (
-                            <div className="dashboard-snake-connector dashboard-snake-connector--horizontal dashboard-snake-connector--reverse" aria-hidden="true">
-                              <div className="dashboard-snake-connector__line" />
-                              <div className="dashboard-snake-connector__meta">
-                                <span className="dashboard-snake-connector__value">{ratioKpiCards[4]?.value || "0%"}</span>
-                                <span className="dashboard-snake-connector__label">{ratioKpiCards[4]?.label || ""}</span>
-                              </div>
+                        <div className="dashboard-snake-card__value">{item.value}</div>
+                      </>
+                    );
+                    return (
+                      <Fragment key={item.key}>
+                        {isClickable ? (
+                          <button
+                            type="button"
+                            className="dashboard-snake-card dashboard-snake-card--button"
+                            onClick={() => void openDashboardDrilldown({ title: item.label, metric: item.drillMetric, groupType: "all" })}
+                          >
+                            {cardBody}
+                          </button>
+                        ) : (
+                          <article className="dashboard-snake-card">
+                            {cardBody}
+                          </article>
+                        )}
+                        {index < primaryKpiCards.length - 1 ? (
+                          <div className="dashboard-snake-connector dashboard-snake-connector--inline" aria-hidden="true">
+                            <div className="dashboard-snake-connector__line" />
+                            <div className="dashboard-snake-connector__meta">
+                              <span className="dashboard-snake-connector__value">{ratioKpiCards[index]?.value || "0%"}</span>
+                              <span className="dashboard-snake-connector__label">{ratioKpiCards[index]?.label || ""}</span>
                             </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
+                          </div>
+                        ) : null}
+                      </Fragment>
+                    );
+                  })}
                 </div>
+              </Section>
+              <div className="dashboard-breakdown-stack">
                 <div className="reports-view-tabs">
                   <button className={reportsTab === "client" ? "active" : ""} onClick={() => handleReportsTabChange("client")}>Client View</button>
                   <button className={reportsTab === "recruiter" ? "active" : ""} onClick={() => handleReportsTabChange("recruiter")}>Recruiter View</button>
                 </div>
-              </Section>
-              <div className="dashboard-breakdown-stack">
                 {reportsTab !== "recruiter" ? (
                 <Section kicker="Breakdown" title="Client Breakdown">
                   <div className="reports-leaderboard-strip">
