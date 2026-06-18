@@ -22529,10 +22529,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   const displayScheduledInterviewItems = dashboardAgendaLists.interviews || dashboardAgendaSnapshotForDisplay?.scheduledInterviewItems || scheduledInterviewItems;
   const displayUpcomingJoiningItems = dashboardAgendaLists.joinings || upcomingJoinings.slice(0, 5);
   const agendaKpiCards = [
-    { key: "pendingNotes", label: "Pending Notes", value: displayPendingNotes, icon: "📝" },
-    { key: "scheduledInterviews", label: "Interviews Today", value: displayScheduledInterviewCount, icon: "📅" },
-    { key: "upcomingJoinings", label: "Joining This Week", value: displayUpcomingJoiningCount, icon: "🟢" },
-    { key: "pendingApplicants", label: "Pending Applicants", value: displayPendingAssignments, icon: "👤" }
+    { key: "pendingNotes", label: "Pending Notes", value: displayPendingNotes, icon: "\u{1F4DD}" },
+    { key: "pendingApplicants", label: "Pending Applicants", value: displayPendingAssignments, icon: "\u{1F465}" },
+    { key: "scheduledInterviews", label: "Interviews", value: displayScheduledInterviewCount, icon: "\u{1F4C5}" },
+    { key: "upcomingJoinings", label: "Joining", value: displayUpcomingJoiningCount, icon: "\u{2705}" }
   ];
 
   return (
@@ -22600,11 +22600,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               <Section kicker="Today" title="Today's Agenda">
                 <div className="dashboard-agenda-shell">
                   <div className="dashboard-agenda-topbar">
-                    <div className="dashboard-agenda-intro">
-                      <p className="muted">
-                        {`${agendaRange === "today" ? "Today" : agendaRange === "tomorrow" ? "Tomorrow" : "Next 7 days"}: ${displayPendingNotes} pending note(s) | ${displayScheduledInterviewCount} interview(s) | ${displayUpcomingJoiningCount} joining(s)`}
-                      </p>
-                    </div>
                     <div className="button-row tight dashboard-agenda-controls" style={{ alignItems: "center" }}>
                       {dashboardAgendaLoading ? (
                         <span className="muted" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
@@ -22627,83 +22622,22 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </div>
                   </div>
 
-                  <div className="dashboard-agenda-overview">
-                    <div className="dashboard-agenda-cards">
-                      {agendaKpiCards.map((card) => (
-                        <article key={card.key} className={`metric-card compact-metric dashboard-agenda-metric dashboard-agenda-metric--${card.key}`}>
-                          <div className="dashboard-agenda-metric__top">
-                            <span className="dashboard-agenda-metric__icon" aria-hidden="true">{card.icon}</span>
-                            <span className="metric-label" style={{ marginTop: 0 }}>{card.label}</span>
-                          </div>
-                          <div className="dashboard-agenda-metric__value">{card.value}</div>
-                        </article>
-                      ))}
-                    </div>
-                    <aside className="dashboard-agenda-spotlight">
-                      <div className="dashboard-agenda-spotlight__head">
-                        <h3>Upcoming joinings</h3>
-                        <span>{displayUpcomingJoiningItems.length || 0}</span>
-                      </div>
-                      {displayUpcomingJoiningItems.length ? (
-                        <div className="stack-list compact">
-                          {displayUpcomingJoiningItems.slice(0, 3).map((item) => (
-                            <article key={`joining-spotlight-${item.id}`} className="agenda-item agenda-item--compact">
-                              <div>
-                                <span className="agenda-item__title">{item.candidateName || "Candidate"}</span>
-                                <span className="agenda-item__subtitle">{item.role || item.jdTitle || "Untitled role"}</span>
-                                <span className="agenda-item__time">{new Date(item.at || item.followUpAt || item.interviewAt).toLocaleString()}</span>
-                              </div>
-                              <div className="button-row tight">
-                                <button
-                                  disabled={Boolean(agendaOpeningAssessmentIds[String(item.id || "")])}
-                                  onClick={() => void openAgendaAssessmentStatus(item)}
-                                >
-                                  {agendaOpeningAssessmentIds[String(item.id || "")] ? "Opening..." : "Update"}
-                                </button>
-                              </div>
-                            </article>
-                          ))}
+                  <div className="dashboard-agenda-cards dashboard-agenda-cards--four">
+                    {agendaKpiCards.map((card) => (
+                      <article key={card.key} className={`metric-card compact-metric dashboard-agenda-metric dashboard-agenda-metric--${card.key}`}>
+                        <div className="dashboard-agenda-metric__top">
+                          <span className="dashboard-agenda-metric__icon" aria-hidden="true">{card.icon}</span>
+                          <span className="metric-label" style={{ marginTop: 0 }}>{card.label}</span>
                         </div>
-                      ) : (
-                        <div className="empty-state compact-empty">No joinings in this range yet.</div>
-                      )}
-                    </aside>
+                        <div className="dashboard-agenda-metric__value">{card.value}</div>
+                      </article>
+                    ))}
                   </div>
-                </div>
 
-                <div className="stack-list compact">
-                  {!!displayOverdueFollowUpItems.length && (
-                    <div className="agenda-block agenda-block--overdue">
-                      <h3>Overdue follow-ups</h3>
+                  <div className="agenda-split-grid">
+                    <div className="agenda-subblock">
+                      <h4>Scheduled follow-ups</h4>
                       <div className="stack-list compact">
-                        {displayOverdueFollowUpItems.map((item) => (
-                          <article key={`overdue-${item.key || item.id || item.candidateId || item.assessmentId}`} className="agenda-item">
-                            <div>
-                              <span className="agenda-item__title">{item.title || item.candidateName || item.name || "Candidate"}</span>
-                              <span className="agenda-item__subtitle">{item.subtitle || item.role || item.jdTitle || item.jd_title || "Untitled role"}</span>
-                              <span className="agenda-item__time">{(item.when || item.at) ? `Call follow-up | ${new Date(item.when || item.at).toLocaleString()}` : "Call follow-up"}</span>
-                            </div>
-                            <div className="button-row tight">
-                              <button onClick={() => void openAttempts(String(item.candidateId || item.id || item.assessmentId || ""))}>Update</button>
-                              <button
-                                className="ghost-btn"
-                                onClick={() => void completeAgendaFollowUp(item.raw || { ...item, id: item.candidateId || item.id || item.assessmentId || "" })}
-                              >
-                                Done
-                              </button>
-                            </div>
-                          </article>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {!!(displayScheduledFollowUpItems.length || displayScheduledInterviewItems.length) && (
-                    <div className="agenda-block">
-                      <h3>Scheduled follow-ups and interviews</h3>
-                      <div className="agenda-split-grid">
-                        <div className="agenda-subblock">
-                          <h4>Follow-ups</h4>
-                          <div className="stack-list compact">
                         {displayScheduledFollowUpItems.map((item) => (
                           <article key={item.key || item.id || item.candidateId || item.assessmentId} className="agenda-item">
                             <div>
@@ -22719,15 +22653,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           </article>
                         ))}
                         {!displayScheduledFollowUpItems.length ? <div className="empty-state compact-empty">No follow-ups in this range.</div> : null}
-                          </div>
-                        </div>
-                        <div className="agenda-subblock">
-                          <h4>Interviews</h4>
-                          <div className="stack-list compact">
+                      </div>
+                    </div>
+
+                    <div className="agenda-subblock">
+                      <h4>Interviews</h4>
+                      <div className="stack-list compact">
                         {displayScheduledInterviewItems.map((item) => (
                           <article key={item.key || item.id || item.candidateId || item.assessmentId} className="agenda-item">
                             <div>
-                              <span className="agenda-item__type">{item.type}</span>
                               <span className="agenda-item__title">{item.title || item.candidateName || "Candidate"}</span>
                               <span className="agenda-item__subtitle">{item.subtitle || item.role || item.jdTitle || item.jd_title || "Untitled role"}</span>
                               <span className="agenda-item__time">{(item.when || item.at) ? new Date(item.when || item.at).toLocaleString() : "-"}</span>
@@ -22743,38 +22677,33 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           </article>
                         ))}
                         {!displayScheduledInterviewItems.length ? <div className="empty-state compact-empty">No interviews in this range.</div> : null}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="agenda-subblock agenda-block--joining">
+                    <h3>Joinings</h3>
+                    <div className="stack-list compact">
+                      {displayUpcomingJoiningItems.slice(0, 5).map((item) => (
+                        <article key={`joining-${item.id}`} className="agenda-item">
+                          <div>
+                            <span className="agenda-item__title">{item.candidateName || "Candidate"}</span>
+                            <span className="agenda-item__subtitle">{item.role || item.jdTitle || "Untitled role"}</span>
+                            <span className="agenda-item__time">{`Upcoming joining | ${new Date(item.at || item.followUpAt || item.interviewAt).toLocaleString()} | ${item.status || item.candidateStatus || "Offered"}`}</span>
                           </div>
-                        </div>
-                      </div>
+                          <div className="button-row tight">
+                            <button
+                              disabled={Boolean(agendaOpeningAssessmentIds[String(item.id || "")])}
+                              onClick={() => void openAgendaAssessmentStatus(item)}
+                            >
+                              {agendaOpeningAssessmentIds[String(item.id || "")] ? "Opening..." : "Update"}
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                      {!displayUpcomingJoiningItems.length ? <div className="empty-state compact-empty">No joinings in this range yet.</div> : null}
                     </div>
-                  )}
-                  {!!displayUpcomingJoiningItems.length && (
-                    <div className="agenda-block agenda-block--joining">
-                      <h3>Upcoming joinings</h3>
-                      <div className="stack-list compact">
-                        {displayUpcomingJoiningItems.slice(0, 5).map((item) => (
-                          <article key={`joining-${item.id}`} className="agenda-item">
-                            <div>
-                              <span className="agenda-item__title">{item.candidateName || "Candidate"}</span>
-                              <span className="agenda-item__subtitle">{item.role || item.jdTitle || "Untitled role"}</span>
-                              <span className="agenda-item__time">{`Upcoming joining | ${new Date(item.at || item.followUpAt || item.interviewAt).toLocaleString()} | ${item.status || item.candidateStatus || "Offered"}`}</span>
-                            </div>
-                            <div className="button-row tight">
-                              <button
-                                disabled={Boolean(agendaOpeningAssessmentIds[String(item.id || "")])}
-                                onClick={() => void openAgendaAssessmentStatus(item)}
-                              >
-                                {agendaOpeningAssessmentIds[String(item.id || "")] ? "Opening..." : "Update"}
-                              </button>
-                            </div>
-                          </article>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {!displayOverdueFollowUpItems.length && !displayScheduledFollowUpItems.length && !displayScheduledInterviewItems.length && !displayUpcomingJoiningItems.length ? (
-                    <div className="empty-state">No scheduled follow-ups, interviews, or joinings for this range yet.</div>
-                  ) : null}
+                  </div>
                 </div>
               </Section>
               <Section kicker="Performance" title="Recruitment Dashboard">
@@ -29739,6 +29668,8 @@ export default function App() {
           ? <PortalErrorBoundary><MarketingPortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
         : <PortalErrorBoundary><PortalApp token={token} onLogout={logout} /></PortalErrorBoundary>;
 }
+
+
 
 
 
