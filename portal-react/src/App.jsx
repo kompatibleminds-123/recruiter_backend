@@ -22730,46 +22730,49 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <div className="reports-skeleton-card" />
                   </div>
                 ) : null}
-                <div className="dashboard-snake-funnel">
-                  {primaryKpiCards.map((item, index) => {
-                    const isClickable = !DASHBOARD_TOP_NON_CLICKABLE_METRICS.has(String(item.key || "").trim());
-                    const cardBody = (
-                      <>
-                        <div className="dashboard-snake-card__header">
-                          <span className={`dashboard-funnel-step__icon dashboard-funnel-step__icon--${item.key}`} aria-hidden="true">{item.icon}</span>
-                          <div className="dashboard-snake-card__label">{item.label}</div>
-                        </div>
-                        <div className="dashboard-snake-card__value">{item.value}</div>
-                      </>
-                    );
-                    return (
-                      <Fragment key={item.key}>
-                        {isClickable ? (
-                          <button
-                            type="button"
-                            className="dashboard-snake-card dashboard-snake-card--button"
-                            onClick={() => void openDashboardDrilldown({ title: item.label, metric: item.drillMetric, groupType: "all" })}
-                          >
-                            {cardBody}
-                          </button>
-                        ) : (
-                          <article className="dashboard-snake-card">
-                            {cardBody}
-                          </article>
-                        )}
-                        {index < primaryKpiCards.length - 1 ? (
-                          <div className="dashboard-snake-connector dashboard-snake-connector--inline" aria-hidden="true">
-                            <div className="dashboard-snake-connector__line" />
-                            <div className="dashboard-snake-connector__meta">
-                              <span className="dashboard-snake-connector__value">{ratioKpiCards[index]?.value || "0%"}</span>
-                              <span className="dashboard-snake-connector__label">{ratioKpiCards[index]?.label || ""}</span>
-                            </div>
+                  <div className="dashboard-snake-funnel">
+                    {primaryKpiCards.map((item, index) => {
+                      const isClickable = !DASHBOARD_TOP_NON_CLICKABLE_METRICS.has(String(item.key || "").trim());
+                      const cardBody = (
+                        <>
+                          <div className="dashboard-snake-card__header">
+                            <span className={`dashboard-funnel-step__icon dashboard-funnel-step__icon--${item.key}`} aria-hidden="true">{item.icon}</span>
+                            <div className="dashboard-snake-card__label">{item.label}</div>
                           </div>
-                        ) : null}
-                      </Fragment>
-                    );
-                  })}
-                </div>
+                          <div className="dashboard-snake-card__value">{item.value}</div>
+                        </>
+                      );
+                      return (
+                        <div
+                          key={item.key}
+                          className={`dashboard-snake-step${index < primaryKpiCards.length - 1 ? " dashboard-snake-step--with-connector" : ""}`}
+                        >
+                          {isClickable ? (
+                            <button
+                              type="button"
+                              className="dashboard-snake-card dashboard-snake-card--button"
+                              onClick={() => void openDashboardDrilldown({ title: item.label, metric: item.drillMetric, groupType: "all" })}
+                            >
+                              {cardBody}
+                            </button>
+                          ) : (
+                            <article className="dashboard-snake-card">
+                              {cardBody}
+                            </article>
+                          )}
+                          {index < primaryKpiCards.length - 1 ? (
+                            <div className="dashboard-snake-connector dashboard-snake-connector--inline" aria-hidden="true">
+                              <div className="dashboard-snake-connector__line" />
+                              <div className="dashboard-snake-connector__meta">
+                                <span className="dashboard-snake-connector__value">{ratioKpiCards[index]?.value || "0%"}</span>
+                                <span className="dashboard-snake-connector__label">{ratioKpiCards[index]?.label || ""}</span>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
               </Section>
               <div className="dashboard-breakdown-stack">
                 <div className="reports-view-tabs">
