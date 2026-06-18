@@ -1000,27 +1000,36 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .dashboard-snake-funnel {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns:
+    minmax(0, 1fr) 58px
+    minmax(0, 1fr) 58px
+    minmax(0, 1fr) 58px
+    minmax(0, 1fr) 58px
+    minmax(0, 1fr) 58px
+    minmax(0, 1fr);
+  gap: 8px;
   align-items: start;
   margin-top: 0.2rem;
   width: 100%;
+  overflow: hidden;
 }
 .dashboard-snake-step {
   min-width: 0;
-  position: relative;
 }
-.dashboard-snake-step--with-connector {
-  padding-right: 64px;
+.dashboard-snake-connector-cell {
+  min-width: 0;
+  display: grid;
+  align-items: start;
+  justify-items: center;
 }
 .dashboard-snake-card {
-  min-height: 82px;
+  min-height: 78px;
   min-width: 0;
   width: 100%;
   border: 1px solid #dbe6f6;
   border-radius: 20px;
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-  padding: 0.8rem 0.9rem;
+  padding: 0.74rem 0.78rem;
   display: grid;
   align-content: space-between;
   text-align: left;
@@ -1039,21 +1048,36 @@ textarea { min-height: 92px; resize: vertical; }
 .dashboard-snake-card__header {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.34rem;
+  min-width: 0;
 }
 .dashboard-snake-card__label {
-  font-size: 0.64rem;
+  font-size: 0.52rem;
   font-weight: 800;
   color: #4a5e85;
   text-transform: uppercase;
-  letter-spacing: 0.035em;
-  line-height: 1.1;
+  letter-spacing: 0.015em;
+  line-height: 1.05;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+.dashboard-snake-card__label--totalCandidates,
+.dashboard-snake-card__label--sharedProfiles,
+.dashboard-snake-card__label--interviews,
+.dashboard-snake-card__label--shortlisted,
+.dashboard-snake-card__label--offers,
+.dashboard-snake-card__label--joined {
   white-space: nowrap;
-  word-break: normal;
   overflow-wrap: normal;
+  word-break: normal;
+}
+.dashboard-snake-card__label--totalCandidates {
+  font-size: 0.47rem;
 }
 .dashboard-snake-card__value {
-  font-size: 1.28rem;
+  font-size: 1.08rem;
   line-height: 1;
   font-weight: 900;
   color: #10284f;
@@ -1065,14 +1089,15 @@ textarea { min-height: 92px; resize: vertical; }
   gap: 0.55rem;
 }
 .dashboard-funnel-step__icon {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border-radius: 10px;
   display: inline-grid;
   place-items: center;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   background: #eef4ff;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+  flex: 0 0 auto;
 }
 .dashboard-funnel-step__icon--totalCandidates {
   background: #eaf2ff;
@@ -1114,18 +1139,14 @@ textarea { min-height: 92px; resize: vertical; }
   margin-top: 0.25rem;
 }
 .dashboard-snake-connector {
-  position: absolute;
-  top: 50%;
-  right: -56px;
-  width: 92px;
-  transform: translateY(-50%);
+  position: static;
+  width: 100%;
   display: grid;
-  gap: 0.35rem;
+  gap: 0.16rem;
   align-items: center;
   justify-items: center;
   min-width: 0;
-  align-self: center;
-  padding-top: 0;
+  padding-top: 18px;
   pointer-events: none;
 }
 .dashboard-snake-connector__line {
@@ -1150,22 +1171,20 @@ textarea { min-height: 92px; resize: vertical; }
   display: grid;
   gap: 0.12rem;
   justify-items: center;
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
+  position: static;
+  transform: none;
 }
 .dashboard-snake-connector__label {
-  font-size: 0.58rem;
+  font-size: 0.47rem;
   line-height: 1.1;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
   color: #5f7192;
   text-align: center;
-  max-width: 72px;
+  max-width: 54px;
 }
 .dashboard-snake-connector__value {
-  font-size: 0.8rem;
+  font-size: 0.68rem;
   color: #15376b;
   font-weight: 800;
 }
@@ -1198,39 +1217,13 @@ textarea { min-height: 92px; resize: vertical; }
   }
   .dashboard-snake-funnel {
     grid-template-columns: 1fr;
-    gap: 10px;
+    gap: 0.85rem;
   }
-  .dashboard-snake-step--with-connector {
-    padding-right: 0;
-    padding-bottom: 42px;
+  .dashboard-snake-connector-cell {
+    display: none;
   }
-  .dashboard-snake-connector {
-    position: relative;
-    top: auto;
-    right: auto;
-    width: 100%;
-    transform: none;
-    min-width: 100%;
-    padding-top: 0;
-  }
-  .dashboard-snake-connector__line {
-    width: 120px;
-    max-width: 100%;
-    height: 2px;
-    justify-self: center;
-  }
-  .dashboard-snake-connector__line::after {
-    border-right: 2px solid #cfdcf8;
-    border-top: 2px solid #cfdcf8;
-    top: 50%;
-    bottom: auto;
-    left: auto;
-    right: -1px;
-    transform: translateY(-50%) rotate(45deg);
-  }
-  .dashboard-snake-connector__meta {
-    position: static;
-    transform: none;
+  .dashboard-snake-card {
+    min-height: 88px;
   }
 }
 .compact-empty {
