@@ -8934,6 +8934,7 @@ function PortalApp({ token, onLogout }) {
   const candidateSmartChipRowsStableRef = useRef(null);
   const candidateSmartChipSummaryStableRef = useRef(null);
   const candidateSmartChipSummaryRequestRef = useRef(0);
+  const candidateSmartChipResultsRef = useRef(null);
   const databaseCandidatesHydratedRef = useRef(false);
   const [candidateFilterPanelOpen, setCandidateFilterPanelOpen] = useState(true);
   const [candidateFilterDrawerOpen, setCandidateFilterDrawerOpen] = useState(false);
@@ -8993,9 +8994,19 @@ function PortalApp({ token, onLogout }) {
     const normalizedId = String(chipId || "").trim();
     if (!normalizedId) return;
     setCandidatePage(1);
-    setCandidateQuickChipIds((current) => (
-      current.includes(normalizedId) ? [] : [normalizedId]
-    ));
+    let shouldScrollToResults = false;
+    setCandidateQuickChipIds((current) => {
+      const next = current.includes(normalizedId) ? [] : [normalizedId];
+      shouldScrollToResults = next.length > 0;
+      return next;
+    });
+    if (shouldScrollToResults && typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          candidateSmartChipResultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      });
+    }
   };
   const candidateNoticeBucketSelectedLabels = useMemo(() => (
     parseMultiChipTokens(candidateStructuredFiltersDraft.noticeBucket)
@@ -13882,13 +13893,14 @@ function PortalApp({ token, onLogout }) {
       limit: candidatePageSize
     }).then((result) => {
       if (cancelled) return;
-      const items = Array.isArray(result?.items) ? result.items : [];
+      const payload = result?.result && typeof result.result === "object" ? result.result : result;
+      const items = Array.isArray(payload?.items) ? payload.items : [];
       setDatabaseQueryItems(items);
       setDatabaseQueryMeta({
-        total: Number(result?.total || 0),
-        page: Number(result?.page || candidatePage || 1),
-        limit: Number(result?.limit || candidatePageSize || 10),
-        totalPages: Math.max(1, Number(result?.totalPages || 1))
+        total: Number(payload?.total || 0),
+        page: Number(payload?.page || candidatePage || 1),
+        limit: Number(payload?.limit || candidatePageSize || 10),
+        totalPages: Math.max(1, Number(payload?.totalPages || 1))
       });
     }).catch((error) => {
       if (cancelled) return;
@@ -23634,7 +23646,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 </div>
                 {candidateFilterPanelOpen ? renderCandidateFilterPanel() : null}
                 {candidateHasSmartChipSelection ? (
-                  <div className="stack-list" style={{ marginTop: 10 }}>
+                  <div ref={candidateSmartChipResultsRef} className="stack-list" style={{ marginTop: 10 }}>
                     {SMART_SEARCH_QUICK_CHIPS
                       .filter((chip) => candidateQuickChipIds.includes(chip.id))
                       .map((chip) => {
