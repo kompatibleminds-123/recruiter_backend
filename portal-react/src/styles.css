@@ -1630,6 +1630,16 @@ textarea { min-height: 92px; resize: vertical; }
   flex: 2 1 520px;
   min-width: 320px;
 }
+.candidate-search-toolbar--smart {
+  gap: 0.75rem;
+}
+.candidate-search-toolbar--smart .candidate-search-toolbar__action {
+  flex: 0 1 220px;
+  min-width: 160px;
+  max-width: 220px;
+  min-height: 38px;
+  padding: 0.5rem 0.9rem;
+}
 .chip {
   padding: 0.28rem 0.56rem;
   border-radius: 999px;
@@ -1796,10 +1806,12 @@ textarea { min-height: 92px; resize: vertical; }
   display: grid;
   grid-template-columns: 1fr;
   gap: 1rem;
+  margin-top: 1rem;
 }
 .candidate-common-filter-card {
   border: 1px solid #dbe6f7;
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  margin-bottom: 1rem;
 }
 .candidate-filter-head--inline {
   display: flex;
@@ -1823,6 +1835,10 @@ textarea { min-height: 92px; resize: vertical; }
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+.candidate-quick-filter-actions {
+  margin-top: 1rem;
+  justify-content: flex-start;
+}
 .candidate-advanced-toggle-card {
   padding: 0.2rem;
 }
@@ -1837,6 +1853,10 @@ textarea { min-height: 92px; resize: vertical; }
   border: 1px solid #d7e3f7;
   border-radius: 16px;
   padding: 0.9rem 1rem;
+}
+.candidate-advanced-toggle:hover {
+  background: #f5f9ff;
+  border-color: #c9daf7;
 }
 .candidate-advanced-toggle span:first-child {
   font-weight: 800;
@@ -2199,7 +2219,7 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .candidate-filter-layout {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 0.7fr) minmax(0, 1fr);
   gap: 0.9rem;
   align-items: start;
 }
@@ -2254,6 +2274,18 @@ textarea { min-height: 92px; resize: vertical; }
   align-items: center;
   padding: 0.8rem 0.95rem;
   font-weight: 700;
+}
+.candidate-filter-card .filter-dropdown {
+  border-color: #cfe0fb;
+  background: #fff;
+  box-shadow: none;
+}
+.candidate-filter-card .filter-dropdown__summary {
+  background: #fff;
+  color: #2d3c5e;
+}
+.candidate-filter-card .filter-dropdown__summary:hover {
+  background: #f8fbff;
 }
 .filter-dropdown__summary::-webkit-details-marker {
   display: none;
@@ -2790,6 +2822,7 @@ textarea { min-height: 92px; resize: vertical; }
 .candidate-quick-chip-builder {
   border: 1px solid #f1c7cf;
   background: linear-gradient(180deg, #fff7f8 0%, #fff1f3 100%);
+  margin-bottom: 1rem;
 }
 .candidate-quick-chip-builder .chip-toggle.active {
   border-color: #e99aa8;

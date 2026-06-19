@@ -9055,16 +9055,10 @@ function PortalApp({ token, onLogout }) {
   };
   const renderCandidateQuickFilters = ({ showApply = true } = {}) => (
     <div className="item-card compact-card candidate-common-filter-card">
-      <div className="candidate-filter-head candidate-filter-head--inline">
+      <div className="candidate-filter-head">
         <div>
           <h3>Quick Filters</h3>
           <p className="muted">These filters work across both Captured Candidates and Database Search.</p>
-        </div>
-        <div className="button-row tight">
-          {showApply ? (
-            <button className={candidateQuickFiltersDirty ? "" : "ghost-btn"} disabled={!candidateQuickFiltersDirty} onClick={applyCandidateQuickFilters}>Apply quick filters</button>
-          ) : null}
-          <button className="ghost-btn" onClick={resetCandidateQuickFilters}>Reset quick filters</button>
         </div>
       </div>
       <div className="candidate-common-filter-grid">
@@ -9103,6 +9097,12 @@ function PortalApp({ token, onLogout }) {
             {candidateQuickFilterJdOptions.map((label) => <option key={`candidate-quick-jd-${label}`} value={label}>{label}</option>)}
           </select>
         </label>
+      </div>
+      <div className="button-row tight candidate-quick-filter-actions">
+        {showApply ? (
+          <button className={candidateQuickFiltersDirty ? "" : "ghost-btn"} disabled={!candidateQuickFiltersDirty} onClick={applyCandidateQuickFilters}>Apply</button>
+        ) : null}
+        <button className="ghost-btn" onClick={resetCandidateQuickFilters}>Reset</button>
       </div>
     </div>
   );
@@ -23503,9 +23503,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     }}>Reset search</button>
                   </div>
                 ) : (
-                  <div className="toolbar candidate-search-toolbar">
-                    <button disabled={candidateSearchBusy} onClick={() => void runCandidateSearch()}>Run Smart Search</button>
-                    <button className="ghost-btn" onClick={() => {
+                  <div className="toolbar candidate-search-toolbar candidate-search-toolbar--smart">
+                    <button className="candidate-search-toolbar__action" disabled={candidateSearchBusy} onClick={() => void runCandidateSearch()}>Run Smart Search</button>
+                    <button className="ghost-btn candidate-search-toolbar__action" onClick={() => {
                       setCandidateSearchText("");
                       setCandidateSearchQueryUsed("");
                       setCandidateKeywordMust("");
