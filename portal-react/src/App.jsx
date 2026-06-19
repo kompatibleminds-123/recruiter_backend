@@ -13572,12 +13572,11 @@ function PortalApp({ token, onLogout }) {
     candidateUniverseAll.forEach((item) => {
       const clientLabel = String(item?.client_name || item?.clientName || "").trim();
       const recruiterLabel = String(item?.assigned_to_name || item?.assignedToName || item?.recruiterName || "").trim();
-      const jdLabel = String(item?.jdTitle || item?.position || item?.role || item?.currentDesignation || "").trim();
       if (clientLabel) clients.add(clientLabel);
       if (recruiterLabel) recruiters.add(recruiterLabel);
-      if (jdLabel) jdPairs.push({ client: clientLabel, label: jdLabel });
     });
     (state.jobs || []).forEach((job) => {
+      if (job?.archived === true || String(job?.status || "").trim().toLowerCase() === "archived") return;
       const clientLabel = String(job?.clientName || job?.client_name || "").trim();
       const jdLabel = String(job?.title || "").trim();
       if (clientLabel) clients.add(clientLabel);
@@ -24199,6 +24198,60 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">👥</span>Active</div><div className="metric-value">{renderLoadedMetricValue(capturedNotesStats.active)}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">⏳</span>Inactive</div><div className="metric-value">{renderLoadedMetricValue(capturedNotesStats.inactive || 0)}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">✅</span>Converted</div><div className="metric-value">{renderLoadedMetricValue(capturedNotesStats.converted)}</div></div>
+              </div>
+              <div className="form-grid three-col" style={{ marginTop: 10 }}>
+                <label><span>Date from</span><input type="date" value={candidateFilters.dateFrom} onChange={(e) => setCandidateFilters((current) => ({ ...current, dateFrom: e.target.value }))} /></label>
+                <label><span>Date to</span><input type="date" value={candidateFilters.dateTo} onChange={(e) => setCandidateFilters((current) => ({ ...current, dateTo: e.target.value }))} /></label>
+              </div>
+              <div className="captured-filter-grid">
+                <MultiSelectDropdown label="Clients" options={capturedCandidateOptions.clients} selected={candidateFilters.clients} onToggle={(value) => setCandidateFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value], jds: [] }))} />
+                <MultiSelectDropdown label="JD / Role" options={capturedCandidateOptions.jds} selected={candidateFilters.jds} allowAll emptySummary={candidateFilters.clients.length ? "All jd / role" : "Choose client first"} onToggle={(value) => setCandidateFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))} />
+                <MultiSelectDropdown label="Sources" options={capturedCandidateOptions.sources} selected={candidateFilters.sources} onToggle={(value) => setCandidateFilters((current) => ({ ...current, sources: value === "__all__" ? [] : current.sources.includes(value) ? current.sources.filter((item) => item !== value) : [...current.sources, value] }))} />
+                {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Assigned to" options={capturedCandidateOptions.assignedTo} selected={candidateFilters.assignedTo} onToggle={(value) => setCandidateFilters((current) => ({ ...current, assignedTo: value === "__all__" ? [] : current.assignedTo.includes(value) ? current.assignedTo.filter((item) => item !== value) : [...current.assignedTo, value] }))} /> : null}
+                <MultiSelectDropdown label="Captured by" options={capturedCandidateOptions.capturedBy} selected={candidateFilters.capturedBy} onToggle={(value) => setCandidateFilters((current) => ({ ...current, capturedBy: value === "__all__" ? [] : current.capturedBy.includes(value) ? current.capturedBy.filter((item) => item !== value) : [...current.capturedBy, value] }))} />
+                <MultiSelectDropdown label="Outcome" options={capturedCandidateOptions.outcomes} selected={candidateFilters.outcomes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
+                <MultiSelectDropdown label="State" options={capturedCandidateOptions.activeStates} selected={candidateFilters.activeStates} allowAll={false} emptySummary="All states" onToggle={(value) => setCandidateFilters((current) => ({ ...current, activeStates: current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
+              </div>
+              <div className="button-row tight" style={{ marginTop: 8 }}>
+                <button
+                  onClick={() => {
+                    setCapturedPage(1);
+                    setCandidateFiltersApplied({
+                      ...candidateFilters,
+                      clients: [...(candidateFilters.clients || [])],
+                      jds: [...(candidateFilters.jds || [])],
+                      assignedTo: [...(candidateFilters.assignedTo || [])],
+                      capturedBy: [...(candidateFilters.capturedBy || [])],
+                      sources: [...(candidateFilters.sources || [])],
+                      outcomes: [...(candidateFilters.outcomes || [])],
+                      activeStates: [...(candidateFilters.activeStates || [])]
+                    });
+                  }}
+                >
+                  Apply filters
+                </button>
+                <button
+                  className="ghost-btn"
+                  onClick={() => {
+                    const reset = {
+                      ...candidateFilters,
+                      dateFrom: "",
+                      dateTo: "",
+                      clients: [],
+                      jds: [],
+                      assignedTo: [],
+                      capturedBy: [],
+                      sources: [],
+                      outcomes: [],
+                      activeStates: []
+                    };
+                    setCapturedPage(1);
+                    setCandidateFilters(reset);
+                    setCandidateFiltersApplied(reset);
+                  }}
+                >
+                  Reset
+                </button>
               </div>
               <div className="button-row captured-copy-row">
                 <label className="copy-preset-control">

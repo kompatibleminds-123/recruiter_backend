@@ -1836,7 +1836,7 @@ textarea { min-height: 92px; resize: vertical; }
   text-transform: uppercase;
 }
 .candidate-quick-filter-actions {
-  margin-top: 1.35rem;
+  margin-top: 2rem;
   justify-content: flex-start;
 }
 .candidate-advanced-toggle-card {
