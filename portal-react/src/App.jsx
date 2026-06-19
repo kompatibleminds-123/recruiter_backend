@@ -8989,6 +8989,14 @@ function PortalApp({ token, onLogout }) {
   const candidateQuickFiltersActive = useMemo(() => (
     Object.values(candidateQuickFiltersApplied || {}).some((value) => Boolean(String(value || "").trim()))
   ), [candidateQuickFiltersApplied]);
+  const toggleCandidateQuickChip = (chipId) => {
+    const normalizedId = String(chipId || "").trim();
+    if (!normalizedId) return;
+    setCandidatePage(1);
+    setCandidateQuickChipIds((current) => (
+      current.includes(normalizedId) ? [] : [normalizedId]
+    ));
+  };
   const candidateNoticeBucketSelectedLabels = useMemo(() => (
     parseMultiChipTokens(candidateStructuredFiltersDraft.noticeBucket)
       .map((value) => candidateNoticeBucketLabelByValue[value] || value)
@@ -23525,11 +23533,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <button
                           key={chip.id}
                           className={`chip chip-toggle${candidateQuickChipIds.includes(chip.id) ? " active" : ""}`}
-                          onClick={() => setCandidateQuickChipIds((current) => (
-                            current.includes(chip.id)
-                              ? current.filter((id) => id !== chip.id)
-                              : [...current, chip.id]
-                          ))}
+                          onClick={() => toggleCandidateQuickChip(chip.id)}
                         >
                           {chip.label}
                         </button>
@@ -23637,11 +23641,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         const liveRows = candidateSmartChipRowsEffective[chip.id] || [];
                         const cachedRows = candidateSmartChipRowsStableRef.current?.[chip.id] || [];
                         const rows = liveRows.length > 0 ? liveRows : cachedRows;
-                        const chipCount = rows.length;
+                        const showChipLoading = candidateSmartChipLoading && liveRows.length === 0 && cachedRows.length === 0;
+                        const chipCount = showChipLoading ? null : rows.length;
                         return (
                           <article key={chip.id} className="item-card compact-card candidate-smart-section">
                             <div className="candidate-smart-head">
-                              <h3>{chip.label} ({chipCount})</h3>
+                              <h3>{chip.label}{chipCount === null ? "" : ` (${chipCount})`}</h3>
                               <button
                                 className="ghost-btn"
                                 disabled={!rows.length}
@@ -23650,7 +23655,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                 Download
                               </button>
                             </div>
-                            {!rows.length ? (
+                            {showChipLoading ? (
+                              <div className="empty-state">Loading candidates...</div>
+                            ) : !rows.length ? (
                               <div className="empty-state">No candidates found for this chip and current filters.</div>
                             ) : (
                               <div className="table-wrap candidate-smart-table-wrap">
