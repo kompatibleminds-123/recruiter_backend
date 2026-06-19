@@ -13756,6 +13756,50 @@ function PortalApp({ token, onLogout }) {
     : databaseServerQueryMode
       ? Math.max(1, Number(databaseQueryMeta?.totalPages || 1))
       : Math.max(1, Math.ceil((candidateUniverse.length || 0) / Math.max(10, Number(candidatePageSize || 10))));
+  const renderDatabaseCandidateCard = (item) => {
+    const stableItemKey = String(
+      item?.id ||
+      item?.assessmentId ||
+      item?.candidateId ||
+      item?.raw?.candidate?.id ||
+      `${item?.name || item?.candidateName || "candidate"}-${item?.phone || item?.email || ""}`
+    );
+    const title = item?.name || item?.candidateName || "Candidate";
+    const role = item?.position || item?.jdTitle || item?.assignedJdTitle || item?.assigned_jd_title || item?.jd_title || item?.role || item?.currentDesignation || "Untitled role";
+    const metaLine = [
+      item?.company || item?.currentCompany || "",
+      item?.location || "",
+      item?.source ? `Source: ${item.source}` : ""
+    ].filter(Boolean).join(" | ");
+    return (
+      <article className="item-card compact-card" key={stableItemKey}>
+        <div className="item-card__top">
+          <div>
+            <h3>{`${title} | ${role}`}</h3>
+            <p className="muted">{metaLine}</p>
+            <div className="candidate-snippet">{[
+              item?.experience || item?.totalExperience ? `${item?.experience || item?.totalExperience} Experience` : "",
+              item?.current_ctc || item?.currentCtc ? `Current CTC: ${item?.current_ctc || item?.currentCtc}` : "",
+              item?.expected_ctc || item?.expectedCtc ? `Expected CTC: ${item?.expected_ctc || item?.expectedCtc}` : "",
+              item?.notice_period || item?.noticePeriod ? `Notice: ${item?.notice_period || item?.noticePeriod}` : ""
+            ].filter(Boolean).join("\n")}</div>
+            <div className="button-row drilldown-actions">
+              <button onClick={() => setDatabaseProfileItem(item)}>Open profile</button>
+              {candidateHasStoredCv(item) ? (
+                <CvOpenActions
+                  onOpenOriginal={() => openDatabaseCandidateCv(item)}
+                  onOpenBranded={() => void openBrandedCandidateCv(item)}
+                />
+              ) : null}
+              {String(item?.id || "").trim() ? (
+                <button className="ghost-btn" onClick={() => void openCandidateProfileCard(item.id, { statusTarget: "workspace" })}>Open candidate card</button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </article>
+    );
+  };
   useEffect(() => {
     setCandidatePage((current) => Math.min(Math.max(1, current), totalCandidatePages));
   }, [totalCandidatePages]);
@@ -23639,7 +23683,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </div>
                     ) : null}
                     <div className="stack-list">
-                      {!pagedCandidates.length ? <div className="empty-state">No candidates found for this view.</div> : pagedCandidates.map((item) => renderCandidateCard(item))}
+                      {!pagedCandidates.length ? <div className="empty-state">No candidates found for this view.</div> : pagedCandidates.map((item) => renderDatabaseCandidateCard(item))}
                     </div>
                     <div className="button-row">
                       <label className="copy-preset-control">
