@@ -1001,15 +1001,15 @@ textarea { min-height: 92px; resize: vertical; }
 .dashboard-snake-funnel {
   display: grid;
   grid-template-columns:
-    minmax(0, 1fr) 72px
-    minmax(0, 1fr) 72px
-    minmax(0, 1fr) 72px
-    minmax(0, 1fr) 72px
-    minmax(0, 1fr) 72px
+    minmax(0, 1fr) 44px
+    minmax(0, 1fr) 44px
+    minmax(0, 1fr) 44px
+    minmax(0, 1fr) 44px
+    minmax(0, 1fr) 44px
     minmax(0, 1fr);
-  gap: 10px;
+  gap: 6px;
   align-items: start;
-  margin-top: 0.35rem;
+  margin-top: 0.22rem;
   width: 100%;
   overflow: hidden;
 }
@@ -1026,24 +1026,27 @@ textarea { min-height: 92px; resize: vertical; }
   min-height: 94px;
   min-width: 0;
   width: 100%;
-  border: 1px solid #dbe6f6;
-  border-radius: 22px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-  padding: 0.9rem 0.95rem;
+  border: 1px solid #E5E7EB;
+  border-radius: 20px;
+  background: #ffffff;
+  padding: 0.9rem 0.9rem;
   display: grid;
   align-content: space-between;
   text-align: left;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+  box-shadow: 0 2px 8px rgba(15,23,42,0.04);
   position: relative;
   overflow: hidden;
+  transition: all 0.2s ease;
 }
 .dashboard-snake-card--button {
   cursor: pointer;
   color: inherit;
 }
+.dashboard-snake-card:hover {
+  transform: translateY(-2px);
+}
 .dashboard-snake-card--button:hover {
-  border-color: #c8d8f4;
-  transform: translateY(-1px);
+  border-color: #d8dee8;
 }
 .dashboard-snake-card__header {
   display: flex;
@@ -1072,9 +1075,6 @@ textarea { min-height: 92px; resize: vertical; }
   white-space: nowrap;
   overflow-wrap: normal;
   word-break: normal;
-}
-.dashboard-snake-card__label--totalCandidates {
-  font-size: 0.58rem;
 }
 .dashboard-snake-card__value {
   font-size: 1.28rem;
@@ -1142,7 +1142,7 @@ textarea { min-height: 92px; resize: vertical; }
   position: static;
   width: 100%;
   display: grid;
-  gap: 0.24rem;
+  gap: 0.08rem;
   align-items: center;
   justify-items: center;
   min-width: 0;
@@ -1151,8 +1151,9 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .dashboard-snake-connector__line {
   width: 100%;
-  height: 3px;
-  background: linear-gradient(90deg, #d9e4fb 0%, #c5d6fb 100%);
+  height: 1px;
+  background: #CBD5E1;
+  opacity: 0.7;
   border-radius: 999px;
   position: relative;
 }
@@ -1161,33 +1162,36 @@ textarea { min-height: 92px; resize: vertical; }
   position: absolute;
   right: -1px;
   top: 50%;
-  width: 11px;
-  height: 11px;
-  border-top: 3px solid #cfdcf8;
-  border-right: 3px solid #cfdcf8;
+  width: 6px;
+  height: 6px;
+  border-top: 1px solid #CBD5E1;
+  border-right: 1px solid #CBD5E1;
+  opacity: 0.7;
   transform: translateY(-50%) rotate(45deg);
 }
 .dashboard-snake-connector__meta {
   display: grid;
-  gap: 0.18rem;
+  gap: 0.02rem;
   justify-items: center;
   position: static;
   transform: none;
+  margin-bottom: -1px;
 }
 .dashboard-snake-connector__label {
-  font-size: 0.6rem;
-  line-height: 1.14;
+  font-size: 0.5rem;
+  line-height: 1.08;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.03em;
   color: #5f7192;
   text-align: center;
-  max-width: 68px;
-  font-weight: 800;
+  max-width: 54px;
+  font-weight: 500;
 }
 .dashboard-snake-connector__value {
-  font-size: 0.96rem;
-  color: #15376b;
-  font-weight: 900;
+  font-size: 14px;
+  color: #2563EB;
+  font-weight: 700;
+  line-height: 1;
 }
 @media (max-width: 900px) {
   .agenda-header {

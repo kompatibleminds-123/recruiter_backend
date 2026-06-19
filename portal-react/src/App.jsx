@@ -22275,8 +22275,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   );
   const safePct = (num, den) => (den > 0 ? Math.round((num / den) * 100) : 0);
   const primaryKpiCards = [
-    { key: "totalCandidates", drillMetric: "totalCandidates", label: "Total Candidates", value: Number(dashboardOverall.totalCandidates || 0), icon: "👥" },
-    { key: "sharedProfiles", drillMetric: "sharedProfiles", label: "Shared Profiles", value: Number(dashboardOverall.sharedProfiles || 0), icon: "🔗" },
+    { key: "totalCandidates", drillMetric: "totalCandidates", label: "Sourced", value: Number(dashboardOverall.totalCandidates || 0), icon: "👥" },
+    { key: "sharedProfiles", drillMetric: "sharedProfiles", label: "Shared", value: Number(dashboardOverall.sharedProfiles || 0), icon: "🔗" },
     { key: "interviews", drillMetric: "interviews", label: "Interviews", value: Number(dashboardOverall.interviews || 0), icon: "🗓" },
     { key: "shortlisted", drillMetric: "shortlisted", label: "Shortlist", value: Number(dashboardOverall.shortlisted || 0), icon: "⭐" },
     { key: "offers", drillMetric: "offered", label: "Offers", value: Number(dashboardOverall.offers || 0), icon: "✉" },
