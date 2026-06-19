@@ -9091,9 +9091,9 @@ function PortalApp({ token, onLogout }) {
           </select>
         </label>
         <label>
-          <span>JD / Job</span>
+          <span>JD / Role</span>
           <select value={candidateQuickFiltersDraft.jd} onChange={(e) => setCandidateQuickFiltersDraft((current) => ({ ...current, jd: e.target.value }))}>
-            <option value="">{candidateQuickFiltersDraft.client ? "All JDs for selected client" : "All JDs"}</option>
+            <option value="">{candidateQuickFiltersDraft.client ? "All roles for selected client" : "All JDs / Roles"}</option>
             {candidateQuickFilterJdOptions.map((label) => <option key={`candidate-quick-jd-${label}`} value={label}>{label}</option>)}
           </select>
         </label>
@@ -13588,7 +13588,7 @@ function PortalApp({ token, onLogout }) {
       const label = String(entry?.label || "").trim();
       const client = String(entry?.client || "").trim().toLowerCase();
       if (!label) return;
-      if (selectedClient && client && client !== selectedClient) return;
+      if (selectedClient && client !== selectedClient) return;
       labels.add(label);
     });
     return Array.from(labels).sort((a, b) => a.localeCompare(b));
@@ -24108,9 +24108,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">👥</span>Active</div><div className="metric-value">{renderLoadedMetricValue(capturedNotesStats.active)}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">⏳</span>Inactive</div><div className="metric-value">{renderLoadedMetricValue(capturedNotesStats.inactive || 0)}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">✅</span>Converted</div><div className="metric-value">{renderLoadedMetricValue(capturedNotesStats.converted)}</div></div>
-              </div>
-              <div style={{ marginTop: 10 }}>
-                {renderCandidateQuickFilters()}
               </div>
               <div className="button-row captured-copy-row">
                 <label className="copy-preset-control">
