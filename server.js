@@ -7144,8 +7144,10 @@ function databaseSmartChipRowMatchesFrontendFilters(item, filters = {}) {
   const recruiterValues = [
     item?.assigned_to_name || item?.assignedToName || "",
     item?.recruiter_name || item?.recruiterName || "",
+    item?.applyAssignedToName || item?.apply_assigned_to_name || "",
     item?.raw?.candidate?.assigned_to_name || item?.raw?.candidate?.assignedToName || "",
-    item?.raw?.candidate?.recruiter_name || item?.raw?.candidate?.recruiterName || ""
+    item?.raw?.candidate?.recruiter_name || item?.raw?.candidate?.recruiterName || "",
+    item?.raw?.candidate?.applyAssignedToName || item?.raw?.candidate?.apply_assigned_to_name || ""
   ].map((value) => String(value || "").trim()).filter(Boolean);
   const draftPayload = normalizeJsonObjectInput(item?.draft_payload || item?.draftPayload || item?.raw?.candidate?.draft_payload || item?.raw?.candidate?.draftPayload || {});
   const genderValue = String(item?.gender || draftPayload?.gender || "").trim();

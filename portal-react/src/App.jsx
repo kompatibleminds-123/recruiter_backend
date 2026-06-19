@@ -8998,7 +8998,15 @@ function PortalApp({ token, onLogout }) {
     setCandidatePage(1);
     setCandidateQuickChipIds((current) => {
       const next = current.includes(normalizedId) ? [] : [normalizedId];
-      setCandidatePendingScrollTarget(next.length > 0 ? "chips" : "");
+      if (next.length > 0) {
+        setCandidatePendingScrollTarget("chips");
+      } else {
+        setCandidatePendingScrollTarget("database");
+        setCandidateSearchMode("all");
+        setCandidateSearchResults([]);
+        setCandidateSearchQueryUsed("");
+        setCandidateSearchingAs("");
+      }
       return next;
     });
   };
@@ -13592,7 +13600,15 @@ function PortalApp({ token, onLogout }) {
     const jdPairs = [];
     candidateUniverseAll.forEach((item) => {
       const clientLabel = String(item?.client_name || item?.clientName || "").trim();
-      const recruiterLabel = String(item?.assigned_to_name || item?.assignedToName || item?.recruiterName || "").trim();
+      const recruiterLabel = String(
+        item?.assigned_to_name
+        || item?.assignedToName
+        || item?.recruiter_name
+        || item?.recruiterName
+        || item?.applyAssignedToName
+        || item?.apply_assigned_to_name
+        || ""
+      ).trim();
       if (clientLabel) clients.add(clientLabel);
       if (recruiterLabel) recruiters.add(recruiterLabel);
     });
@@ -13630,7 +13646,15 @@ function PortalApp({ token, onLogout }) {
     const genders = new Set();
     const clients = new Set();
     candidateUniverseAll.forEach((item) => {
-      const recruiter = String(item.assigned_to_name || item.assignedToName || "").trim();
+      const recruiter = String(
+        item.assigned_to_name
+        || item.assignedToName
+        || item.recruiter_name
+        || item.recruiterName
+        || item.applyAssignedToName
+        || item.apply_assigned_to_name
+        || ""
+      ).trim();
       const draftPayload = parsePortalObjectField(item?.draft_payload || item?.draftPayload);
       const gender = String(item.gender || draftPayload?.gender || "").trim();
       const client = String(item.client_name || item.clientName || "").trim();
@@ -13685,8 +13709,10 @@ function PortalApp({ token, onLogout }) {
       const recruiterValues = [
         item.assigned_to_name || item.assignedToName || "",
         item.recruiter_name || item.recruiterName || "",
+        item.applyAssignedToName || item.apply_assigned_to_name || "",
         item.raw?.candidate?.assigned_to_name || item.raw?.candidate?.assignedToName || "",
-        item.raw?.candidate?.recruiter_name || item.raw?.candidate?.recruiterName || ""
+        item.raw?.candidate?.recruiter_name || item.raw?.candidate?.recruiterName || "",
+        item.raw?.candidate?.applyAssignedToName || item.raw?.candidate?.apply_assigned_to_name || ""
       ].map((value) => String(value || "").trim()).filter(Boolean);
       const draftPayload = parsePortalObjectField(item?.draft_payload || item?.draftPayload);
       const genderValue = String(item.gender || draftPayload?.gender || "").trim();
@@ -18078,7 +18104,6 @@ function PortalApp({ token, onLogout }) {
     setCandidateSearchBusy(true);
     setCandidatePendingScrollTarget("database");
     setCandidateSearchDebug(null);
-    setCandidateSearchQueryUsed(effectiveSearchText);
     setCandidateSearchingAs(hasKeywordBuilder ? keywordDrivenBoolean : "");
     setStatus("workspace", "Searching candidates...", "ok");
     try {
@@ -18098,6 +18123,7 @@ function PortalApp({ token, onLogout }) {
         interpretation: result?.interpretation || result?.parsed || result?.planner || null,
         debug: result?.debug || null
       });
+      setCandidateSearchQueryUsed(effectiveSearchText);
       setCandidateSearchingAs(hasKeywordBuilder ? keywordDrivenBoolean : String(result?.searchingAsBoolean || "").trim());
       setCandidateSearchResults(result.items || []);
       setCandidateSearchMode("search");
@@ -18139,8 +18165,6 @@ function PortalApp({ token, onLogout }) {
       }
       setStatus("workspace", `${mode === "boolean" ? "Boolean search" : "Smart search"} returned ${result.items?.length || 0} candidates.`, "ok");
     } catch (error) {
-      setCandidateSearchMode("search");
-      setCandidateSearchResults([]);
       setCandidateSearchDebug({ error: String(error?.message || error), query: effectiveSearchText, mode });
       setCandidateSearchingAs("");
       setStatus("workspace", `Search failed: ${String(error?.message || error)}`, "error");
@@ -23681,6 +23705,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 )}
                 {candidateSearchBusy ? (
                   <div className="muted" style={{ marginTop: 6 }}>Searching candidates...</div>
+                ) : null}
+                {!candidateSearchBusy && candidateSearchMode === "search" && String(candidateSearchQueryUsed || "").trim() ? (
+                  <div className="muted" style={{ marginTop: 6 }}>
+                    {`${candidateAiQueryMode === "boolean" ? "Boolean" : "Smart"} search results: ${candidateUniverse.length}`}
+                  </div>
                 ) : null}
                 {candidateAiQueryMode === "natural" && candidateSearchingAs ? (
                   <div className="muted" style={{ marginTop: 8 }}>
