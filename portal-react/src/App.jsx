@@ -9124,39 +9124,6 @@ function PortalApp({ token, onLogout }) {
           <label><span>Location</span><input value={candidateStructuredFiltersDraft.location} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, location: e.target.value }))} placeholder="Mumbai, Hyderabad" /></label>
           <label><span>Education</span><input value={candidateStructuredFiltersDraft.qualification} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, qualification: e.target.value }))} placeholder="B.Tech / MBA" /></label>
           <div className="filter-block">
-            <div className="candidate-filter-label">Source</div>
-            <input value={candidateStructuredFiltersDraft.sourceTypeFilter} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, sourceTypeFilter: e.target.value }))} placeholder="naukri_profile, linkedin, website" />
-          </div>
-        </div>
-        <div className="candidate-filter-column">
-          <div className="candidate-filter-group">
-            <div className="candidate-filter-label">Experience</div>
-            <div className="range-row">
-              <input type="number" min="0" value={candidateStructuredFiltersDraft.minExperience} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, minExperience: e.target.value }))} placeholder="Min experience" />
-              <span>to</span>
-              <input type="number" min="0" value={candidateStructuredFiltersDraft.maxExperience} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, maxExperience: e.target.value }))} placeholder="Max experience" />
-              <span>Years</span>
-            </div>
-          </div>
-          <div className="candidate-filter-group">
-            <div className="candidate-filter-label">Current CTC</div>
-            <div className="range-row">
-              <input type="number" min="0" value={candidateStructuredFiltersDraft.minCurrentCtc} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, minCurrentCtc: e.target.value }))} placeholder="Min salary" />
-              <span>to</span>
-              <input type="number" min="0" value={candidateStructuredFiltersDraft.maxCurrentCtc} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, maxCurrentCtc: e.target.value }))} placeholder="Max salary" />
-              <span>Lacs</span>
-            </div>
-          </div>
-          <div className="candidate-filter-group">
-            <div className="candidate-filter-label">Expected CTC</div>
-            <div className="range-row">
-              <input type="number" min="0" value={candidateStructuredFiltersDraft.minExpectedCtc} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, minExpectedCtc: e.target.value }))} placeholder="Min salary" />
-              <span>to</span>
-              <input type="number" min="0" value={candidateStructuredFiltersDraft.maxExpectedCtc} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, maxExpectedCtc: e.target.value }))} placeholder="Max salary" />
-              <span>Lacs</span>
-            </div>
-          </div>
-          <div className="filter-block">
             <div className="candidate-filter-label">Notice period</div>
             <MultiSelectDropdown
               label="Notice period"
@@ -9179,6 +9146,35 @@ function PortalApp({ token, onLogout }) {
               }}
               emptySummary="Any notice period"
             />
+          </div>
+        </div>
+        <div className="candidate-filter-column">
+          <div className="candidate-filter-group">
+            <div className="candidate-filter-label">Experience</div>
+            <div className="range-row">
+              <input type="number" min="0" value={candidateStructuredFiltersDraft.minExperience} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, minExperience: e.target.value }))} placeholder="Min Exp." />
+              <span>to</span>
+              <input type="number" min="0" value={candidateStructuredFiltersDraft.maxExperience} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, maxExperience: e.target.value }))} placeholder="Max Exp." />
+              <span>Years</span>
+            </div>
+          </div>
+          <div className="candidate-filter-group">
+            <div className="candidate-filter-label">Current CTC</div>
+            <div className="range-row">
+              <input type="number" min="0" value={candidateStructuredFiltersDraft.minCurrentCtc} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, minCurrentCtc: e.target.value }))} placeholder="Min salary" />
+              <span>to</span>
+              <input type="number" min="0" value={candidateStructuredFiltersDraft.maxCurrentCtc} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, maxCurrentCtc: e.target.value }))} placeholder="Max salary" />
+              <span>Lacs</span>
+            </div>
+          </div>
+          <div className="candidate-filter-group">
+            <div className="candidate-filter-label">Expected CTC</div>
+            <div className="range-row">
+              <input type="number" min="0" value={candidateStructuredFiltersDraft.minExpectedCtc} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, minExpectedCtc: e.target.value }))} placeholder="Min salary" />
+              <span>to</span>
+              <input type="number" min="0" value={candidateStructuredFiltersDraft.maxExpectedCtc} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, maxExpectedCtc: e.target.value }))} placeholder="Max salary" />
+              <span>Lacs</span>
+            </div>
           </div>
         </div>
       </div>
@@ -23657,53 +23653,48 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       })}
                   </div>
                 ) : null}
-                <div className="button-row">
-                  <label className="copy-preset-control">
-                    <span>Copy preset</span>
-                    <select value={activeCopyPresetId} onChange={(e) => setActiveCopyPresetId(e.target.value)}>
-                      {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
-                    </select>
-                  </label>
-                  <button onClick={() => void copyCandidatesExcel()}>Copy Excel</button>
-                  <button onClick={() => void copyCandidatesWhatsapp()}>Copy WhatsApp</button>
-                  <button onClick={() => void copyCandidatesEmail()}>Copy Email</button>
-                  <button className="ghost-btn" onClick={() => void attachCurrentDatabasePageToCampaign()}>Attach Page to Campaign</button>
-                  <button className="ghost-btn" onClick={() => downloadCandidatesExcel()}>Download results</button>
-                </div>
                 {!candidateHasSmartChipSelection ? (
                   <>
-                    {databaseAllMode || databaseServerQueryMode ? (
-                      <div className="button-row tight" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                        <div className="muted">
-                          {Number((databaseAllMode ? databaseListMeta?.total : databaseQueryMeta?.total) || 0)
-                            ? `Showing ${((candidatePage - 1) * Math.max(10, Number(candidatePageSize || 10))) + 1}-${Math.min(Number((databaseAllMode ? databaseListMeta?.total : databaseQueryMeta?.total) || 0), ((candidatePage - 1) * Math.max(10, Number(candidatePageSize || 10))) + pagedCandidates.length)} of ${Number((databaseAllMode ? databaseListMeta?.total : databaseQueryMeta?.total) || 0)}`
-                            : "Showing 0 of 0"}
-                        </div>
-                        {(databaseAllMode ? databaseListLoading : databaseQueryLoading) ? <div className="muted">Loading database...</div> : null}
-                      </div>
-                    ) : null}
-                    <div className="stack-list">
-                      {!pagedCandidates.length ? <div className="empty-state">No candidates found for this view.</div> : pagedCandidates.map((item) => renderDatabaseCandidateCard(item))}
-                    </div>
-                    <div className="button-row">
+                    <div className="button-row captured-copy-row database-results-toolbar">
                       <label className="copy-preset-control">
-                        <span>Profiles / page</span>
-                        <select
-                          value={candidatePageSize}
-                          onChange={(e) => {
-                            const nextSize = Number(e.target.value || 10);
-                            setCandidatePageSize([10, 25, 50].includes(nextSize) ? nextSize : 10);
-                            setCandidatePage(1);
-                          }}
-                        >
-                          {[10, 25, 50].map((size) => (
-                            <option key={`candidate-page-size-${size}`} value={size}>{size}</option>
-                          ))}
+                        <span>Copy preset</span>
+                        <select value={activeCopyPresetId} onChange={(e) => setActiveCopyPresetId(e.target.value)}>
+                          {exportPresetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
                         </select>
                       </label>
-                      <button className="ghost-btn" disabled={candidatePage <= 1 || (databaseAllMode ? databaseListLoading : databaseQueryLoading)} onClick={() => setCandidatePage((page) => Math.max(1, page - 1))}>Previous</button>
-                      <div className="muted">Page {candidatePage} of {totalCandidatePages}</div>
-                      <button className="ghost-btn" disabled={candidatePage >= totalCandidatePages || (databaseAllMode ? databaseListLoading : databaseQueryLoading)} onClick={() => setCandidatePage((page) => Math.min(totalCandidatePages, page + 1))}>Next</button>
+                      <button className="ghost-btn captured-copy-excel-btn" onClick={() => void copyCandidatesExcel()}>
+                        <span className="captured-copy-excel-btn__icon" aria-hidden="true">X</span>
+                        <span>Copy Excel</span>
+                      </button>
+                      <button className="ghost-btn" onClick={() => void attachCurrentDatabasePageToCampaign()}>Attach Page to Campaign</button>
+                      {String(state.user?.role || "").toLowerCase() === "admin" ? (
+                        <button className="ghost-btn" onClick={() => downloadCandidatesExcel()}>Download results</button>
+                      ) : null}
+                      <div className="database-results-toolbar__spacer" />
+                      {(databaseAllMode ? databaseListLoading : databaseQueryLoading) ? <div className="muted">Loading database...</div> : null}
+                      <div className="button-row database-results-toolbar__pager">
+                        <label className="copy-preset-control" style={{ margin: 0 }}>
+                          <span>Profiles / page</span>
+                          <select
+                            value={candidatePageSize}
+                            onChange={(e) => {
+                              const nextSize = Number(e.target.value || 10);
+                              setCandidatePageSize([10, 25, 50].includes(nextSize) ? nextSize : 10);
+                              setCandidatePage(1);
+                            }}
+                          >
+                            {[10, 25, 50].map((size) => (
+                              <option key={`candidate-page-size-${size}`} value={size}>{size}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <button className="ghost-btn" disabled={candidatePage <= 1 || (databaseAllMode ? databaseListLoading : databaseQueryLoading)} onClick={() => setCandidatePage((page) => Math.max(1, page - 1))}>Previous</button>
+                        <div className="muted">Page {candidatePage} of {totalCandidatePages}</div>
+                        <button className="ghost-btn" disabled={candidatePage >= totalCandidatePages || (databaseAllMode ? databaseListLoading : databaseQueryLoading)} onClick={() => setCandidatePage((page) => Math.min(totalCandidatePages, page + 1))}>Next</button>
+                      </div>
+                    </div>
+                    <div className="stack-list">
+                      {!pagedCandidates.length ? <div className="empty-state">No candidates found for this view.</div> : pagedCandidates.map((item) => renderDatabaseCandidateCard(item))}
                     </div>
                   </>
                 ) : null}

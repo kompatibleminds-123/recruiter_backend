@@ -1731,6 +1731,23 @@ textarea { min-height: 92px; resize: vertical; }
   min-width: 280px;
 }
 
+.database-results-toolbar {
+  align-items: center;
+  margin-bottom: 0.8rem;
+}
+
+.database-results-toolbar__spacer {
+  flex: 1 1 auto;
+}
+
+.database-results-toolbar__pager {
+  margin-left: auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
 .captured-notes-list {
   margin-top: 0.85rem;
 }
@@ -2182,7 +2199,7 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .candidate-filter-layout {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.9rem;
   align-items: start;
 }
@@ -2190,6 +2207,7 @@ textarea { min-height: 92px; resize: vertical; }
   display: grid;
   gap: 0.78rem;
   min-width: 0;
+  grid-template-rows: repeat(3, minmax(0, auto));
 }
 .candidate-filter-column label {
   display: grid;
