@@ -1001,15 +1001,15 @@ textarea { min-height: 92px; resize: vertical; }
 .dashboard-snake-funnel {
   display: grid;
   grid-template-columns:
-    minmax(0, 1fr) 44px
-    minmax(0, 1fr) 44px
-    minmax(0, 1fr) 44px
-    minmax(0, 1fr) 44px
-    minmax(0, 1fr) 44px
+    minmax(0, 1fr) 58px
+    minmax(0, 1fr) 58px
+    minmax(0, 1fr) 58px
+    minmax(0, 1fr) 58px
+    minmax(0, 1fr) 58px
     minmax(0, 1fr);
-  gap: 6px;
+  gap: 8px;
   align-items: start;
-  margin-top: 0.22rem;
+  margin-top: 0.28rem;
   width: 100%;
   overflow: hidden;
 }
@@ -1019,7 +1019,7 @@ textarea { min-height: 92px; resize: vertical; }
 .dashboard-snake-connector-cell {
   min-width: 0;
   display: grid;
-  align-items: start;
+  align-items: stretch;
   justify-items: center;
 }
 .dashboard-snake-card {
@@ -1141,19 +1141,23 @@ textarea { min-height: 92px; resize: vertical; }
 .dashboard-snake-connector {
   position: static;
   width: 100%;
+  height: 100%;
   display: grid;
-  gap: 0.08rem;
+  grid-template-rows: auto auto auto;
+  gap: 0.18rem;
+  align-content: center;
   align-items: center;
   justify-items: center;
   min-width: 0;
-  padding-top: 22px;
+  padding: 10px 0;
   pointer-events: none;
 }
 .dashboard-snake-connector__line {
+  grid-row: 2;
   width: 100%;
-  height: 1px;
-  background: #CBD5E1;
-  opacity: 0.7;
+  height: 2px;
+  background: #64748B;
+  opacity: 1;
   border-radius: 999px;
   position: relative;
 }
@@ -1162,35 +1166,32 @@ textarea { min-height: 92px; resize: vertical; }
   position: absolute;
   right: -1px;
   top: 50%;
-  width: 6px;
-  height: 6px;
-  border-top: 1px solid #CBD5E1;
-  border-right: 1px solid #CBD5E1;
-  opacity: 0.7;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid #64748B;
+  border-right: 2px solid #64748B;
+  opacity: 1;
   transform: translateY(-50%) rotate(45deg);
 }
 .dashboard-snake-connector__meta {
-  display: grid;
-  gap: 0.02rem;
-  justify-items: center;
-  position: static;
-  transform: none;
-  margin-bottom: -1px;
+  display: contents;
 }
 .dashboard-snake-connector__label {
-  font-size: 0.5rem;
-  line-height: 1.08;
+  grid-row: 3;
+  font-size: 0.56rem;
+  line-height: 1.12;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  color: #5f7192;
+  color: #475569;
   text-align: center;
-  max-width: 54px;
+  max-width: 58px;
   font-weight: 500;
 }
 .dashboard-snake-connector__value {
+  grid-row: 1;
   font-size: 14px;
   color: #2563EB;
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1;
 }
 @media (max-width: 900px) {
