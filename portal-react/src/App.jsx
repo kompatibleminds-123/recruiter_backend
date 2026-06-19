@@ -2709,19 +2709,19 @@ function sortApplicantsForList(items = [], sortBy = "created") {
 
 function sortAssessmentsForList(items = [], sortBy = "updated") {
   const sortMode = String(sortBy || "updated").trim().toLowerCase();
-  const getAssessmentConvertedAt = (assessment = {}) => String(
-    assessment?.generatedAt ||
-    assessment?.generated_at ||
+  const getAssessmentCreatedAt = (assessment = {}) => String(
     assessment?.createdAt ||
     assessment?.created_at ||
+    assessment?.generatedAt ||
+    assessment?.generated_at ||
     ""
   ).trim();
   const primaryKeys = sortMode === "created"
-    ? ["generatedAt", "generated_at", "createdAt", "created_at"]
+    ? ["createdAt", "created_at", "generatedAt", "generated_at"]
     : ["updatedAt", "updated_at", "createdAt", "created_at", "generatedAt"];
   return (Array.isArray(items) ? items : []).slice().sort((a, b) => {
-    const aTime = Date.parse(sortMode === "created" ? getAssessmentConvertedAt(a) : String(primaryKeys.map((key) => a?.[key]).find((value) => String(value || "").trim()) || ""));
-    const bTime = Date.parse(sortMode === "created" ? getAssessmentConvertedAt(b) : String(primaryKeys.map((key) => b?.[key]).find((value) => String(value || "").trim()) || ""));
+    const aTime = Date.parse(sortMode === "created" ? getAssessmentCreatedAt(a) : String(primaryKeys.map((key) => a?.[key]).find((value) => String(value || "").trim()) || ""));
+    const bTime = Date.parse(sortMode === "created" ? getAssessmentCreatedAt(b) : String(primaryKeys.map((key) => b?.[key]).find((value) => String(value || "").trim()) || ""));
     const diff = (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
     if (diff) return diff;
     if (sortMode === "created") return 0;
@@ -5979,6 +5979,7 @@ function NewDraftModal({
   onPasteScreenshot,
   onImportSheet,
   importBusy = false,
+  busyMessage = "",
   onOpenSheetImportPreview
 }) {
   if (!open) return null;
@@ -6005,13 +6006,13 @@ function NewDraftModal({
         {importBusy ? (
           <div className="parse-progress-banner" role="status" aria-live="polite">
             <span className="parse-progress-spinner" aria-hidden="true" />
-            <span>Parsing CV, please wait...</span>
+            <span>{String(busyMessage || "Parsing CV, please wait...")}</span>
           </div>
         ) : null}
         {importBusy && !cvParsePreview ? (
           <div className="parse-progress-block" role="status" aria-live="polite">
             <span className="parse-progress-spinner parse-progress-spinner--lg" aria-hidden="true" />
-            <div>Reading CV and building draft...</div>
+            <div>{String(busyMessage || "Reading CV and building draft...")}</div>
           </div>
         ) : null}
         {!isCvMode ? (
@@ -6132,7 +6133,7 @@ function NewDraftModal({
           <label className="full"><span>Notes</span><textarea value={form.notes} onChange={(e) => onChange("notes", e.target.value)} /></label>
         </div>
         <div className="button-row">
-          <button onClick={onSave} disabled={importBusy}>{importBusy ? "Parsing..." : "Save draft"}</button>
+          <button onClick={onSave} disabled={importBusy}>{importBusy ? String(busyMessage || "Working...") : "Save draft"}</button>
           <button className="ghost-btn" onClick={onClose} disabled={importBusy}>Cancel</button>
         </div>
       </div>
@@ -9445,6 +9446,7 @@ function PortalApp({ token, onLogout }) {
     setNewDraftCvParsedPatch(null);
   }, []);
   const [newDraftImportBusy, setNewDraftImportBusy] = useState(false);
+  const [newDraftBusyMessage, setNewDraftBusyMessage] = useState("");
   const [newDraftSheetPreviewOpen, setNewDraftSheetPreviewOpen] = useState(false);
   const [newDraftSheetRows, setNewDraftSheetRows] = useState([]);
   const [newDraftSheetRawRows, setNewDraftSheetRawRows] = useState([]);
@@ -15659,11 +15661,50 @@ function PortalApp({ token, onLogout }) {
       draftForm: newDraftForm,
       assignedRecruiter
     });
-    await api("/candidates", token, "POST", { candidate: payload });
-    await refreshCandidateStatsAfterMutation("captured");
-    setNewDraftOpen(false);
-    resetNewDraftForm();
-    setStatus("captured", "Manual draft created.", "ok");
+    try {
+      setNewDraftImportBusy(true);
+      setNewDraftBusyMessage("Saving draft...");
+      const response = await api("/candidates", token, "POST", { candidate: payload });
+      const saved = response?.result && typeof response.result === "object" ? response.result : response;
+      if (saved && typeof saved === "object") {
+        setState((current) => ({
+          ...current,
+          candidates: mergeCandidatesByFreshness(current.candidates, [saved]),
+          databaseCandidates: mergeCandidatesByFreshness(current.databaseCandidates, [saved])
+        }));
+        setCapturedStatsSnapshot((current) => {
+          if (!current || typeof current !== "object") return current;
+          return {
+            ...current,
+            total: Math.max(0, Number(current.total || 0) + 1),
+            active: Math.max(0, Number(current.active || 0) + 1),
+            today: Math.max(0, Number(current.today || 0) + 1)
+          };
+        });
+        if (String(location?.pathname || "").trim() === "/captured-notes" && isCapturedRowVisibleInCurrentView(saved, candidateFiltersApplied, state.user)) {
+          setCapturedOptionPool((current) => mergeCandidatesByFreshness(current, [saved]));
+          setCapturedListItems((current) => mergeCandidatesByFreshness(current, [saved]));
+          setCapturedListMeta((meta) => {
+            const limit = Math.max(1, Number(meta?.limit || safeCapturedApiPageSize || 10));
+            const nextTotal = Math.max(0, Number(meta?.total || 0) + 1);
+            return {
+              ...meta,
+              total: nextTotal,
+              totalPages: Math.max(1, Math.ceil(nextTotal / limit))
+            };
+          });
+        }
+      }
+      await refreshCandidateStatsAfterMutation("captured");
+      setNewDraftOpen(false);
+      resetNewDraftForm();
+      setStatus("captured", "Manual draft created.", "ok");
+    } catch (error) {
+      setStatus("captured", String(error?.message || error), "error");
+    } finally {
+      setNewDraftImportBusy(false);
+      setNewDraftBusyMessage("");
+    }
   }
 
   function buildManualDraftCandidatePayload({ draftForm, assignedRecruiter, parsedResult = null, source = "manual_draft", filename = "" }) {
@@ -21222,8 +21263,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
     if (statsDelta && scope !== "backing") {
       setAssessmentStatsSnapshot((current) => {
-        if (!current || typeof current !== "object") return current;
-        const next = { ...current };
+        const next = current && typeof current === "object"
+          ? { ...current }
+          : { today: 0, total: 0, active: 0, archived: 0 };
         Object.entries(statsDelta).forEach(([key, delta]) => {
           const numericDelta = Number(delta || 0);
           if (!Number.isFinite(numericDelta) || !numericDelta) return;
@@ -21962,7 +22004,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     if (!text) return true;
     if (/(employment\s+profile|to\s+work\s+with|career\s+objective)/i.test(text)) return true;
     const words = text.split(/\s+/).filter(Boolean);
-    if (words.length > 10 && !/\b(b\.?\s*tech|b\.?\s*e\.?|mba|m\.?\s*tech|mca|bca|b\.?\s*sc|m\.?\s*sc|b\.?\s*com|m\.?\s*com|ph\.?\s*d|diploma)\b/i.test(text)) {
+    if (words.length > 10 && !/\b(b[\s.-]*tech|b[\s.-]*e\.?|mba|m[\s.-]*tech|mca|bca|b[\s.-]*sc|m[\s.-]*sc|b[\s.-]*com|m[\s.-]*com|ph\.?\s*d|diploma)\b/i.test(text)) {
       return true;
     }
     return false;
@@ -21973,8 +22015,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const rankDegree = (degree = "") => {
       const d = String(degree || "").toLowerCase();
       if (/\b(ph\.?\s*d|doctorate)\b/.test(d)) return 6;
-      if (/\b(post\s*graduation|post\s*graduate|pg|mba|pgdm|m\.?\s*tech|mca|master|m\.?\s*e\.?|m\.?\s*sc|m\.?\s*com|m\.?\s*a)\b/.test(d)) return 5;
-      if (/\b(b\.?\s*tech|b\.?\s*e\.?|bca|bachelor|b\.?\s*sc|b\.?\s*com|b\.?\s*a)\b/.test(d)) return 4;
+      if (/\b(post\s*graduation|post\s*graduate|pg|mba|pgdm|m[\s.-]*tech|mca|masters?|m[\s.-]*e\.?|m[\s.-]*sc|m[\s.-]*com|m[\s.-]*a)\b/.test(d)) return 5;
+      if (/\b(b[\s.-]*tech|b[\s.-]*e\.?|bca|bachelor|b[\s.-]*sc|b[\s.-]*com|b[\s.-]*a)\b/.test(d)) return 4;
       if (/\b(diploma)\b/.test(d)) return 3;
       if (/\b(12th|xii|hsc)\b/.test(d)) return 2;
       if (/\b(10th|ssc|matric)\b/.test(d)) return 1;
@@ -21993,7 +22035,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     if (ranked.length) return ranked[0].text;
     const fallback = String(fallbackText || "").trim();
     if (!fallback || isGarbageCvFieldValue(fallback)) return "";
-    if (!/\b(b\.?\s*tech|b\.?\s*e\.?|mba|m\.?\s*tech|mca|bca|bachelor|master|b\.?\s*sc|m\.?\s*sc|b\.?\s*com|m\.?\s*com|ph\.?\s*d|diploma)\b/i.test(fallback)) {
+    if (!/\b(b[\s.-]*tech|b[\s.-]*e\.?|mba|m[\s.-]*tech|mca|bca|bachelor|masters?|b[\s.-]*sc|m[\s.-]*sc|b[\s.-]*com|m[\s.-]*com|ph\.?\s*d|diploma)\b/i.test(fallback)) {
       return "";
     }
     return fallback;
@@ -22003,6 +22045,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     if (!file) return;
     try {
       setNewDraftImportBusy(true);
+      setNewDraftBusyMessage("Parsing CV...");
       setStatus("captured", "Parsing CV for draft...");
       setNewDraftCvParsePreview(null);
       resetNewDraftForm();
@@ -22142,6 +22185,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       setStatus("captured", String(error?.message || error), "error");
     } finally {
       setNewDraftImportBusy(false);
+      setNewDraftBusyMessage("");
     }
   }
 
@@ -27217,6 +27261,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         onPasteScreenshot={() => void importNewDraftFromPastedScreenshot()}
         onImportSheet={(file) => void importNewDraftFromSheet(file)}
         importBusy={newDraftImportBusy}
+        busyMessage={newDraftBusyMessage}
         onOpenSheetImportPreview={() => setNewDraftSheetPreviewOpen(true)}
       />
       <NewDraftSheetImportPreviewModal

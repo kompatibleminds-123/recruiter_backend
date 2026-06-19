@@ -1113,9 +1113,6 @@ function buildJobShareEmail({ job, introText = "", senderName = "", signatureHtm
   const jd = richHtmlToReadableText(String(job?.jobDescription || "").trim());
   const redFlags = String(job?.redFlags || "").trim();
   const recruiterNotes = String(job?.recruiterNotes || "").trim();
-  const applyBase = String(process.env.PUBLIC_PORTAL_BASE_URL || "https://recruit.kompatibleminds.com").trim().replace(/\/+$/, "");
-  const applyLinkFinal = String(applyLink || "").trim() || (job?.id ? `${applyBase}/apply/${encodeURIComponent(String(job.id))}` : "");
-
   const blocks = [
     introText ? { label: "Message", value: introText } : null,
     client ? { label: "Client", value: client } : null,
@@ -1125,8 +1122,7 @@ function buildJobShareEmail({ job, introText = "", senderName = "", signatureHtm
     mustHave ? { label: "Must have skills", value: mustHave } : null,
     jd ? { label: "Job description", value: jd } : null,
     redFlags ? { label: "Red flags", value: redFlags } : null,
-    recruiterNotes ? { label: "Notes", value: recruiterNotes } : null,
-    applyLinkFinal ? { label: "Apply link", value: applyLinkFinal } : null
+    recruiterNotes ? { label: "Notes", value: recruiterNotes } : null
   ].filter(Boolean);
 
   const htmlBody = blocks.map((item) => `
@@ -1227,9 +1223,6 @@ async function buildJobShareDocxBuffer({ job, introText = "", senderName = "", a
   const jd = richHtmlToReadableText(String(job?.jobDescription || "").trim());
   const redFlags = String(job?.redFlags || "").trim();
   const recruiterNotes = String(job?.recruiterNotes || "").trim();
-  const applyBase = String(process.env.PUBLIC_PORTAL_BASE_URL || "https://recruit.kompatibleminds.com").trim().replace(/\/+$/, "");
-  const applyLinkFinal = String(applyLink || "").trim() || (job?.id ? `${applyBase}/apply/${encodeURIComponent(String(job.id))}` : "");
-
   const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docxLib;
 
   const blocks = [
@@ -1240,8 +1233,7 @@ async function buildJobShareDocxBuffer({ job, introText = "", senderName = "", a
     mustHave ? { label: "Must have skills", value: mustHave } : null,
     jd ? { label: "Job description", value: jd } : null,
     redFlags ? { label: "Red flags", value: redFlags } : null,
-    recruiterNotes ? { label: "Notes", value: recruiterNotes } : null,
-    applyLinkFinal ? { label: "Apply link", value: applyLinkFinal } : null
+    recruiterNotes ? { label: "Notes", value: recruiterNotes } : null
   ].filter(Boolean);
 
   const children = [
