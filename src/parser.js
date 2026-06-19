@@ -176,7 +176,7 @@ function isLikelyDegreeText(value = "") {
   const text = String(value || "").trim();
   if (!text) return false;
   if (isProjectNoiseLine(text)) return false;
-  return /\b(b\.?\s*tech|b\.?\s*e\.?|bachelor|graduat(?:ion)?|m\.?\s*b\.?\s*a|mba|pgdm|b\.?\s*b\.?\s*a|bba|b\.?\s*com|b\.?\s*m\.?\s*s|bds|mph|diploma|12th|10th|mca|m\.?\s*tech|m\.?\s*sc|ba|ma|civil engineering|computer science|management|science)\b/i.test(text);
+  return /\b(b[\s.-]*tech|b[\s.-]*e\.?|bachelor|graduat(?:ion)?|m[\s.-]*b[\s.-]*a|mba|pgdm|b[\s.-]*b[\s.-]*a|bba|b[\s.-]*com|b[\s.-]*m[\s.-]*s|bds|mph|diploma|12th|10th|mca|m[\s.-]*tech|m[\s.-]*sc|ba|ma|civil engineering|computer science|management|science)\b/i.test(text);
 }
 
 function isLikelyInstitutionText(value = "") {
@@ -216,8 +216,8 @@ function parseEducationScore(value = "") {
 function degreeRank(value = "") {
   const text = String(value || "").toLowerCase();
   if (/\b(ph\.?\s*d|doctorate)\b/.test(text)) return 9;
-  if (/\b(mba|pgdm|m\.?\s*tech|mca|master|m\.?\s*e\.?|m\.?\s*sc|m\.?\s*com|m\.?\s*a|mph)\b/.test(text)) return 8;
-  if (/\b(b\.?\s*tech|b\.?\s*e\.?|bachelor|graduat(?:ion)?|bds|b\.?\s*b\.?\s*a|bba|b\.?\s*m\.?\s*s|b\.?\s*sc|b\.?\s*com|bca|ba)\b/.test(text)) return 7;
+  if (/\b(mba|pgdm|m[\s.-]*tech|mca|masters?|m[\s.-]*e\.?|m[\s.-]*sc|m[\s.-]*com|m[\s.-]*a|mph)\b/.test(text)) return 8;
+  if (/\b(b[\s.-]*tech|b[\s.-]*e\.?|bachelor|graduat(?:ion)?|bds|b[\s.-]*b[\s.-]*a|bba|b[\s.-]*m[\s.-]*s|b[\s.-]*sc|b[\s.-]*com|bca|ba)\b/.test(text)) return 7;
   if (/\b(diploma)\b/.test(text)) return 6;
   if (/\b(12th|xii|hsc)\b/.test(text)) return 5;
   if (/\b(10th|ssc|matric)\b/.test(text)) return 4;

@@ -1807,8 +1807,8 @@ function rankEducationDegree(value = "") {
   const d = String(value || "").trim().toLowerCase();
   if (!d) return 0;
   if (/\b(ph\.?\s*d|doctorate)\b/.test(d)) return 9;
-  if (/\b(master|mba|mca|m\.?\s*tech|m\.?\s*e\.?|m\.?\s*sc|m\.?\s*com|m\.?\s*a|pgdm)\b/.test(d)) return 8;
-  if (/\b(bachelor|graduat(?:ion)?|b\.?\s*tech|b\.?\s*e\.?|bca|b\.?\s*sc|b\.?\s*com|b\.?\s*a)\b/.test(d)) return 7;
+  if (/\b(masters?|mba|mca|m[\s.-]*tech|m[\s.-]*e\.?|m[\s.-]*sc|m[\s.-]*com|m[\s.-]*a|pgdm)\b/.test(d)) return 8;
+  if (/\b(bachelor|graduat(?:ion)?|b[\s.-]*tech|b[\s.-]*e\.?|bca|b[\s.-]*sc|b[\s.-]*com|b[\s.-]*a)\b/.test(d)) return 7;
   if (/\b(diploma|iti|polytechnic)\b/.test(d)) return 6;
   if (/\b(12th|hsc|intermediate)\b/.test(d)) return 5;
   if (/\b(10th|ssc|matric)\b/.test(d)) return 4;
