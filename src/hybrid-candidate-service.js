@@ -102,6 +102,23 @@ function looksLikeContactLine(value = "") {
   return false;
 }
 
+function looksLikeRoleOnlyLine(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (looksLikeContactLine(text) || looksLikeEducationLine(text) || looksLikeDateMetaText(text)) return false;
+  return /\b(engineer|developer|manager|lead|architect|consultant|analyst|executive|associate|specialist|intern|estimator|surveyor|account executive|sales|business development|coordinator|designer|drafter|modeler|bim|mep|team)\b/i.test(text);
+}
+
+function looksLikeEmployerLine(value = "") {
+  const text = normalizeCompanyName(value);
+  if (!text) return false;
+  if (looksLikeContactLine(text) || looksLikeEducationLine(text) || looksLikeDateMetaText(text) || looksLikeRoleOnlyLine(text)) return false;
+  if (PROJECT_DOMAIN_WORDS.test(text)) return false;
+  if (/\b(pvt|private|ltd|limited|inc|llc|corp|company|technologies|services|solutions|systems|consulting|studio|construction|design|architects?)\b/i.test(text)) return true;
+  if (/,/.test(text)) return true;
+  return /^[A-Z][A-Za-z0-9.&'()-]*(?:\s+[A-Z][A-Za-z0-9.&'()-]*){0,5}$/.test(text) && text.split(/\s+/).length <= 6;
+}
+
 function supportsOpenAiFileParse(file = {}) {
   const mimeType = String(file?.mimeType || "").toLowerCase();
   const filename = String(file?.filename || "").toLowerCase();
@@ -149,7 +166,7 @@ function parseDateRangeFromText(text = "") {
   const tokens = cleaned.split(/\s*[–—-]\s*/).map((x) => String(x || "").trim()).filter(Boolean);
   if (tokens.length < 2) return { startDate: "", endDate: "" };
   const looksDateish = (x = "") =>
-    /\b(present|current|ongoing|till date|(?:19|20)\d{2}|\d{1,2}[/-]\d{4}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4}|\d{4}-\d{2})\b/i.test(x);
+    /\b(present|current|ongoing|till date|(?:19|20)\d{2}|\d{1,2}[/-]\d{4}|\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)[a-z]*\s+\d{4}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4}|\d{4}-\d{2})\b/i.test(x);
   let startTok = "";
   let endTok = "";
   for (let i = 0; i + 1 < tokens.length; i += 1) {
@@ -211,10 +228,25 @@ function buildExperienceRowsFromBlocks(rawText = "") {
     }
   }
   const slice = lines.slice(start, end);
+  const directRows = [];
   const headers = [];
   for (let i = 0; i < slice.length; i += 1) {
     const line = slice[i];
     const next = slice[i + 1] || "";
+    const next2 = slice[i + 2] || "";
+    const directDateRange = /^\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)[a-z]*\s+\d{4}\s*[-\u2013\u2014\u2212]\s*(?:\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)[a-z]*\s+\d{4}|present|current|ongoing|till date)$/i;
+    if (directDateRange.test(line) && looksLikeEmployerLine(next)) {
+      const parsedDates = parseDateRangeFromText(line);
+      directRows.push({
+        company: normalizeCompanyName(next),
+        designation: looksLikeRoleOnlyLine(next2) ? normalizeDesignationText(next2) : "",
+        startDate: parsedDates.startDate,
+        endDate: parsedDates.endDate,
+        sourceText: [line, next, looksLikeRoleOnlyLine(next2) ? next2 : ""].filter(Boolean).join(" | ")
+      });
+      i += looksLikeRoleOnlyLine(next2) ? 2 : 1;
+      continue;
+    }
     let headerLine = "";
     if (looksLikeHeaderRow(line)) {
       headerLine = line;
@@ -237,7 +269,7 @@ function buildExperienceRowsFromBlocks(rawText = "") {
       endDate
     });
   }
-  const rows = [];
+  const rows = [...directRows];
   for (let i = 0; i < headers.length; i += 1) {
     const h = headers[i];
     const nextIdx = headers[i + 1] ? headers[i + 1].headerIndex : slice.length;
@@ -259,6 +291,15 @@ function buildExperienceRowsFromBlocks(rawText = "") {
 function parseHeaderDateTokenToYm(text = "") {
   const t = String(text || "").trim();
   if (!t) return "";
+  const m0 = t.match(/^(\d{1,2})\s+(\w+)\s+(\d{4})$/i); // 1 November 2020
+  if (m0) {
+    const mm = toYmScore(`${m0[2]} ${m0[3]}`);
+    if (mm > 0) {
+      const y = Math.floor(mm / 12);
+      const mo = String(mm % 12).padStart(2, "0");
+      return `${y}-${mo}`;
+    }
+  }
   const m1 = t.match(/^(\w+)\s+(\d{4})$/i); // July 2019
   if (m1) {
     const mm = toYmScore(`${m1[1]} ${m1[2]}`);
@@ -363,6 +404,11 @@ function toYmScore(value = "") {
   const raw = String(value || "").trim();
   if (!raw) return -1;
   if (isPresentEndDateLike(raw)) return 999999;
+  const dayMonthYear = raw.match(/^(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)[a-z]*\s+(\d{4})$/i);
+  if (dayMonthYear) {
+    const monthMap = { jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4, may: 5, jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8, sep: 9, sept: 9, september: 9, oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12 };
+    return Number(dayMonthYear[3]) * 12 + (monthMap[String(dayMonthYear[2]).toLowerCase()] || 0);
+  }
   const iso = raw.match(/^(\d{4})\s*-\s*(\d{2})$/);
   if (iso) return Number(iso[1]) * 12 + Number(iso[2]);
   const slash = raw.match(/^(\d{4})\s*\/\s*(\d{2})$/);

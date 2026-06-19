@@ -26324,7 +26324,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <div className="form-grid">
                       <label className="checkbox-row">
                         <input type="checkbox" checked={copySettings.interviewAiParsingEnabled !== false} onChange={(e) => setCopySettings((current) => ({ ...current, interviewAiParsingEnabled: e.target.checked }))} />
-                        <span>Enable AI parsing in Interview Panel CV upload (conflict compare mode)</span>
+                        <span>Enable AI parsing in Interview Panel CV upload only</span>
                       </label>
                     </div>
                     <div className="button-row">

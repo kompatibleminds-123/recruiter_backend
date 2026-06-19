@@ -21421,7 +21421,6 @@ const server = http.createServer(async (req, res) => {
       try {
         const actor = await requireSessionUser(getBearerToken(req));
         cacheCompanyId = String(actor?.companyId || "").trim();
-        effectiveAiParsingEnabled = await getEffectiveInterviewAiParsingEnabled(cacheCompanyId);
       } catch (_) {}
       const effectiveBody = { ...(body || {}), normalizeWithAi: effectiveAiParsingEnabled };
       const cacheKey = buildParseCandidateCacheKey(effectiveBody, cacheCompanyId);

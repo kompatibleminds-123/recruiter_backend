@@ -705,6 +705,15 @@ function extractCandidateName(lines, rawText, hint) {
 
   const firstLine = String(lines[0] || "").trim();
   const secondLine = String(lines[1] || "").trim();
+  const thirdLine = String(lines[2] || "").trim();
+  const topBlockLooksLikeRoleBanner = /\b(engineer|developer|manager|lead|architect|consultant|analyst|executive|associate|specialist|intern|estimator|surveyor|bim|mep|team|sales|business development)\b/i.test(`${secondLine} ${thirdLine}`);
+  if (firstLine && /^[A-Z][A-Z\s'.-]{3,}$/.test(firstLine) && topBlockLooksLikeRoleBanner) {
+    return firstLine
+      .toLowerCase()
+      .replace(/\b\w/g, (ch) => ch.toUpperCase())
+      .replace(/\s+/g, " ")
+      .trim();
+  }
   if (firstLine && secondLine && /^[A-Z][A-Z\s'.-]{1,40}$/.test(firstLine) && /^[A-Z][A-Z\s'.-]{1,40}$/.test(secondLine)) {
     const combinedUpper = `${firstLine} ${secondLine}`.replace(/\s+/g, " ").trim();
     if (combinedUpper.length <= 80) {
