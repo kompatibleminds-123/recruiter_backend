@@ -926,6 +926,19 @@ async function parseCandidateHybrid({ payload, apiKey = "", model = "", normaliz
     }));
   }
 
+  const selectedNormalized = aiPrimaryUsed ? normalized : null;
+  const recomputedCandidate = buildFinalCandidateShape({ parsed, normalized: selectedNormalized });
+  const recomputedValidation = validateAndCleanOutput(recomputedCandidate, {
+    detectedSections: parsed.detectedSections || {},
+    rawText: parsed.rawText || "",
+    detectedDateRangeCount: Array.isArray(parsed.timeline) ? parsed.timeline.length : 0
+  });
+  finalCandidate = recomputedValidation.cleaned;
+  finalFlags = recomputedValidation.flags;
+  if (aiMode === "rule_fallback_after_ai_validation_fail") {
+    finalFlags = [...finalFlags, "ai_validation_fallback_used"];
+  }
+
   // Hard education-like company rejection and safe fallback chain.
   if (looksLikeEducationCompanyText(finalCandidate.currentCompany || "")) {
     const timelineCandidate = (finalCandidate.experienceTimeline || []).find((row) => !looksLikeEducationCompanyText(row?.company || "") && !isSuspiciousCompanyCandidate(row?.company || ""));

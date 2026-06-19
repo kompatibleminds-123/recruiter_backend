@@ -22717,7 +22717,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <label><span>Quick range</span><select value={dashboardFilters.quickRange} onChange={(e) => applyDashboardQuickRange(e.target.value)}><option value="all">All time</option><option value="last_7_days">Last 7 days</option><option value="this_month">This month</option><option value="custom">Custom</option></select></label>
                       <div className="button-row align-end"><button onClick={() => void applyDashboardFilters()}>Apply</button></div>
                     </div>
-                    <p className="muted">Under Interview Process excludes shortlisted, offered, hold, not responding, dropped, screening reject, interview reject, duplicate, and joined.</p>
                   </div>
                 </div>
                 {!hasDashboardData ? (
@@ -22737,9 +22736,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <>
                         <div className="dashboard-snake-card__header">
                           <span className={`dashboard-funnel-step__icon dashboard-funnel-step__icon--${item.key}`} aria-hidden="true">{item.icon}</span>
-                          <div className={`dashboard-snake-card__label dashboard-snake-card__label--${item.key}`}>{item.label}</div>
+                          <div className="dashboard-snake-card__value">{item.value}</div>
                         </div>
-                        <div className="dashboard-snake-card__value">{item.value}</div>
+                        <div className={`dashboard-snake-card__label dashboard-snake-card__label--${item.key}`}>{item.label}</div>
                       </>
                     );
                     return (

@@ -3055,15 +3055,31 @@ function finalizeCvParseResult({ hybrid, aiParseMode = "", aiParseReason = "" })
 
   result.experience_history = experience_history;
   result.education_history = education_history;
-  result.currentCompany = deterministicSummary.currentCompany || "";
-  result.currentDesignation = deterministicSummary.currentDesignation || "";
-  result.totalExperience = deterministicSummary.totalExperience || "";
-  result.currentOrgTenure = deterministicSummary.currentOrgTenure || "";
-  result.highestQualification = deterministicSummary.highestQualification || "";
-  result.location = deterministicSummary.location || "";
+  const currentCompanyBeforeFinalize = String(result.currentCompany || "").trim();
+  const currentDesignationBeforeFinalize = String(result.currentDesignation || "").trim();
+  const totalExperienceBeforeFinalize = String(result.totalExperience || "").trim();
+  const currentOrgTenureBeforeFinalize = String(result.currentOrgTenure || "").trim();
+  const highestQualificationBeforeFinalize = String(result.highestQualification || "").trim();
+  const locationBeforeFinalize = String(result.location || "").trim();
+  result.currentCompany = choosePreferredScalar(currentCompanyBeforeFinalize, deterministicSummary.currentCompany);
+  result.currentDesignation = choosePreferredScalar(currentDesignationBeforeFinalize, deterministicSummary.currentDesignation);
+  result.totalExperience = choosePreferredScalar(totalExperienceBeforeFinalize, deterministicSummary.totalExperience);
+  result.currentOrgTenure = choosePreferredScalar(currentOrgTenureBeforeFinalize, deterministicSummary.currentOrgTenure);
+  result.highestQualification = choosePreferredScalar(highestQualificationBeforeFinalize, deterministicSummary.highestQualification);
+  result.location = choosePreferredScalar(locationBeforeFinalize, deterministicSummary.location);
   result.needsReview = finalOutput.needsReview;
   result.reviewReasons = finalOutput.reviewReasons;
-  result.parseMeta = hybrid?.meta || {};
+  result.parseMeta = {
+    ...(hybrid?.meta || {}),
+    finalizeFallbacksApplied: {
+      currentCompany: !currentCompanyBeforeFinalize && Boolean(deterministicSummary.currentCompany),
+      currentDesignation: !currentDesignationBeforeFinalize && Boolean(deterministicSummary.currentDesignation),
+      totalExperience: !totalExperienceBeforeFinalize && Boolean(deterministicSummary.totalExperience),
+      currentOrgTenure: !currentOrgTenureBeforeFinalize && Boolean(deterministicSummary.currentOrgTenure),
+      highestQualification: !highestQualificationBeforeFinalize && Boolean(deterministicSummary.highestQualification),
+      location: !locationBeforeFinalize && Boolean(deterministicSummary.location)
+    }
+  };
   result.parseVersion = CV_PARSE_RESULT_VERSION;
   result.deterministic_summary = deterministicSummary;
   result.parse_contract = {
