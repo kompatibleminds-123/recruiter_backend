@@ -30,12 +30,16 @@ const {
   sendWhatsappConfirmation
 } = require("./src/whatsapp-notes");
 const {
+  assertCanCreatePlatformCompany,
   bootstrapAdmin,
   createClientUser,
+  deleteClientUser,
   createEmployeeUser,
   createCompanyWithAdmin,
   createTrialCompanyWithAdmin,
   createUser,
+  updateClientUser,
+  updatePlatformCompany,
   updateUserProfile,
   deleteUser,
   deleteAssessment,
@@ -68,6 +72,7 @@ const {
   listPayrollRuns,
   listEmployeeCompensationStructures,
   listCompaniesAndUsersSummary,
+  listPlatformCompaniesDetailed,
   listAssessments,
   listEmployeeAttendance,
   getAssessmentById,
@@ -14877,6 +14882,42 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "PATCH" && req.url === "/company/client-users") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      await requireSuiteModulesAccess(actor, "Client module");
+      const body = await readJsonBody(req);
+      const clientUser = await updateClientUser({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        clientUserId: String(body.clientUserId || "").trim(),
+        username: String(body.username || "").trim(),
+        clientName: String(body.clientName || "").trim()
+      });
+      sendJson(res, 200, { ok: true, result: clientUser });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && req.url === "/company/client-users") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      await requireSuiteModulesAccess(actor, "Client module");
+      const body = await readJsonBody(req);
+      const result = await deleteClientUser({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        clientUserId: String(body.clientUserId || "").trim()
+      });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "GET" && requestUrl.pathname === "/company/marketing/overview") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
@@ -18005,6 +18046,43 @@ const server = http.createServer(async (req, res) => {
           agenda
         }
       });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && (requestUrl.pathname === "/platform/companies" || req.url === "/platform/companies")) {
+    try {
+      const rawToken = getBearerToken(req);
+      let actor = null;
+      let platformActor = null;
+      try { actor = await getSessionUser(rawToken); } catch {}
+      try { platformActor = await getPlatformSessionUser(rawToken); } catch {}
+      assertCanCreatePlatformCompany("", actor, platformActor);
+      const companies = await listPlatformCompaniesDetailed();
+      sendJson(res, 200, { ok: true, result: { companies } });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "PATCH" && (requestUrl.pathname === "/platform/companies" || req.url === "/platform/companies")) {
+    try {
+      const body = await readJsonBody(req);
+      const platformSecret = getPlatformCreateCompanySecret(req, body);
+      const rawToken = getBearerToken(req);
+      let actor = null;
+      let platformActor = null;
+      try { actor = await getSessionUser(rawToken); } catch {}
+      try { platformActor = await getPlatformSessionUser(rawToken); } catch {}
+      assertCanCreatePlatformCompany(platformSecret, actor, platformActor);
+      const company = await updatePlatformCompany({
+        companyId: String(body.companyId || "").trim(),
+        companyName: String(body.companyName || "").trim()
+      });
+      sendJson(res, 200, { ok: true, result: { company } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

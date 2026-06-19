@@ -9280,7 +9280,10 @@ function PortalApp({ token, onLogout }) {
   const [employeePasswordDrafts, setEmployeePasswordDrafts] = useState({});
   const [employeeEditDrafts, setEmployeeEditDrafts] = useState({});
   const [companyDraft, setCompanyDraft] = useState({ companyName: "", adminName: "", email: "", password: "", platformSecret: "" });
+  const [companyRecords, setCompanyRecords] = useState([]);
+  const [companyEditDrafts, setCompanyEditDrafts] = useState({});
   const [clientUsers, setClientUsers] = useState([]);
+  const [clientUserEditDrafts, setClientUserEditDrafts] = useState({});
   const payrollWorkspaceUsers = useMemo(
     () => (state.users || []).filter((item) => ["payroll_owner", "payroll_manager"].includes(String(item?.role || "").toLowerCase())),
     [state.users]
@@ -11368,6 +11371,13 @@ function PortalApp({ token, onLogout }) {
     };
   }, [token, isSettingsAdmin, location?.pathname]);
 
+  useEffect(() => {
+    if (!token) return;
+    if (String(location?.pathname || "").trim() !== "/login-settings") return;
+    if (!isSettingsAdmin) return;
+    void reloadLoginSettingsWorkspace().catch(() => {});
+  }, [token, isSettingsAdmin, location?.pathname, canAddCompany]);
+
   async function refreshWorkspaceSilently(reason = "manual", options = {}) {
     if (!token) return;
     // Emergency hard-stop: prevent silent global workspace refresh loops.
@@ -11636,10 +11646,11 @@ function PortalApp({ token, onLogout }) {
 
   async function reloadLoginSettingsWorkspace() {
     if (!token) return;
-    const [usersResult, clientUsersResult, licenseResult] = await Promise.all([
+    const [usersResult, clientUsersResult, licenseResult, companiesResult] = await Promise.all([
       api("/company/users", token).catch(() => ({ users: [] })),
       api("/company/client-users", token).catch(() => ({ clientUsers: [] })),
-      api("/license/me", token).catch(() => null)
+      api("/license/me", token).catch(() => null),
+      canAddCompany ? api("/platform/companies", token).catch(() => ({ companies: [] })) : Promise.resolve({ companies: [] })
     ]);
     const employeesEnvelope = await api("/company/employees", token)
       .then((data) => ({ ok: true, data }))
@@ -11649,6 +11660,7 @@ function PortalApp({ token, onLogout }) {
       users: usersResult?.users || []
     }));
     setClientUsers(clientUsersResult?.clientUsers || []);
+    setCompanyRecords(companiesResult?.companies || []);
     setCompanyLicense(licenseResult?.license || null);
     if (employeesEnvelope.ok) {
       setEmployeeUsers(employeesEnvelope?.data?.employees || []);
@@ -20036,6 +20048,54 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  function getClientUserEditDraft(item) {
+    const id = String(item?.id || "").trim();
+    const existing = clientUserEditDrafts[id];
+    if (existing && typeof existing === "object") return existing;
+    return {
+      username: String(item?.username || "").trim(),
+      clientName: String(item?.clientName || "").trim()
+    };
+  }
+
+  async function saveClientPortalUserEdit(clientUserId) {
+    if (!isSettingsAdmin) {
+      setStatus("loginClient", "Only admin can edit client accounts.", "error");
+      return;
+    }
+    const id = String(clientUserId || "").trim();
+    if (!id) return;
+    const draft = clientUserEditDrafts[id] || {};
+    try {
+      setStatus("loginClient", "Saving client account...");
+      await api("/company/client-users", token, "PATCH", {
+        clientUserId: id,
+        username: String(draft.username || "").trim(),
+        clientName: String(draft.clientName || "").trim()
+      });
+      await reloadLoginSettingsWorkspace();
+      setStatus("loginClient", "Client account updated.", "ok");
+    } catch (error) {
+      setStatus("loginClient", String(error?.message || error), "error");
+    }
+  }
+
+  async function deleteClientPortalUser(clientUserId) {
+    if (!isSettingsAdmin) {
+      setStatus("loginClient", "Only admin can delete client accounts.", "error");
+      return;
+    }
+    if (!window.confirm("Delete this client portal account?")) return;
+    try {
+      setStatus("loginClient", "Deleting client account...");
+      await api("/company/client-users", token, "DELETE", { clientUserId });
+      await reloadLoginSettingsWorkspace();
+      setStatus("loginClient", "Client account deleted.", "ok");
+    } catch (error) {
+      setStatus("loginClient", String(error?.message || error), "error");
+    }
+  }
+
   async function createEmployeePortalUser() {
     if (!isSettingsAdmin) {
       setStatus("loginEmployee", "Only admin can add employees.", "error");
@@ -22363,6 +22423,37 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     } finally {
       setNewDraftImportBusy(false);
       setNewDraftBusyMessage("");
+    }
+  }
+
+  function getCompanyEditDraft(item) {
+    const id = String(item?.id || "").trim();
+    const existing = companyEditDrafts[id];
+    if (existing && typeof existing === "object") return existing;
+    return {
+      companyName: String(item?.name || "").trim()
+    };
+  }
+
+  async function saveCompanyEdit(companyId) {
+    if (!isSettingsAdmin) {
+      setStatus("loginCompany", "Only admin can edit companies from this panel.", "error");
+      return;
+    }
+    const id = String(companyId || "").trim();
+    if (!id) return;
+    const draft = companyEditDrafts[id] || {};
+    try {
+      setStatus("loginCompany", "Saving company changes...");
+      await api("/platform/companies", token, "PATCH", {
+        companyId: id,
+        companyName: String(draft.companyName || "").trim(),
+        platformSecret: String(companyDraft.platformSecret || "").trim()
+      });
+      await reloadLoginSettingsWorkspace();
+      setStatus("loginCompany", "Company updated.", "ok");
+    } catch (error) {
+      setStatus("loginCompany", String(error?.message || error), "error");
     }
   }
 
@@ -27058,14 +27149,55 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </div>
                   </summary>
                   <p className="muted">Only platform-authorized admins can create companies. Backend will allow this only if your email is in Render allowlist or a valid platform secret is provided.</p>
-                  <div className="form-grid two-col">
-                    <label><span>Company name</span><input disabled={!isSettingsAdmin} value={companyDraft.companyName} onChange={(e) => setCompanyDraft((current) => ({ ...current, companyName: e.target.value }))} placeholder="Kompatible Minds" /></label>
-                    <label><span>First admin name</span><input disabled={!isSettingsAdmin} value={companyDraft.adminName} onChange={(e) => setCompanyDraft((current) => ({ ...current, adminName: e.target.value }))} placeholder="Admin name" /></label>
-                    <label><span>Admin email</span><input disabled={!isSettingsAdmin} type="email" value={companyDraft.email} onChange={(e) => setCompanyDraft((current) => ({ ...current, email: e.target.value }))} placeholder="admin@company.com" /></label>
-                    <label><span>Temporary password</span><input disabled={!isSettingsAdmin} type="password" value={companyDraft.password} onChange={(e) => setCompanyDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Temporary password" /></label>
-                    <label className="full"><span>Platform authorization secret</span><input disabled={!isSettingsAdmin} type="password" value={companyDraft.platformSecret} onChange={(e) => setCompanyDraft((current) => ({ ...current, platformSecret: e.target.value }))} placeholder="Optional if your admin email is already allowlisted in Render" /></label>
+                  <div className="settings-subsection">
+                    <div className="section-kicker">Edit Existing</div>
+                    {!companyRecords.length ? (
+                      <div className="empty-state compact-empty">No companies available to edit yet.</div>
+                    ) : (
+                      <div className="stack-list compact">
+                        {companyRecords.map((item) => (
+                          <article className="item-card compact-card" key={item.id}>
+                            <div className="item-card__top">
+                              <div>
+                                <h3>{item.name}</h3>
+                                <p className="muted">
+                                  {(item.adminUsers || []).length
+                                    ? `Admins: ${(item.adminUsers || []).map((user) => user.email || user.name).filter(Boolean).join(", ")}`
+                                    : "No admin users mapped"}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="form-grid two-col" style={{ marginTop: 10 }}>
+                              <label>
+                                <span>Company name</span>
+                                <input
+                                  disabled={!isSettingsAdmin}
+                                  value={getCompanyEditDraft(item).companyName}
+                                  onChange={(e) => setCompanyEditDrafts((current) => ({ ...current, [item.id]: { ...getCompanyEditDraft(item), companyName: e.target.value } }))}
+                                />
+                              </label>
+                              <label>
+                                <span>Admin emails</span>
+                                <input readOnly value={(item.adminUsers || []).map((user) => user.email || "").filter(Boolean).join(", ")} />
+                              </label>
+                            </div>
+                            {isSettingsAdmin ? <div className="button-row tight"><button className="ghost-btn" onClick={() => void saveCompanyEdit(item.id)}>Save</button></div> : null}
+                          </article>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createCompanyFromLoginSettings()}>Create company</button></div> : null}
+                  <div className="settings-subsection">
+                    <div className="section-kicker">Create New</div>
+                    <div className="form-grid two-col">
+                      <label><span>Company name</span><input disabled={!isSettingsAdmin} value={companyDraft.companyName} onChange={(e) => setCompanyDraft((current) => ({ ...current, companyName: e.target.value }))} placeholder="Kompatible Minds" /></label>
+                      <label><span>First admin name</span><input disabled={!isSettingsAdmin} value={companyDraft.adminName} onChange={(e) => setCompanyDraft((current) => ({ ...current, adminName: e.target.value }))} placeholder="Admin name" /></label>
+                      <label><span>Admin email</span><input disabled={!isSettingsAdmin} type="email" value={companyDraft.email} onChange={(e) => setCompanyDraft((current) => ({ ...current, email: e.target.value }))} placeholder="admin@company.com" /></label>
+                      <label><span>Temporary password</span><input disabled={!isSettingsAdmin} type="password" value={companyDraft.password} onChange={(e) => setCompanyDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Temporary password" /></label>
+                      <label className="full"><span>Platform authorization secret</span><input disabled={!isSettingsAdmin} type="password" value={companyDraft.platformSecret} onChange={(e) => setCompanyDraft((current) => ({ ...current, platformSecret: e.target.value }))} placeholder="Optional if your admin email is already allowlisted in Render" /></label>
+                    </div>
+                    {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createCompanyFromLoginSettings()}>Create company</button></div> : null}
+                  </div>
                   {statuses.loginCompany ? <div className={`status ${statuses.loginCompanyKind || ""}`}>{statuses.loginCompany}</div> : null}
                 </details>
                 ) : null}
@@ -27126,32 +27258,44 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </div>
                   </summary>
                   <p className="muted">Create client usernames for the separate client portal. Client will see all current and future positions for their client name.</p>
-                  <div className="form-grid two-col">
-                    <label><span>Username</span><input autoComplete="off" disabled={!isSettingsAdmin} value={clientUserDraft.username} onChange={(e) => setClientUserDraft((current) => ({ ...current, username: e.target.value }))} placeholder="client_username" /></label>
-                    <label><span>Password</span><input autoComplete="new-password" disabled={!isSettingsAdmin} type="password" value={clientUserDraft.password} onChange={(e) => setClientUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Set client password" /></label>
-                    <label><span>Client name</span><input autoComplete="off" disabled={!isSettingsAdmin} value={clientUserDraft.clientName} onChange={(e) => setClientUserDraft((current) => ({ ...current, clientName: e.target.value }))} placeholder="Enter client name" /></label>
-                  </div>
-                  {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createClientPortalUser()}>Create client login</button></div> : null}
-                  {statuses.loginClient ? <div className={`status ${statuses.loginClientKind || ""}`}>{statuses.loginClient}</div> : null}
-                  <div className="stack-list compact">
-                    {!clientUsers.length ? <div className="empty-state">No client portal accounts created yet.</div> : clientUsers.map((item) => (
-                      <article className="item-card compact-card" key={item.id}>
-                        <div className="item-card__top">
-                          <div>
-                            <h3>{item.clientName}</h3>
-                            <p className="muted">{`Username: ${item.username}`}</p>
-                            <div className="candidate-snippet">{(item.allowedPositions || []).join("\n") || "All current and future positions for this client"}</div>
+                  <div className="settings-subsection">
+                    <div className="section-kicker">Edit Existing</div>
+                    <div className="stack-list compact">
+                      {!clientUsers.length ? <div className="empty-state">No client portal accounts created yet.</div> : clientUsers.map((item) => (
+                        <article className="item-card compact-card" key={item.id}>
+                          <div className="item-card__top">
+                            <div>
+                              <h3>{item.clientName}</h3>
+                              <p className="muted">{`Username: ${item.username}`}</p>
+                              <div className="candidate-snippet">{(item.allowedPositions || []).join("\n") || "All current and future positions for this client"}</div>
+                            </div>
+                          </div>
+                          <div className="form-grid three-col" style={{ marginTop: 10 }}>
+                            <label><span>Username</span><input value={getClientUserEditDraft(item).username} onChange={(e) => setClientUserEditDrafts((current) => ({ ...current, [item.id]: { ...getClientUserEditDraft(item), username: e.target.value } }))} /></label>
+                            <label><span>Client name</span><input value={getClientUserEditDraft(item).clientName} onChange={(e) => setClientUserEditDrafts((current) => ({ ...current, [item.id]: { ...getClientUserEditDraft(item), clientName: e.target.value } }))} /></label>
+                            <label><span>Reset password</span><input type="password" value={clientPasswordDrafts[item.id] || ""} onChange={(e) => setClientPasswordDrafts((current) => ({ ...current, [item.id]: e.target.value }))} placeholder="New password" /></label>
                           </div>
                           {isSettingsAdmin ? (
-                            <div className="form-grid" style={{ minWidth: "240px" }}>
-                              <label><span>Reset password</span><input type="password" value={clientPasswordDrafts[item.id] || ""} onChange={(e) => setClientPasswordDrafts((current) => ({ ...current, [item.id]: e.target.value }))} placeholder="New password" /></label>
-                              <div className="button-row"><button className="ghost-btn" onClick={() => void resetClientPortalPassword(item.id)}>Reset</button></div>
+                            <div className="button-row tight" style={{ marginTop: 10 }}>
+                              <button className="ghost-btn" onClick={() => void saveClientPortalUserEdit(item.id)}>Save</button>
+                              <button className="ghost-btn" onClick={() => void resetClientPortalPassword(item.id)}>Reset password</button>
+                              <button className="ghost-btn" onClick={() => void deleteClientPortalUser(item.id)}>Delete</button>
                             </div>
                           ) : null}
-                        </div>
-                      </article>
-                    ))}
+                        </article>
+                      ))}
+                    </div>
                   </div>
+                  <div className="settings-subsection">
+                    <div className="section-kicker">Create New</div>
+                    <div className="form-grid two-col">
+                      <label><span>Username</span><input autoComplete="off" disabled={!isSettingsAdmin} value={clientUserDraft.username} onChange={(e) => setClientUserDraft((current) => ({ ...current, username: e.target.value }))} placeholder="client_username" /></label>
+                      <label><span>Password</span><input autoComplete="new-password" disabled={!isSettingsAdmin} type="password" value={clientUserDraft.password} onChange={(e) => setClientUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Set client password" /></label>
+                      <label><span>Client name</span><input autoComplete="off" disabled={!isSettingsAdmin} value={clientUserDraft.clientName} onChange={(e) => setClientUserDraft((current) => ({ ...current, clientName: e.target.value }))} placeholder="Enter client name" /></label>
+                    </div>
+                    {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createClientPortalUser()}>Create client login</button></div> : null}
+                  </div>
+                  {statuses.loginClient ? <div className={`status ${statuses.loginClientKind || ""}`}>{statuses.loginClient}</div> : null}
                 </details>
                 ) : null}
 

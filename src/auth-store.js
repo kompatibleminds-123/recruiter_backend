@@ -1892,6 +1892,45 @@ async function listCompaniesAndUsersSummary() {
   const [companies, users] = await Promise.all([sbSel("companies", "select=id&limit=1000"), sbSel("users", "select=id&limit=1000")]);
   return { companyCount: companies.length, userCount: users.length };
 }
+async function listPlatformCompaniesDetailed() {
+  if (!cfg().on) {
+    const store = readStore();
+    const companies = Array.isArray(store.companies) ? store.companies : [];
+    const users = Array.isArray(store.users) ? store.users : [];
+    return companies
+      .map((company) => {
+        const sanitized = sanitizeCompany(company);
+        const companyUsers = users
+          .filter((item) => String(item?.companyId || "") === String(sanitized?.id || ""))
+          .map(sanitizeUser)
+          .filter(Boolean);
+        return {
+          ...sanitized,
+          adminUsers: companyUsers.filter((item) => String(item?.role || "").toLowerCase() === "admin"),
+          userCount: companyUsers.length
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => String(a?.name || "").localeCompare(String(b?.name || "")));
+  }
+  await ensureSeeded();
+  const [companies, users] = await Promise.all([
+    sbSel("companies", "select=id,name,created_at,applicant_intake_secret&order=name.asc&limit=1000"),
+    sbSel("users", "select=id,company_id,company_name,name,email,role,created_at&limit=10000")
+  ]);
+  const safeUsers = (users || []).map(sanitizeUser).filter(Boolean);
+  return (companies || [])
+    .map((company) => {
+      const sanitized = sanitizeCompany(company);
+      const companyUsers = safeUsers.filter((item) => String(item?.companyId || "") === String(sanitized?.id || ""));
+      return {
+        ...sanitized,
+        adminUsers: companyUsers.filter((item) => String(item?.role || "").toLowerCase() === "admin"),
+        userCount: companyUsers.length
+      };
+    })
+    .filter(Boolean);
+}
 async function bootstrapAdmin({ companyName, adminName, email, password }) {
   const e = normalizeEmail(email);
   if (!companyName || !adminName || !e || !password) throw new Error("companyName, adminName, email, and password are required.");
@@ -3399,6 +3438,28 @@ async function createClientUser({ actorUserId, companyId, username, password, cl
   await saveCompanyClientUsersRow({ companyId, clientUsers: [...currentUsers, nextUser], actorEmail: actor.email || "" });
   return sanitizeClientUser(nextUser);
 }
+async function updateClientUser({ actorUserId, companyId, clientUserId, username, clientName }) {
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can edit client accounts.");
+  const normalizedUsername = normalizeUsername(username);
+  const normalizedClientName = String(clientName || "").trim();
+  if (!normalizedUsername || !normalizedClientName) throw new Error("username and clientName are required.");
+  const currentUsers = (await getCompanyClientUsers(companyId)).map((item) => sanitizeClientUserForStorage(item));
+  const ix = currentUsers.findIndex((item) => String(item?.id || "") === String(clientUserId || "").trim());
+  if (ix < 0) throw new Error("Client user not found.");
+  const allUsers = await getAllClientUsers();
+  if (allUsers.some((item) => String(item?.id || "") !== String(clientUserId || "").trim() && normalizeUsername(item?.username || "") === normalizedUsername)) {
+    throw new Error("This client username already exists.");
+  }
+  currentUsers[ix] = {
+    ...currentUsers[ix],
+    username: normalizedUsername,
+    clientName: normalizedClientName,
+    updatedAt: new Date().toISOString()
+  };
+  await saveCompanyClientUsersRow({ companyId, clientUsers: currentUsers, actorEmail: actor.email || "" });
+  return sanitizeClientUser(currentUsers[ix]);
+}
 async function resetClientUserPassword({ actorUserId, companyId, clientUserId, newPassword }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can reset client passwords.");
@@ -3409,6 +3470,46 @@ async function resetClientUserPassword({ actorUserId, companyId, clientUserId, n
   currentUsers[ix] = { ...currentUsers[ix], updatedAt: new Date().toISOString(), passwordHash: hashPassword(newPassword) };
   await saveCompanyClientUsersRow({ companyId, clientUsers: currentUsers, actorEmail: actor.email || "" });
   return { reset: true, clientUserId };
+}
+async function deleteClientUser({ actorUserId, companyId, clientUserId }) {
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor || actor.role !== "admin") throw new Error("Only an admin for this company can delete client accounts.");
+  const currentUsers = (await getCompanyClientUsers(companyId)).map((item) => sanitizeClientUserForStorage(item));
+  const nextUsers = currentUsers.filter((item) => String(item?.id || "") !== String(clientUserId || "").trim());
+  if (nextUsers.length === currentUsers.length) throw new Error("Client user not found.");
+  if (!cfg().on) {
+    const store = readStore();
+    store.clientUsers = (store.clientUsers || []).filter((item) => String(item?.id || "") !== String(clientUserId || "").trim());
+    writeStore(store);
+    return { deleted: true, clientUserId: String(clientUserId || "").trim() };
+  }
+  await sbDel("client_portal_users", `id=eq.${enc(clientUserId)}&company_id=eq.${enc(companyId)}`);
+  return { deleted: true, clientUserId: String(clientUserId || "").trim() };
+}
+async function updatePlatformCompany({ companyId, companyName }) {
+  const scopedCompanyId = String(companyId || "").trim();
+  const nextName = String(companyName || "").trim();
+  if (!scopedCompanyId || !nextName) throw new Error("companyId and companyName are required.");
+  if (!cfg().on) {
+    const store = readStore();
+    const company = (store.companies || []).find((item) => String(item?.id || "") === scopedCompanyId);
+    if (!company) throw new Error("Company not found.");
+    company.name = nextName;
+    (store.users || []).forEach((item) => {
+      if (String(item?.companyId || "") === scopedCompanyId) item.companyName = nextName;
+    });
+    (store.clientUsers || []).forEach((item) => {
+      if (String(item?.companyId || "") === scopedCompanyId) item.companyName = nextName;
+    });
+    writeStore(store);
+    return sanitizeCompany(company);
+  }
+  const rows = await sbPatch("companies", `id=eq.${enc(scopedCompanyId)}`, { name: nextName });
+  await Promise.allSettled([
+    sbPatch("users", `company_id=eq.${enc(scopedCompanyId)}`, { company_name: nextName }),
+    sbPatch("client_portal_users", `company_id=eq.${enc(scopedCompanyId)}`, { company_name: nextName })
+  ]);
+  return sanitizeCompany((rows || [])[0] || { id: scopedCompanyId, name: nextName });
 }
 async function loginClient({ username, password }) {
   const normalizedUsername = normalizeUsername(username);
@@ -5871,8 +5972,11 @@ async function listCompanyAuditLogs({ companyId, limit = 200 }) {
 }
 
 module.exports = {
+  assertCanCreatePlatformCompany,
   bootstrapAdmin,
   createClientUser,
+  updateClientUser,
+  deleteClientUser,
   createEmployeeUser,
   createTrialCompanyWithAdmin,
   getPlatformSessionUser,
@@ -5907,6 +6011,7 @@ module.exports = {
   listPayrollRuns,
   listEmployeeCompensationStructures,
   listCompaniesAndUsersSummary,
+  listPlatformCompaniesDetailed,
   listAssessments,
   listEmployeeAttendance,
   getAssessmentById,
@@ -5953,6 +6058,7 @@ module.exports = {
   upsertCompanyEmailThread,
   saveCompanyPersonalShortcuts,
   setCompanyApplicantIntakeSecret,
+  updatePlatformCompany,
   searchAssessments,
   saveAssessment,
   patchAssessmentCandidateLink,
