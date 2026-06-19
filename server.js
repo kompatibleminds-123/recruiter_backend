@@ -7141,11 +7141,16 @@ function databaseSmartChipRowMatchesFrontendFilters(item, filters = {}) {
     item?.recruiter_context_notes || ""
   ].join(" ").toLowerCase();
   const clientValue = String(item?.client_name || item?.clientName || "").trim();
-  const recruiterValue = String(item?.assigned_to_name || item?.assignedToName || item?.recruiterName || "").trim();
+  const recruiterValues = [
+    item?.assigned_to_name || item?.assignedToName || "",
+    item?.recruiter_name || item?.recruiterName || "",
+    item?.raw?.candidate?.assigned_to_name || item?.raw?.candidate?.assignedToName || "",
+    item?.raw?.candidate?.recruiter_name || item?.raw?.candidate?.recruiterName || ""
+  ].map((value) => String(value || "").trim()).filter(Boolean);
   const draftPayload = normalizeJsonObjectInput(item?.draft_payload || item?.draftPayload || item?.raw?.candidate?.draft_payload || item?.raw?.candidate?.draftPayload || {});
   const genderValue = String(item?.gender || draftPayload?.gender || "").trim();
   const normalizedClientValue = clientValue.toLowerCase();
-  const normalizedRecruiterValue = recruiterValue.toLowerCase();
+  const normalizedRecruiterValues = recruiterValues.map((value) => value.toLowerCase());
   const normalizedGenderValue = genderValue.toLowerCase();
   const linkedAssessment = item?.raw?.assessment || item?.assessment || null;
   const assessmentStatusValue = String(
@@ -7197,7 +7202,7 @@ function databaseSmartChipRowMatchesFrontendFilters(item, filters = {}) {
     return false;
   }
   const selectedRecruiters = parseMultiChipTokens(normalizedFilters.recruiter).map((entry) => entry.toLowerCase());
-  if (selectedRecruiters.length && !selectedRecruiters.includes(normalizedRecruiterValue)) return false;
+  if (selectedRecruiters.length && !selectedRecruiters.some((entry) => normalizedRecruiterValues.includes(entry))) return false;
   const selectedGenders = parseMultiChipTokens(normalizedFilters.gender).map((entry) => entry.toLowerCase());
   if (selectedGenders.length && !selectedGenders.includes(normalizedGenderValue)) return false;
   const selectedAssessmentStatuses = parseMultiChipTokens(normalizedFilters.assessmentStatus).map((entry) => entry.toLowerCase());

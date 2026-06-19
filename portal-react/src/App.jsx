@@ -9021,6 +9021,7 @@ function PortalApp({ token, onLogout }) {
       client: String(candidateQuickFiltersDraft.client || "").trim(),
       jd: String(candidateQuickFiltersDraft.jd || "").trim()
     };
+    setDatabaseQueryLoading(true);
     setCandidateQuickFiltersApplied(next);
     setCandidateSmartDateFrom(next.dateFrom);
     setCandidateSmartDateTo(next.dateTo);
@@ -9044,6 +9045,7 @@ function PortalApp({ token, onLogout }) {
     }));
   };
   const resetCandidateQuickFilters = () => {
+    setDatabaseListLoading(true);
     setCandidateQuickFiltersDraft(EMPTY_CANDIDATE_QUICK_FILTERS);
     setCandidateQuickFiltersApplied(EMPTY_CANDIDATE_QUICK_FILTERS);
     setCandidateSmartDateFrom("");
@@ -9068,6 +9070,7 @@ function PortalApp({ token, onLogout }) {
     }));
   };
   const resetCandidateAdvancedFilters = () => {
+    setDatabaseListLoading(true);
     setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
     setCandidateStructuredFiltersDraft(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
     setCandidatePage(1);
@@ -9202,6 +9205,7 @@ function PortalApp({ token, onLogout }) {
           className={candidateStructuredFiltersDirty ? "" : "ghost-btn"}
           disabled={!candidateStructuredFiltersDirty}
           onClick={() => {
+            setDatabaseQueryLoading(true);
             setCandidateStructuredFilters(candidateStructuredFiltersDraft);
             setCandidatePage(1);
             setStatus("workspace", "Filters applied.", "ok");
@@ -13680,11 +13684,16 @@ function PortalApp({ token, onLogout }) {
         item.recruiter_context_notes || ""
       ].join(" ").toLowerCase();
       const clientValue = String(item.client_name || item.clientName || "").trim();
-      const recruiterValue = String(item.assigned_to_name || item.assignedToName || "").trim();
+      const recruiterValues = [
+        item.assigned_to_name || item.assignedToName || "",
+        item.recruiter_name || item.recruiterName || "",
+        item.raw?.candidate?.assigned_to_name || item.raw?.candidate?.assignedToName || "",
+        item.raw?.candidate?.recruiter_name || item.raw?.candidate?.recruiterName || ""
+      ].map((value) => String(value || "").trim()).filter(Boolean);
       const draftPayload = parsePortalObjectField(item?.draft_payload || item?.draftPayload);
       const genderValue = String(item.gender || draftPayload?.gender || "").trim();
       const normalizedClientValue = clientValue.toLowerCase();
-      const normalizedRecruiterValue = recruiterValue.toLowerCase();
+      const normalizedRecruiterValues = recruiterValues.map((value) => value.toLowerCase());
       const normalizedGenderValue = genderValue.toLowerCase();
       const quickClientValue = String(candidateQuickFiltersApplied.client || "").trim().toLowerCase();
       const quickRecruiterValue = String(candidateQuickFiltersApplied.recruiter || "").trim().toLowerCase();
@@ -13712,7 +13721,7 @@ function PortalApp({ token, onLogout }) {
         if (quickDateTo && (!quickDateKey || quickDateKey > quickDateTo)) return false;
       }
       if (quickClientValue && normalizedClientValue !== quickClientValue) return false;
-      if (quickRecruiterValue && normalizedRecruiterValue !== quickRecruiterValue) return false;
+      if (quickRecruiterValue && !normalizedRecruiterValues.includes(quickRecruiterValue)) return false;
       if (quickJdValue && !roleHay.includes(quickJdValue)) return false;
       if (candidateStructuredFilters.minExperience && (years == null || years < minYears)) return false;
       if (candidateStructuredFilters.maxExperience && (years == null || years > maxYears)) return false;
