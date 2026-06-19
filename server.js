@@ -1209,7 +1209,7 @@ function buildJobShareEmail({ job, introText = "", senderName = "", signatureHtm
     blocks.map((item) => `${item.label}:\n${item.value}`).join("\n\n"),
     signatureTextLines
   ].filter(Boolean).join("\n\n");
-  return { html, text, applyLink: applyLinkFinal };
+  return { html, text, applyLink: String(applyLink || "").trim() };
 }
 
 async function buildJobShareDocxBuffer({ job, introText = "", senderName = "", applyLink = "" }) {
