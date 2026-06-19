@@ -8935,6 +8935,7 @@ function PortalApp({ token, onLogout }) {
   const candidateSmartChipSummaryStableRef = useRef(null);
   const candidateSmartChipSummaryRequestRef = useRef(0);
   const candidateSmartChipResultsRef = useRef(null);
+  const candidateDatabaseResultsRef = useRef(null);
   const databaseCandidatesHydratedRef = useRef(false);
   const [candidateFilterPanelOpen, setCandidateFilterPanelOpen] = useState(true);
   const [candidateFilterDrawerOpen, setCandidateFilterDrawerOpen] = useState(false);
@@ -8955,6 +8956,7 @@ function PortalApp({ token, onLogout }) {
   const [candidateSearchBusy, setCandidateSearchBusy] = useState(false);
   const [candidateSmartChipLoading, setCandidateSmartChipLoading] = useState(false);
   const [candidateSmartChipRowsRemote, setCandidateSmartChipRowsRemote] = useState(null);
+  const [candidatePendingScrollTarget, setCandidatePendingScrollTarget] = useState("");
   const [candidateSearchingAs, setCandidateSearchingAs] = useState("");
   const [candidateSearchDebug, setCandidateSearchDebug] = useState(null);
   const [candidateParseFeedbackBusy, setCandidateParseFeedbackBusy] = useState(false);
@@ -8994,19 +8996,11 @@ function PortalApp({ token, onLogout }) {
     const normalizedId = String(chipId || "").trim();
     if (!normalizedId) return;
     setCandidatePage(1);
-    let shouldScrollToResults = false;
     setCandidateQuickChipIds((current) => {
       const next = current.includes(normalizedId) ? [] : [normalizedId];
-      shouldScrollToResults = next.length > 0;
+      setCandidatePendingScrollTarget(next.length > 0 ? "chips" : "");
       return next;
     });
-    if (shouldScrollToResults && typeof window !== "undefined") {
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          candidateSmartChipResultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-        });
-      });
-    }
   };
   const candidateNoticeBucketSelectedLabels = useMemo(() => (
     parseMultiChipTokens(candidateStructuredFiltersDraft.noticeBucket)
@@ -9022,6 +9016,7 @@ function PortalApp({ token, onLogout }) {
       jd: String(candidateQuickFiltersDraft.jd || "").trim()
     };
     setDatabaseQueryLoading(true);
+    setCandidatePendingScrollTarget("database");
     setCandidateQuickFiltersApplied(next);
     setCandidateSmartDateFrom(next.dateFrom);
     setCandidateSmartDateTo(next.dateTo);
@@ -9046,6 +9041,7 @@ function PortalApp({ token, onLogout }) {
   };
   const resetCandidateQuickFilters = () => {
     setDatabaseListLoading(true);
+    setCandidatePendingScrollTarget("database");
     setCandidateQuickFiltersDraft(EMPTY_CANDIDATE_QUICK_FILTERS);
     setCandidateQuickFiltersApplied(EMPTY_CANDIDATE_QUICK_FILTERS);
     setCandidateSmartDateFrom("");
@@ -9071,6 +9067,7 @@ function PortalApp({ token, onLogout }) {
   };
   const resetCandidateAdvancedFilters = () => {
     setDatabaseListLoading(true);
+    setCandidatePendingScrollTarget("database");
     setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
     setCandidateStructuredFiltersDraft(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
     setCandidatePage(1);
@@ -9206,6 +9203,7 @@ function PortalApp({ token, onLogout }) {
           disabled={!candidateStructuredFiltersDirty}
           onClick={() => {
             setDatabaseQueryLoading(true);
+            setCandidatePendingScrollTarget("database");
             setCandidateStructuredFilters(candidateStructuredFiltersDraft);
             setCandidatePage(1);
             setStatus("workspace", "Filters applied.", "ok");
@@ -11066,7 +11064,7 @@ function PortalApp({ token, onLogout }) {
     const candidateFetchLimit = useLightCandidateFetch ? 50 : 5000;
     const candidateFetchPage = 1;
     const candidateFetchMetaSuffix = useLightCandidateFetch ? "&includeMeta=1" : "";
-    const databaseFetchLimit = Math.max(10, Math.min(50, Number(candidatePageSize || 10)));
+    const databaseFetchLimit = useLightCandidateFetch ? 200 : 5000;
     // Billing/access flags are used in sidebar gating across the app,
     // so fetch billing overview on all recruiter routes (plans list only needed on /plan).
     const needsBilling = true;
@@ -13538,9 +13536,9 @@ function PortalApp({ token, onLogout }) {
     void loadCvLinks();
   }, [selectedAssessmentRows, token, clientShareCvLinkFingerprint]);
   const candidateUniverseAll = useMemo(() => {
-    const databaseRows = Array.isArray(databaseListItems) && databaseListItems.length
-      ? databaseListItems
-      : (Array.isArray(state.databaseCandidates) && state.databaseCandidates.length ? state.databaseCandidates : (state.candidates || []));
+    const databaseRows = Array.isArray(state.databaseCandidates) && state.databaseCandidates.length
+      ? state.databaseCandidates
+      : (Array.isArray(databaseListItems) && databaseListItems.length ? databaseListItems : (state.candidates || []));
     const linkedAssessmentIds = new Set(databaseRows.map((item) => String(item.assessment_id || "").trim()).filter(Boolean));
     const candidateNames = new Set(databaseRows.map((item) => String(item.name || "").trim().toLowerCase()).filter(Boolean));
     const assessmentOnlyItems = (state.assessments || [])
@@ -13770,13 +13768,20 @@ function PortalApp({ token, onLogout }) {
     });
   }, [candidateBaseUniverse, candidateStructuredFilters, candidateQuickFiltersApplied, state.assessments]);
   const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
+  const databaseLocalReady = Boolean(databaseCandidatesHydratedRef.current) && Array.isArray(state.databaseCandidates) && state.databaseCandidates.length > 0;
+  const databaseLocalFilterMode = !candidateHasSmartChipSelection && databaseLocalReady;
   const databaseAllMode = candidateSearchMode === "all"
     && !candidateHasSmartChipSelection
     && !candidateStructuredFiltersActive
-    && !candidateQuickFiltersActive;
-  const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseAllMode;
+    && !candidateQuickFiltersActive
+    && !databaseLocalReady;
+  const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseLocalFilterMode && !databaseAllMode;
   const pagedCandidates = useMemo(() => {
     const safePageSize = Math.max(10, Number(candidatePageSize || 10));
+    if (databaseLocalFilterMode) {
+      const start = (candidatePage - 1) * safePageSize;
+      return candidateUniverse.slice(start, start + safePageSize);
+    }
     if (databaseAllMode) {
       return (Array.isArray(databaseListItems) ? databaseListItems : []).slice(0, safePageSize);
     }
@@ -13786,7 +13791,9 @@ function PortalApp({ token, onLogout }) {
     const start = (candidatePage - 1) * safePageSize;
     return candidateUniverse.slice(start, start + safePageSize);
   }, [databaseAllMode, databaseServerQueryMode, databaseListItems, candidateUniverse, databaseQueryItems, candidatePage, candidatePageSize]);
-  const totalCandidatePages = databaseAllMode
+  const totalCandidatePages = databaseLocalFilterMode
+    ? Math.max(1, Math.ceil((candidateUniverse.length || 0) / Math.max(10, Number(candidatePageSize || 10))))
+    : databaseAllMode
     ? Math.max(1, Number(databaseListMeta?.totalPages || 1))
     : databaseServerQueryMode
       ? Math.max(1, Number(databaseQueryMeta?.totalPages || 1))
@@ -13860,12 +13867,13 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     if (!token) return;
     if (String(location?.pathname || "").trim() !== "/candidates") return;
+    if (databaseLocalFilterMode) return;
     if (candidateSearchMode !== "all") return;
     if (candidateHasSmartChipSelection) return;
     if (candidateStructuredFiltersActive) return;
     if (candidateQuickFiltersActive) return;
     void reloadDatabaseListPage(candidatePage, candidatePageSize);
-  }, [token, location?.pathname, candidateSearchMode, candidateHasSmartChipSelection, candidateStructuredFiltersActive, candidateQuickFiltersActive, candidatePage, candidatePageSize]);
+  }, [token, location?.pathname, databaseLocalFilterMode, candidateSearchMode, candidateHasSmartChipSelection, candidateStructuredFiltersActive, candidateQuickFiltersActive, candidatePage, candidatePageSize]);
 
   useEffect(() => {
     if (!token) return;
@@ -13924,6 +13932,35 @@ function PortalApp({ token, onLogout }) {
       cancelled = true;
     };
   }, [token, location?.pathname, databaseServerQueryMode, candidateStructuredFilters, candidateQuickFiltersApplied, candidateSearchMode, candidateSearchResults, candidatePage, candidatePageSize]);
+
+  useEffect(() => {
+    if (String(location?.pathname || "").trim() !== "/candidates") return;
+    if (!candidatePendingScrollTarget || typeof window === "undefined") return;
+    if (candidatePendingScrollTarget === "chips") {
+      if (!candidateHasSmartChipSelection) return;
+      window.requestAnimationFrame(() => {
+        candidateSmartChipResultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      setCandidatePendingScrollTarget("");
+      return;
+    }
+    if (candidatePendingScrollTarget === "database") {
+      if (candidateHasSmartChipSelection) return;
+      if (candidateSearchBusy || databaseQueryLoading || databaseListLoading) return;
+      window.requestAnimationFrame(() => {
+        candidateDatabaseResultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      setCandidatePendingScrollTarget("");
+    }
+  }, [
+    location?.pathname,
+    candidatePendingScrollTarget,
+    candidateHasSmartChipSelection,
+    candidateSearchBusy,
+    databaseQueryLoading,
+    databaseListLoading,
+    pagedCandidates.length
+  ]);
 
   useEffect(() => {
     if (!token) return;
@@ -18039,6 +18076,7 @@ function PortalApp({ token, onLogout }) {
       : "boolean";
     const semanticEnabled = copySettings.semanticSearchEnabled !== false;
     setCandidateSearchBusy(true);
+    setCandidatePendingScrollTarget("database");
     setCandidateSearchDebug(null);
     setCandidateSearchQueryUsed(effectiveSearchText);
     setCandidateSearchingAs(hasKeywordBuilder ? keywordDrivenBoolean : "");
@@ -23561,6 +23599,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       ))}
                     </div>
                   </div>
+                  {candidateSmartChipLoading ? (
+                    <div className="muted" style={{ marginTop: 8 }}>Loading quick chips...</div>
+                  ) : null}
                 </div>
                 <div className="candidate-database-top-grid">
                   <div className="item-card compact-card">
@@ -23603,6 +23644,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     />
                     <button disabled={candidateSearchBusy} onClick={() => void runCandidateSearch()}>Run Boolean Search</button>
                     <button className="ghost-btn" onClick={() => {
+                      setCandidatePendingScrollTarget("database");
                       setCandidateSearchText("");
                       setCandidateSearchQueryUsed("");
                       setCandidateKeywordMust("");
@@ -23621,6 +23663,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <div className="toolbar candidate-search-toolbar candidate-search-toolbar--smart">
                     <button className="candidate-search-toolbar__action" disabled={candidateSearchBusy} onClick={() => void runCandidateSearch()}>Run Smart Search</button>
                     <button className="ghost-btn candidate-search-toolbar__action" onClick={() => {
+                      setCandidatePendingScrollTarget("database");
                       setCandidateSearchText("");
                       setCandidateSearchQueryUsed("");
                       setCandidateKeywordMust("");
@@ -23638,9 +23681,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 )}
                 {candidateSearchBusy ? (
                   <div className="muted" style={{ marginTop: 6 }}>Searching candidates...</div>
-                ) : null}
-                {candidateSmartChipLoading ? (
-                  <div className="muted" style={{ marginTop: 6 }}>Loading quick chips...</div>
                 ) : null}
                 {candidateAiQueryMode === "natural" && candidateSearchingAs ? (
                   <div className="muted" style={{ marginTop: 8 }}>
@@ -23773,7 +23813,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 ) : null}
                 {!candidateHasSmartChipSelection ? (
                   <>
-                    <div className="button-row captured-copy-row database-results-toolbar">
+                    <div ref={candidateDatabaseResultsRef} className="button-row captured-copy-row database-results-toolbar">
                       <label className="copy-preset-control">
                         <span>Copy preset</span>
                         <select value={activeCopyPresetId} onChange={(e) => setActiveCopyPresetId(e.target.value)}>
