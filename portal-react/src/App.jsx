@@ -8995,46 +8995,6 @@ function PortalApp({ token, onLogout }) {
       .map((value) => candidateNoticeBucketLabelByValue[value] || value)
       .filter(Boolean)
   ), [candidateStructuredFiltersDraft.noticeBucket, candidateNoticeBucketLabelByValue]);
-  const candidateQuickFilterOptions = useMemo(() => {
-    const clients = new Set();
-    const recruiters = new Set();
-    const jdPairs = [];
-    candidateUniverseAll.forEach((item) => {
-      const clientLabel = String(item?.client_name || item?.clientName || "").trim();
-      const recruiterLabel = String(item?.assigned_to_name || item?.assignedToName || item?.recruiterName || "").trim();
-      const jdLabel = String(item?.jdTitle || item?.position || item?.role || item?.currentDesignation || "").trim();
-      if (clientLabel) clients.add(clientLabel);
-      if (recruiterLabel) recruiters.add(recruiterLabel);
-      if (jdLabel) jdPairs.push({ client: clientLabel, label: jdLabel });
-    });
-    (state.jobs || []).forEach((job) => {
-      const clientLabel = String(job?.clientName || job?.client_name || "").trim();
-      const jdLabel = String(job?.title || "").trim();
-      if (clientLabel) clients.add(clientLabel);
-      if (jdLabel) jdPairs.push({ client: clientLabel, label: jdLabel });
-    });
-    (state.users || []).forEach((user) => {
-      const label = String(user?.name || "").trim();
-      if (label) recruiters.add(label);
-    });
-    return {
-      clients: Array.from(clients).sort((a, b) => a.localeCompare(b)),
-      recruiters: Array.from(recruiters).sort((a, b) => a.localeCompare(b)),
-      jdPairs
-    };
-  }, [candidateUniverseAll, state.jobs, state.users]);
-  const candidateQuickFilterJdOptions = useMemo(() => {
-    const selectedClient = String(candidateQuickFiltersDraft.client || "").trim().toLowerCase();
-    const labels = new Set();
-    (candidateQuickFilterOptions.jdPairs || []).forEach((entry) => {
-      const label = String(entry?.label || "").trim();
-      const client = String(entry?.client || "").trim().toLowerCase();
-      if (!label) return;
-      if (selectedClient && client && client !== selectedClient) return;
-      labels.add(label);
-    });
-    return Array.from(labels).sort((a, b) => a.localeCompare(b));
-  }, [candidateQuickFilterOptions.jdPairs, candidateQuickFiltersDraft.client]);
   const applyCandidateQuickFilters = () => {
     const next = {
       dateFrom: String(candidateQuickFiltersDraft.dateFrom || "").trim(),
@@ -13598,6 +13558,46 @@ function PortalApp({ token, onLogout }) {
       return false;
     });
   }, [databaseListItems, state.assessments, state.candidates, state.databaseCandidates, state.user]);
+  const candidateQuickFilterOptions = useMemo(() => {
+    const clients = new Set();
+    const recruiters = new Set();
+    const jdPairs = [];
+    candidateUniverseAll.forEach((item) => {
+      const clientLabel = String(item?.client_name || item?.clientName || "").trim();
+      const recruiterLabel = String(item?.assigned_to_name || item?.assignedToName || item?.recruiterName || "").trim();
+      const jdLabel = String(item?.jdTitle || item?.position || item?.role || item?.currentDesignation || "").trim();
+      if (clientLabel) clients.add(clientLabel);
+      if (recruiterLabel) recruiters.add(recruiterLabel);
+      if (jdLabel) jdPairs.push({ client: clientLabel, label: jdLabel });
+    });
+    (state.jobs || []).forEach((job) => {
+      const clientLabel = String(job?.clientName || job?.client_name || "").trim();
+      const jdLabel = String(job?.title || "").trim();
+      if (clientLabel) clients.add(clientLabel);
+      if (jdLabel) jdPairs.push({ client: clientLabel, label: jdLabel });
+    });
+    (state.users || []).forEach((user) => {
+      const label = String(user?.name || "").trim();
+      if (label) recruiters.add(label);
+    });
+    return {
+      clients: Array.from(clients).sort((a, b) => a.localeCompare(b)),
+      recruiters: Array.from(recruiters).sort((a, b) => a.localeCompare(b)),
+      jdPairs
+    };
+  }, [candidateUniverseAll, state.jobs, state.users]);
+  const candidateQuickFilterJdOptions = useMemo(() => {
+    const selectedClient = String(candidateQuickFiltersDraft.client || "").trim().toLowerCase();
+    const labels = new Set();
+    (candidateQuickFilterOptions.jdPairs || []).forEach((entry) => {
+      const label = String(entry?.label || "").trim();
+      const client = String(entry?.client || "").trim().toLowerCase();
+      if (!label) return;
+      if (selectedClient && client && client !== selectedClient) return;
+      labels.add(label);
+    });
+    return Array.from(labels).sort((a, b) => a.localeCompare(b));
+  }, [candidateQuickFilterOptions.jdPairs, candidateQuickFiltersDraft.client]);
   const candidateSearchOptions = useMemo(() => {
     const recruiters = new Set();
     const genders = new Set();
@@ -22905,6 +22905,60 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               </Section>
               <Section kicker="Performance" title="Recruitment Dashboard">
                 <div className="dashboard-funnel-shell">
+                  {!hasDashboardData ? (
+                    <div className="reports-skeleton-grid" aria-hidden="true">
+                      <div className="reports-skeleton-card" />
+                      <div className="reports-skeleton-card" />
+                      <div className="reports-skeleton-card" />
+                      <div className="reports-skeleton-card" />
+                      <div className="reports-skeleton-card" />
+                      <div className="reports-skeleton-card" />
+                    </div>
+                  ) : null}
+                  <div className="dashboard-snake-funnel">
+                    {primaryKpiCards.map((item, index) => {
+                      const isClickable = !DASHBOARD_TOP_NON_CLICKABLE_METRICS.has(String(item.key || "").trim());
+                      const cardBody = (
+                        <>
+                          <div className="dashboard-snake-card__header">
+                            <span className={`dashboard-funnel-step__icon dashboard-funnel-step__icon--${item.key}`} aria-hidden="true">{item.icon}</span>
+                            <div className="dashboard-snake-card__value">{item.value}</div>
+                          </div>
+                          <div className={`dashboard-snake-card__label dashboard-snake-card__label--${item.key}`}>{item.label}</div>
+                        </>
+                      );
+                      return (
+                        <React.Fragment key={item.key}>
+                          <div className="dashboard-snake-step">
+                            {isClickable ? (
+                              <button
+                                type="button"
+                                className="dashboard-snake-card dashboard-snake-card--button"
+                                onClick={() => void openDashboardDrilldown({ title: item.label, metric: item.drillMetric, groupType: "all" })}
+                              >
+                                {cardBody}
+                              </button>
+                            ) : (
+                              <article className="dashboard-snake-card">
+                                {cardBody}
+                              </article>
+                            )}
+                          </div>
+                          {index < primaryKpiCards.length - 1 ? (
+                            <div className="dashboard-snake-connector-cell" aria-hidden="true">
+                              <div className="dashboard-snake-connector dashboard-snake-connector--inline">
+                                <div className="dashboard-snake-connector__line" />
+                                <div className="dashboard-snake-connector__meta">
+                                  <span className="dashboard-snake-connector__value">{ratioKpiCards[index]?.value || "0%"}</span>
+                                  <span className="dashboard-snake-connector__label">{ratioKpiCards[index]?.label || ""}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
                   <div className="dashboard-funnel-toolbar">
                     <div className="form-grid three-col dashboard-funnel-filters">
                       <label><span>Date from</span><input type="date" value={dashboardFilters.dateFrom} onChange={(e) => setDashboardFilters((c) => ({ ...c, dateFrom: e.target.value, quickRange: "custom" }))} /></label>
@@ -22915,60 +22969,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <div className="button-row align-end"><button onClick={() => void applyDashboardFilters()}>Apply</button></div>
                     </div>
                   </div>
-                </div>
-                {!hasDashboardData ? (
-                  <div className="reports-skeleton-grid" aria-hidden="true">
-                    <div className="reports-skeleton-card" />
-                    <div className="reports-skeleton-card" />
-                    <div className="reports-skeleton-card" />
-                    <div className="reports-skeleton-card" />
-                    <div className="reports-skeleton-card" />
-                    <div className="reports-skeleton-card" />
-                  </div>
-                ) : null}
-                <div className="dashboard-snake-funnel">
-                  {primaryKpiCards.map((item, index) => {
-                    const isClickable = !DASHBOARD_TOP_NON_CLICKABLE_METRICS.has(String(item.key || "").trim());
-                    const cardBody = (
-                      <>
-                        <div className="dashboard-snake-card__header">
-                          <span className={`dashboard-funnel-step__icon dashboard-funnel-step__icon--${item.key}`} aria-hidden="true">{item.icon}</span>
-                          <div className="dashboard-snake-card__value">{item.value}</div>
-                        </div>
-                        <div className={`dashboard-snake-card__label dashboard-snake-card__label--${item.key}`}>{item.label}</div>
-                      </>
-                    );
-                    return (
-                      <React.Fragment key={item.key}>
-                        <div className="dashboard-snake-step">
-                          {isClickable ? (
-                            <button
-                              type="button"
-                              className="dashboard-snake-card dashboard-snake-card--button"
-                              onClick={() => void openDashboardDrilldown({ title: item.label, metric: item.drillMetric, groupType: "all" })}
-                            >
-                              {cardBody}
-                            </button>
-                          ) : (
-                            <article className="dashboard-snake-card">
-                              {cardBody}
-                            </article>
-                          )}
-                        </div>
-                        {index < primaryKpiCards.length - 1 ? (
-                          <div className="dashboard-snake-connector-cell" aria-hidden="true">
-                            <div className="dashboard-snake-connector dashboard-snake-connector--inline">
-                              <div className="dashboard-snake-connector__line" />
-                              <div className="dashboard-snake-connector__meta">
-                                <span className="dashboard-snake-connector__value">{ratioKpiCards[index]?.value || "0%"}</span>
-                                <span className="dashboard-snake-connector__label">{ratioKpiCards[index]?.label || ""}</span>
-                              </div>
-                            </div>
-                          </div>
-                        ) : null}
-                      </React.Fragment>
-                    );
-                  })}
                 </div>
               </Section>
               <div className="dashboard-breakdown-stack">

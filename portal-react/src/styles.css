@@ -1160,7 +1160,7 @@ textarea { min-height: 92px; resize: vertical; }
   opacity: 1;
   border-radius: 999px;
   position: relative;
-  margin-top: 4px;
+  margin-top: 8px;
 }
 .dashboard-snake-connector__line::after {
   content: "";
