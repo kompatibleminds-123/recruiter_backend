@@ -759,7 +759,16 @@ const EMPTY_CANDIDATE_STRUCTURED_FILTERS = {
   recruiter: "",
   gender: "",
   assessmentStatus: "",
-  attemptOutcome: ""
+  attemptOutcome: "",
+  sourceTypeFilter: ""
+};
+
+const EMPTY_CANDIDATE_QUICK_FILTERS = {
+  dateFrom: "",
+  dateTo: "",
+  recruiter: "",
+  client: "",
+  jd: ""
 };
 
 const DASHBOARD_METRIC_COLUMNS = [
@@ -8912,6 +8921,8 @@ function PortalApp({ token, onLogout }) {
   const [candidateSearchText, setCandidateSearchText] = useState("");
   const [candidateSearchQueryUsed, setCandidateSearchQueryUsed] = useState("");
   const [candidateAiQueryMode, setCandidateAiQueryMode] = useState("natural");
+  const [candidateQuickFiltersDraft, setCandidateQuickFiltersDraft] = useState(EMPTY_CANDIDATE_QUICK_FILTERS);
+  const [candidateQuickFiltersApplied, setCandidateQuickFiltersApplied] = useState(EMPTY_CANDIDATE_QUICK_FILTERS);
   const [candidateKeywordMust, setCandidateKeywordMust] = useState("");
   const [candidateKeywordAny1, setCandidateKeywordAny1] = useState("");
   const [candidateKeywordAny2, setCandidateKeywordAny2] = useState("");
@@ -8938,6 +8949,7 @@ function PortalApp({ token, onLogout }) {
   const [databaseQueryItems, setDatabaseQueryItems] = useState([]);
   const [databaseQueryMeta, setDatabaseQueryMeta] = useState({ total: 0, page: 1, limit: 10, totalPages: 1 });
   const [databaseQueryLoading, setDatabaseQueryLoading] = useState(false);
+  const [databaseInlineSelectedId, setDatabaseInlineSelectedId] = useState("");
   const [candidateStructuredFilters, setCandidateStructuredFilters] = useState(EMPTY_CANDIDATE_STRUCTURED_FILTERS); // applied
   const [candidateStructuredFiltersDraft, setCandidateStructuredFiltersDraft] = useState(EMPTY_CANDIDATE_STRUCTURED_FILTERS); // editable
   const [candidateSearchBusy, setCandidateSearchBusy] = useState(false);
@@ -8972,20 +8984,191 @@ function PortalApp({ token, onLogout }) {
   const candidateNoticeBucketLabelByValue = useMemo(() => (
     Object.fromEntries(NOTICE_BUCKET_OPTIONS.filter((option) => option.value).map((option) => [option.value, option.label]))
   ), []);
+  const candidateQuickFiltersDirty = useMemo(() => (
+    JSON.stringify(candidateQuickFiltersDraft) !== JSON.stringify(candidateQuickFiltersApplied)
+  ), [candidateQuickFiltersDraft, candidateQuickFiltersApplied]);
+  const candidateQuickFiltersActive = useMemo(() => (
+    Object.values(candidateQuickFiltersApplied || {}).some((value) => Boolean(String(value || "").trim()))
+  ), [candidateQuickFiltersApplied]);
   const candidateNoticeBucketSelectedLabels = useMemo(() => (
     parseMultiChipTokens(candidateStructuredFiltersDraft.noticeBucket)
       .map((value) => candidateNoticeBucketLabelByValue[value] || value)
       .filter(Boolean)
   ), [candidateStructuredFiltersDraft.noticeBucket, candidateNoticeBucketLabelByValue]);
+  const candidateQuickFilterOptions = useMemo(() => {
+    const clients = new Set();
+    const recruiters = new Set();
+    const jdPairs = [];
+    candidateUniverseAll.forEach((item) => {
+      const clientLabel = String(item?.client_name || item?.clientName || "").trim();
+      const recruiterLabel = String(item?.assigned_to_name || item?.assignedToName || item?.recruiterName || "").trim();
+      const jdLabel = String(item?.jdTitle || item?.position || item?.role || item?.currentDesignation || "").trim();
+      if (clientLabel) clients.add(clientLabel);
+      if (recruiterLabel) recruiters.add(recruiterLabel);
+      if (jdLabel) jdPairs.push({ client: clientLabel, label: jdLabel });
+    });
+    (state.jobs || []).forEach((job) => {
+      const clientLabel = String(job?.clientName || job?.client_name || "").trim();
+      const jdLabel = String(job?.title || "").trim();
+      if (clientLabel) clients.add(clientLabel);
+      if (jdLabel) jdPairs.push({ client: clientLabel, label: jdLabel });
+    });
+    (state.users || []).forEach((user) => {
+      const label = String(user?.name || "").trim();
+      if (label) recruiters.add(label);
+    });
+    return {
+      clients: Array.from(clients).sort((a, b) => a.localeCompare(b)),
+      recruiters: Array.from(recruiters).sort((a, b) => a.localeCompare(b)),
+      jdPairs
+    };
+  }, [candidateUniverseAll, state.jobs, state.users]);
+  const candidateQuickFilterJdOptions = useMemo(() => {
+    const selectedClient = String(candidateQuickFiltersDraft.client || "").trim().toLowerCase();
+    const labels = new Set();
+    (candidateQuickFilterOptions.jdPairs || []).forEach((entry) => {
+      const label = String(entry?.label || "").trim();
+      const client = String(entry?.client || "").trim().toLowerCase();
+      if (!label) return;
+      if (selectedClient && client && client !== selectedClient) return;
+      labels.add(label);
+    });
+    return Array.from(labels).sort((a, b) => a.localeCompare(b));
+  }, [candidateQuickFilterOptions.jdPairs, candidateQuickFiltersDraft.client]);
+  const applyCandidateQuickFilters = () => {
+    const next = {
+      dateFrom: String(candidateQuickFiltersDraft.dateFrom || "").trim(),
+      dateTo: String(candidateQuickFiltersDraft.dateTo || "").trim(),
+      recruiter: String(candidateQuickFiltersDraft.recruiter || "").trim(),
+      client: String(candidateQuickFiltersDraft.client || "").trim(),
+      jd: String(candidateQuickFiltersDraft.jd || "").trim()
+    };
+    setCandidateQuickFiltersApplied(next);
+    setCandidateSmartDateFrom(next.dateFrom);
+    setCandidateSmartDateTo(next.dateTo);
+    setCandidatePage(1);
+    setCapturedPage(1);
+    setCandidateFilters((current) => ({
+      ...current,
+      dateFrom: next.dateFrom,
+      dateTo: next.dateTo,
+      clients: next.client ? [next.client] : [],
+      jds: next.jd ? [next.jd] : [],
+      capturedBy: next.recruiter ? [next.recruiter] : []
+    }));
+    setCandidateFiltersApplied((current) => ({
+      ...current,
+      dateFrom: next.dateFrom,
+      dateTo: next.dateTo,
+      clients: next.client ? [next.client] : [],
+      jds: next.jd ? [next.jd] : [],
+      capturedBy: next.recruiter ? [next.recruiter] : []
+    }));
+  };
+  const resetCandidateQuickFilters = () => {
+    setCandidateQuickFiltersDraft(EMPTY_CANDIDATE_QUICK_FILTERS);
+    setCandidateQuickFiltersApplied(EMPTY_CANDIDATE_QUICK_FILTERS);
+    setCandidateSmartDateFrom("");
+    setCandidateSmartDateTo("");
+    setCandidatePage(1);
+    setCapturedPage(1);
+    setCandidateFilters((current) => ({
+      ...current,
+      dateFrom: "",
+      dateTo: "",
+      clients: [],
+      jds: [],
+      capturedBy: []
+    }));
+    setCandidateFiltersApplied((current) => ({
+      ...current,
+      dateFrom: "",
+      dateTo: "",
+      clients: [],
+      jds: [],
+      capturedBy: []
+    }));
+  };
+  const resetCandidateAdvancedFilters = () => {
+    setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
+    setCandidateStructuredFiltersDraft(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
+    setCandidatePage(1);
+  };
+  const renderCandidateQuickFilters = ({ showApply = true } = {}) => (
+    <div className="item-card compact-card candidate-common-filter-card">
+      <div className="candidate-filter-head candidate-filter-head--inline">
+        <div>
+          <h3>Quick Filters</h3>
+          <p className="muted">These filters work across both Captured Candidates and Database Search.</p>
+        </div>
+        <div className="button-row tight">
+          {showApply ? (
+            <button className={candidateQuickFiltersDirty ? "" : "ghost-btn"} disabled={!candidateQuickFiltersDirty} onClick={applyCandidateQuickFilters}>Apply quick filters</button>
+          ) : null}
+          <button className="ghost-btn" onClick={resetCandidateQuickFilters}>Reset quick filters</button>
+        </div>
+      </div>
+      <div className="candidate-common-filter-grid">
+        <label>
+          <span>Date from</span>
+          <input type="date" value={candidateQuickFiltersDraft.dateFrom} onChange={(e) => setCandidateQuickFiltersDraft((current) => ({ ...current, dateFrom: e.target.value }))} />
+        </label>
+        <label>
+          <span>Date to</span>
+          <input type="date" value={candidateQuickFiltersDraft.dateTo} onChange={(e) => setCandidateQuickFiltersDraft((current) => ({ ...current, dateTo: e.target.value }))} />
+        </label>
+        <label>
+          <span>Recruiter</span>
+          <select value={candidateQuickFiltersDraft.recruiter} onChange={(e) => setCandidateQuickFiltersDraft((current) => ({ ...current, recruiter: e.target.value }))}>
+            <option value="">All recruiters</option>
+            {candidateQuickFilterOptions.recruiters.map((label) => <option key={`candidate-quick-recruiter-${label}`} value={label}>{label}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>Client</span>
+          <select value={candidateQuickFiltersDraft.client} onChange={(e) => setCandidateQuickFiltersDraft((current) => {
+            const nextClient = e.target.value;
+            const nextJd = nextClient && current.jd && !candidateQuickFilterOptions.jdPairs.some((entry) => String(entry?.label || "").trim() === String(current.jd || "").trim() && String(entry?.client || "").trim() === nextClient)
+              ? ""
+              : current.jd;
+            return { ...current, client: nextClient, jd: nextJd };
+          })}>
+            <option value="">All clients</option>
+            {candidateQuickFilterOptions.clients.map((label) => <option key={`candidate-quick-client-${label}`} value={label}>{label}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>JD / Job</span>
+          <select value={candidateQuickFiltersDraft.jd} onChange={(e) => setCandidateQuickFiltersDraft((current) => ({ ...current, jd: e.target.value }))}>
+            <option value="">{candidateQuickFiltersDraft.client ? "All JDs for selected client" : "All JDs"}</option>
+            {candidateQuickFilterJdOptions.map((label) => <option key={`candidate-quick-jd-${label}`} value={label}>{label}</option>)}
+          </select>
+        </label>
+      </div>
+    </div>
+  );
   const renderCandidateFilterPanel = () => (
     <div className="item-card compact-card candidate-filter-card">
       <div className="candidate-filter-head">
         <div>
-          <h3>Structured filters</h3>
-          <p className="muted">Naukri-style filters. Smart search fills these automatically; you can adjust them before copying or downloading results.</p>
+          <h3>Advanced Database Filters</h3>
+          <p className="muted">Advanced filters apply only to Database Search.</p>
         </div>
       </div>
       <div className="candidate-filter-layout">
+        <div className="candidate-filter-column">
+          <label><span>Skills</span><input value={candidateStructuredFiltersDraft.keySkills} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, keySkills: e.target.value }))} placeholder="Salesforce, Node.js, RevOps" /></label>
+          <label><span>Company</span><input value={candidateStructuredFiltersDraft.currentCompany} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, currentCompany: e.target.value }))} placeholder="Infosys" /></label>
+          <label><span>Designation</span><input value={candidateStructuredFiltersDraft.targetLabel} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, targetLabel: e.target.value }))} placeholder="Customer Success Manager" /></label>
+        </div>
+        <div className="candidate-filter-column">
+          <label><span>Location</span><input value={candidateStructuredFiltersDraft.location} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, location: e.target.value }))} placeholder="Mumbai, Hyderabad" /></label>
+          <label><span>Education</span><input value={candidateStructuredFiltersDraft.qualification} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, qualification: e.target.value }))} placeholder="B.Tech / MBA" /></label>
+          <div className="filter-block">
+            <div className="candidate-filter-label">Source</div>
+            <input value={candidateStructuredFiltersDraft.sourceTypeFilter} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, sourceTypeFilter: e.target.value }))} placeholder="naukri_profile, linkedin, website" />
+          </div>
+        </div>
         <div className="candidate-filter-column">
           <div className="candidate-filter-group">
             <div className="candidate-filter-label">Experience</div>
@@ -9014,14 +9197,6 @@ function PortalApp({ token, onLogout }) {
               <span>Lacs</span>
             </div>
           </div>
-        </div>
-        <div className="candidate-filter-column">
-          <label><span>Current company</span><input value={candidateStructuredFiltersDraft.currentCompany} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, currentCompany: e.target.value }))} placeholder="Infosys" /></label>
-          <label><span>Qualification</span><input value={candidateStructuredFiltersDraft.qualification} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, qualification: e.target.value }))} placeholder="B.Tech / MBA" /></label>
-          <label><span>Locations</span><input value={candidateStructuredFiltersDraft.location} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, location: e.target.value }))} placeholder="Mumbai, Hyderabad" /></label>
-          <label><span>JD / Role</span><input value={candidateStructuredFiltersDraft.targetLabel} onChange={(e) => setCandidateStructuredFiltersDraft((current) => ({ ...current, targetLabel: e.target.value }))} placeholder="Customer Success Manager" /></label>
-        </div>
-        <div className="candidate-filter-column">
           <div className="filter-block">
             <div className="candidate-filter-label">Notice period</div>
             <MultiSelectDropdown
@@ -9046,78 +9221,6 @@ function PortalApp({ token, onLogout }) {
               emptySummary="Any notice period"
             />
           </div>
-          <div className="filter-block">
-            <div className="candidate-filter-label">Recruiter</div>
-            <MultiSelectDropdown
-              label="Recruiter"
-              summaryLabel="Select"
-              options={candidateSearchOptions.recruiters}
-              selected={parseMultiChipTokens(candidateStructuredFiltersDraft.recruiter)}
-              onToggle={(option) => setCandidateStructuredFiltersDraft((current) => ({
-                ...current,
-                recruiter: toggleMultiChipValue(current.recruiter, option)
-              }))}
-              emptySummary="All recruiters"
-            />
-          </div>
-          <div className="filter-block">
-            <div className="candidate-filter-label">Gender</div>
-            <MultiSelectDropdown
-              label="Gender"
-              summaryLabel="Select"
-              options={Array.from(new Set(["Male", "Female", ...(candidateSearchOptions.genders || [])])).filter(Boolean)}
-              selected={parseMultiChipTokens(candidateStructuredFiltersDraft.gender)}
-              onToggle={(option) => setCandidateStructuredFiltersDraft((current) => ({
-                ...current,
-                gender: toggleMultiChipValue(current.gender, option)
-              }))}
-              emptySummary="All genders"
-            />
-          </div>
-        </div>
-        <div className="candidate-filter-column">
-          <div className="filter-block">
-            <div className="candidate-filter-label">Client</div>
-            <MultiSelectDropdown
-              label="Client"
-              summaryLabel="Select"
-              options={candidateSearchOptions.clients}
-              selected={parseMultiChipTokens(candidateStructuredFiltersDraft.client)}
-              onToggle={(option) => setCandidateStructuredFiltersDraft((current) => ({
-                ...current,
-                client: toggleMultiChipValue(current.client, option)
-              }))}
-              emptySummary="All clients"
-            />
-          </div>
-          <div className="filter-block">
-            <div className="candidate-filter-label">Assessment status</div>
-            <MultiSelectDropdown
-              label="Assessment status"
-              summaryLabel="Select"
-              options={DEFAULT_STATUS_OPTIONS}
-              selected={parseMultiChipTokens(candidateStructuredFiltersDraft.assessmentStatus)}
-              onToggle={(option) => setCandidateStructuredFiltersDraft((current) => ({
-                ...current,
-                assessmentStatus: toggleMultiChipValue(current.assessmentStatus, option)
-              }))}
-              emptySummary="Any status"
-            />
-          </div>
-          <div className="filter-block">
-            <div className="candidate-filter-label">Attempt outcome</div>
-            <MultiSelectDropdown
-              label="Attempt outcome"
-              summaryLabel="Select"
-              options={ATTEMPT_OUTCOME_OPTIONS}
-              selected={parseMultiChipTokens(candidateStructuredFiltersDraft.attemptOutcome)}
-              onToggle={(option) => setCandidateStructuredFiltersDraft((current) => ({
-                ...current,
-                attemptOutcome: toggleMultiChipValue(current.attemptOutcome, option)
-              }))}
-              emptySummary="Any outcome"
-            />
-          </div>
         </div>
       </div>
       <div className="button-row" style={{ marginTop: 10 }}>
@@ -9133,6 +9236,7 @@ function PortalApp({ token, onLogout }) {
         >
           Apply filters
         </button>
+        <button className="ghost-btn" onClick={resetCandidateAdvancedFilters}>Reset advanced filters</button>
         {candidateStructuredFiltersDirty ? <div className="muted">You have unapplied filter changes.</div> : null}
       </div>
     </div>
@@ -9900,10 +10004,10 @@ function PortalApp({ token, onLogout }) {
   const effectiveLicense = billingOverview?.license || companyLicense || null;
   const currentCompanyId = String(state.user?.companyId || "").trim();
   const candidateSmartChipScopedFilters = useMemo(() => ({
-    client: String(candidateStructuredFilters?.client || "").trim(),
-    recruiter: String(candidateStructuredFilters?.recruiter || "").trim(),
-    targetLabel: String(candidateStructuredFilters?.targetLabel || "").trim()
-  }), [candidateStructuredFilters]);
+    client: String(candidateQuickFiltersApplied?.client || "").trim(),
+    recruiter: String(candidateQuickFiltersApplied?.recruiter || "").trim(),
+    targetLabel: String(candidateQuickFiltersApplied?.jd || "").trim()
+  }), [candidateQuickFiltersApplied]);
   const candidateSmartChipCacheKey = useMemo(() => {
     const companyId = String(state.user?.companyId || "").trim();
     const userId = String(state.user?.id || "").trim();
@@ -13557,6 +13661,12 @@ function PortalApp({ token, onLogout }) {
       const normalizedClientValue = clientValue.toLowerCase();
       const normalizedRecruiterValue = recruiterValue.toLowerCase();
       const normalizedGenderValue = genderValue.toLowerCase();
+      const quickClientValue = String(candidateQuickFiltersApplied.client || "").trim().toLowerCase();
+      const quickRecruiterValue = String(candidateQuickFiltersApplied.recruiter || "").trim().toLowerCase();
+      const quickJdValue = String(candidateQuickFiltersApplied.jd || "").trim().toLowerCase();
+      const quickDateFrom = String(candidateQuickFiltersApplied.dateFrom || "").trim();
+      const quickDateTo = String(candidateQuickFiltersApplied.dateTo || "").trim();
+      const quickRecordDate = String(item?.sharedAt || item?.createdAt || item?.created_at || item?.date || "").trim();
       const linkedAssessment = item?.raw?.assessment
         || item?.assessment
         || assessmentById.get(String(item.assessment_id || item.assessmentId || "").trim())
@@ -13571,6 +13681,14 @@ function PortalApp({ token, onLogout }) {
           || ""
       ).trim();
       const attemptOutcomeValue = String(item.last_contact_outcome || item.attemptStatus || item.outcome || "").trim();
+      if (quickDateFrom || quickDateTo) {
+        const quickDateKey = quickRecordDate ? quickRecordDate.slice(0, 10) : "";
+        if (quickDateFrom && (!quickDateKey || quickDateKey < quickDateFrom)) return false;
+        if (quickDateTo && (!quickDateKey || quickDateKey > quickDateTo)) return false;
+      }
+      if (quickClientValue && normalizedClientValue !== quickClientValue) return false;
+      if (quickRecruiterValue && normalizedRecruiterValue !== quickRecruiterValue) return false;
+      if (quickJdValue && !roleHay.includes(quickJdValue)) return false;
       if (candidateStructuredFilters.minExperience && (years == null || years < minYears)) return false;
       if (candidateStructuredFilters.maxExperience && (years == null || years > maxYears)) return false;
       if (candidateStructuredFilters.location) {
@@ -13601,6 +13719,11 @@ function PortalApp({ token, onLogout }) {
       } else if (candidateStructuredFilters.maxNoticeDays && (noticeDays == null || noticeDays > Number(candidateStructuredFilters.maxNoticeDays))) {
         return false;
       }
+      const selectedSources = parseMultiChipTokens(candidateStructuredFilters.sourceTypeFilter).map((item) => item.toLowerCase());
+      if (selectedSources.length) {
+        const sourceValue = String(item?.sourceType || item?.source || "").trim().toLowerCase();
+        if (!selectedSources.includes(sourceValue)) return false;
+      }
       const selectedRecruiters = parseMultiChipTokens(candidateStructuredFilters.recruiter).map((item) => item.toLowerCase());
       if (selectedRecruiters.length && !selectedRecruiters.includes(normalizedRecruiterValue)) return false;
       const selectedGenders = parseMultiChipTokens(candidateStructuredFilters.gender).map((item) => item.toLowerCase());
@@ -13611,11 +13734,12 @@ function PortalApp({ token, onLogout }) {
       if (selectedAttemptOutcomes.length && !selectedAttemptOutcomes.includes(normalizeAttemptOutcomeLabel(attemptOutcomeValue).toLowerCase())) return false;
       return true;
     });
-  }, [candidateBaseUniverse, candidateStructuredFilters, state.assessments]);
+  }, [candidateBaseUniverse, candidateStructuredFilters, candidateQuickFiltersApplied, state.assessments]);
   const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
   const databaseAllMode = candidateSearchMode === "all"
     && !candidateHasSmartChipSelection
-    && !candidateStructuredFiltersActive;
+    && !candidateStructuredFiltersActive
+    && !candidateQuickFiltersActive;
   const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseAllMode;
   const pagedCandidates = useMemo(() => {
     const safePageSize = Math.max(10, Number(candidatePageSize || 10));
@@ -13628,6 +13752,21 @@ function PortalApp({ token, onLogout }) {
     const start = (candidatePage - 1) * safePageSize;
     return candidateUniverse.slice(start, start + safePageSize);
   }, [databaseAllMode, databaseServerQueryMode, databaseListItems, candidateUniverse, databaseQueryItems, candidatePage, candidatePageSize]);
+  useEffect(() => {
+    const items = Array.isArray(pagedCandidates) ? pagedCandidates : [];
+    if (!items.length) {
+      setDatabaseInlineSelectedId("");
+      return;
+    }
+    const existing = items.some((item) => String(item?.id || item?.assessmentId || "").trim() === String(databaseInlineSelectedId || "").trim());
+    if (!existing) {
+      setDatabaseInlineSelectedId(String(items[0]?.id || items[0]?.assessmentId || "").trim());
+    }
+  }, [pagedCandidates, databaseInlineSelectedId]);
+  const selectedDatabaseCandidate = useMemo(() => (
+    (Array.isArray(pagedCandidates) ? pagedCandidates : []).find((item) => String(item?.id || item?.assessmentId || "").trim() === String(databaseInlineSelectedId || "").trim())
+      || ((Array.isArray(pagedCandidates) && pagedCandidates.length) ? pagedCandidates[0] : null)
+  ), [pagedCandidates, databaseInlineSelectedId]);
   const totalCandidatePages = databaseAllMode
     ? Math.max(1, Number(databaseListMeta?.totalPages || 1))
     : databaseServerQueryMode
@@ -13661,8 +13800,9 @@ function PortalApp({ token, onLogout }) {
     if (candidateSearchMode !== "all") return;
     if (candidateHasSmartChipSelection) return;
     if (candidateStructuredFiltersActive) return;
+    if (candidateQuickFiltersActive) return;
     void reloadDatabaseListPage(candidatePage, candidatePageSize);
-  }, [token, location?.pathname, candidateSearchMode, candidateHasSmartChipSelection, candidateStructuredFiltersActive, candidatePage, candidatePageSize]);
+  }, [token, location?.pathname, candidateSearchMode, candidateHasSmartChipSelection, candidateStructuredFiltersActive, candidateQuickFiltersActive, candidatePage, candidatePageSize]);
 
   useEffect(() => {
     if (!token) return;
@@ -13685,7 +13825,14 @@ function PortalApp({ token, onLogout }) {
         ]).map((value) => String(value || "").trim()).filter(Boolean)
       : [];
     api("/company/database/query", token, "POST", {
-      filters: candidateStructuredFilters,
+      filters: {
+        ...candidateStructuredFilters,
+        dateFrom: candidateQuickFiltersApplied.dateFrom,
+        dateTo: candidateQuickFiltersApplied.dateTo,
+        client: candidateQuickFiltersApplied.client,
+        recruiter: candidateQuickFiltersApplied.recruiter,
+        targetLabel: candidateQuickFiltersApplied.jd
+      },
       searchMode: candidateSearchMode,
       searchIds,
       page: candidatePage,
@@ -13712,7 +13859,7 @@ function PortalApp({ token, onLogout }) {
     return () => {
       cancelled = true;
     };
-  }, [token, location?.pathname, databaseServerQueryMode, candidateStructuredFilters, candidateSearchMode, candidateSearchResults, candidatePage, candidatePageSize]);
+  }, [token, location?.pathname, databaseServerQueryMode, candidateStructuredFilters, candidateQuickFiltersApplied, candidateSearchMode, candidateSearchResults, candidatePage, candidatePageSize]);
 
   useEffect(() => {
     if (!token) return;
@@ -17876,6 +18023,12 @@ function PortalApp({ token, onLogout }) {
           assessmentStatus: result.filters.assessmentStatus || "",
           attemptOutcome: result.filters.attemptOutcome || ""
         };
+        setCandidateQuickFiltersDraft((current) => ({
+          ...current,
+          recruiter: result.filters.recruiterName || current.recruiter || "",
+          client: result.filters.client || current.client || "",
+          jd: result.filters.targetLabel || current.jd || ""
+        }));
         // AI Search fills filters; keep them editable but do NOT auto-apply,
         // otherwise we end up double-filtering already-filtered results and the list can look empty.
         setCandidateStructuredFiltersDraft(next);
@@ -23248,13 +23401,38 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             <div className="page-grid">
               <Section kicker="Candidate Universe" title="Database">
                 <p className="muted">This view can surface captured, applied, and assessment-linked candidates together. Candidates without CV uploads still remain searchable through saved structured fields, recruiter notes, attempts, and assessment data. Hidden CV metadata is used only by search and not shown in the UI.</p>
-                <div className="item-card compact-card">
-                  <h3>Search mode</h3>
-                  <p className="muted">Use Boolean for exact keyword retrieval. Use Smart when you want plain-English converted into deterministic Boolean + filters.</p>
-                  <div className="button-row">
-                  <button className={candidateAiQueryMode === "boolean" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("boolean")}>Boolean</button>
-                    <button className={candidateAiQueryMode === "natural" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("natural")}>Smart</button>
+                <div className="candidate-database-top-grid">
+                  <div className="item-card compact-card">
+                    <h3>Search mode</h3>
+                    <p className="muted">Use Boolean for exact keyword retrieval. Use Smart when you want plain-English converted into deterministic Boolean + filters.</p>
+                    <div className="button-row">
+                    <button className={candidateAiQueryMode === "boolean" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("boolean")}>Boolean</button>
+                      <button className={candidateAiQueryMode === "natural" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("natural")}>Smart</button>
+                    </div>
                   </div>
+                  {candidateAiQueryMode === "natural" ? (
+                    <div className="item-card compact-card candidate-keyword-builder">
+                      <div className="candidate-filter-head candidate-filter-head--inline">
+                        <div>
+                          <h3>Smart keyword builder</h3>
+                          <p className="muted">Use comma separated values. We build a clean Boolean preview before search.</p>
+                        </div>
+                        <button className="ghost-btn" onClick={() => setCandidateFilterPanelOpen((current) => !current)}>{candidateFilterPanelOpen ? "Hide advanced filters" : "Show advanced filters"}</button>
+                      </div>
+                      <div className="candidate-keyword-grid">
+                        <label><span>Must keywords</span><input value={candidateKeywordMust} onChange={(e) => setCandidateKeywordMust(e.target.value)} placeholder=".NET Core, C#, Azure" /></label>
+                        <label><span>Any group 1 (OR)</span><input value={candidateKeywordAny1} onChange={(e) => setCandidateKeywordAny1(e.target.value)} placeholder=".NET Core, C#" /></label>
+                        <label><span>Any group 2 (OR)</span><input value={candidateKeywordAny2} onChange={(e) => setCandidateKeywordAny2(e.target.value)} placeholder="Angular, React" /></label>
+                        <label><span>Any group 3 (OR)</span><input value={candidateKeywordAny3} onChange={(e) => setCandidateKeywordAny3(e.target.value)} placeholder="SQL, MongoDB" /></label>
+                        <label><span>Exclude keywords</span><input value={candidateKeywordExclude} onChange={(e) => setCandidateKeywordExclude(e.target.value)} placeholder="sales, recruiter, hr" /></label>
+                      </div>
+                      {candidateKeywordPreview ? (
+                        <div className="muted">Query preview: <code>{candidateKeywordPreview}</code></div>
+                      ) : (
+                        <div className="muted">Add keywords to generate Boolean preview.</div>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
                 {candidateAiQueryMode === "boolean" ? (
                   <div className="toolbar candidate-search-toolbar">
@@ -23265,9 +23443,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     />
                     <button disabled={candidateSearchBusy} onClick={() => void runCandidateSearch()}>Run Boolean Search</button>
                     <button className="ghost-btn" onClick={() => {
-                      setCandidateFilterPanelOpen((current) => !current);
-                    }}>{candidateFilterPanelOpen ? "Hide filters" : "Show filters"}</button>
-                    <button className="ghost-btn" onClick={() => {
                       setCandidateSearchText("");
                       setCandidateSearchQueryUsed("");
                       setCandidateKeywordMust("");
@@ -23276,14 +23451,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       setCandidateKeywordAny3("");
                       setCandidateKeywordExclude("");
                       setCandidateQuickChipIds([]);
-                      setCandidateSmartDateFrom("");
-                      setCandidateSmartDateTo("");
                       setCandidateSearchResults([]);
                       setCandidateSearchMode("all");
                       setCandidatePage(1);
                       setCandidateSearchingAs("");
-                      setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
-                      setCandidateStructuredFiltersDraft(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
                     }}>Reset search</button>
                   </div>
                 ) : null}
@@ -23293,28 +23464,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 {candidateSmartChipLoading ? (
                   <div className="muted" style={{ marginTop: 6 }}>Loading quick chips...</div>
                 ) : null}
-                {candidateAiQueryMode === "natural" ? (
-                  <div className="item-card compact-card candidate-keyword-builder">
-                    <h3>Smart keyword builder</h3>
-                    <p className="muted">Use comma separated values. We build a clean Boolean preview before search.</p>
-                    <div className="candidate-keyword-grid">
-                      <label><span>Must keywords</span><input value={candidateKeywordMust} onChange={(e) => setCandidateKeywordMust(e.target.value)} placeholder=".NET Core, C#, Azure" /></label>
-                      <label><span>Any group 1 (OR)</span><input value={candidateKeywordAny1} onChange={(e) => setCandidateKeywordAny1(e.target.value)} placeholder=".NET Core, C#" /></label>
-                      <label><span>Any group 2 (OR)</span><input value={candidateKeywordAny2} onChange={(e) => setCandidateKeywordAny2(e.target.value)} placeholder="Angular, React" /></label>
-                      <label><span>Any group 3 (OR)</span><input value={candidateKeywordAny3} onChange={(e) => setCandidateKeywordAny3(e.target.value)} placeholder="SQL, MongoDB" /></label>
-                      <label><span>Exclude keywords</span><input value={candidateKeywordExclude} onChange={(e) => setCandidateKeywordExclude(e.target.value)} placeholder="sales, recruiter, hr" /></label>
-                    </div>
-                    {candidateKeywordPreview ? (
-                      <div className="muted">Query preview: <code>{candidateKeywordPreview}</code></div>
-                    ) : (
-                      <div className="muted">Add keywords to generate Boolean preview.</div>
-                    )}
-                  </div>
-                ) : null}
+                {renderCandidateQuickFilters()}
                 {candidateAiQueryMode === "natural" ? (
                   <div className="item-card compact-card candidate-quick-chip-builder">
-                    <h3>Quick chips</h3>
-                    <p className="muted">One-click shortlist blocks. Results stay aligned with your selected filters.</p>
+                    <h3>Smart chips</h3>
+                    <p className="muted">One-click shortlist blocks. Smart chips stay aligned with your applied Quick Filters.</p>
                     <div className="filter-block">
                       <div className="chip-row">
                         {SMART_SEARCH_QUICK_CHIPS.map((chip) => (
@@ -23332,32 +23486,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         ))}
                       </div>
                     </div>
-                    <div className="form-grid three-col" style={{ marginTop: 8 }}>
-                      <label>
-                        <span>Chip date from</span>
-                        <input
-                          type="date"
-                          value={candidateSmartDateFrom}
-                          onChange={(e) => setCandidateSmartDateFrom(e.target.value)}
-                        />
-                      </label>
-                      <label>
-                        <span>Chip date to</span>
-                        <input
-                          type="date"
-                          value={candidateSmartDateTo}
-                          onChange={(e) => setCandidateSmartDateTo(e.target.value)}
-                        />
-                      </label>
-                    </div>
                   </div>
                 ) : null}
                 {candidateAiQueryMode === "natural" ? (
                   <div className="toolbar candidate-search-toolbar">
                     <button disabled={candidateSearchBusy} onClick={() => void runCandidateSearch()}>Run Smart Search</button>
-                    <button className="ghost-btn" onClick={() => {
-                      setCandidateFilterPanelOpen((current) => !current);
-                    }}>{candidateFilterPanelOpen ? "Hide filters" : "Show filters"}</button>
                     <button className="ghost-btn" onClick={() => {
                       setCandidateSearchText("");
                       setCandidateSearchQueryUsed("");
@@ -23367,14 +23500,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       setCandidateKeywordAny3("");
                       setCandidateKeywordExclude("");
                       setCandidateQuickChipIds([]);
-                      setCandidateSmartDateFrom("");
-                      setCandidateSmartDateTo("");
                       setCandidateSearchResults([]);
                       setCandidateSearchMode("all");
                       setCandidatePage(1);
                       setCandidateSearchingAs("");
-                      setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
-                      setCandidateStructuredFiltersDraft(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
                     }}>Reset search</button>
                   </div>
                 ) : null}
@@ -23383,6 +23512,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     Searching as: <code>{candidateSearchingAs}</code>
                   </div>
                 ) : null}
+                <div className="item-card compact-card candidate-advanced-toggle-card">
+                  <button className="candidate-advanced-toggle" type="button" onClick={() => setCandidateFilterPanelOpen((current) => !current)}>
+                    <span>{candidateFilterPanelOpen ? "Hide advanced database filters" : "Show advanced database filters"}</span>
+                    <span className="muted">Advanced filters apply only to Database Search.</span>
+                  </button>
+                </div>
                 {candidateFilterPanelOpen ? renderCandidateFilterPanel() : null}
                 {candidateHasSmartChipSelection ? (
                   <div className="stack-list" style={{ marginTop: 10 }}>
@@ -23523,32 +23658,114 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         {(databaseAllMode ? databaseListLoading : databaseQueryLoading) ? <div className="muted">Loading database...</div> : null}
                       </div>
                     ) : null}
-                    <div className="stack-list">
-                      {!pagedCandidates.length ? <div className="empty-state">No candidates found for this view.</div> : pagedCandidates.map((item) => (
-                        <article className="item-card compact-card" key={item.id || item.assessmentId}>
-                          <div className="item-card__top">
-                            <div>
-                              <h3>{item.name || item.candidateName || "Candidate"} | {item.role || item.currentDesignation || item.jdTitle || "Untitled role"}</h3>
-                              <p className="muted">{[item.company || item.currentCompany || "", item.location || "", item.ownerRecruiter ? `Recruiter: ${item.ownerRecruiter}` : "", item.source ? `Source: ${item.source}` : ""].filter(Boolean).join(" | ")}</p>
-                              <div className="candidate-snippet">{[item.experience || item.totalExperience || "", item.current_ctc || item.currentCtc ? `Current CTC: ${item.current_ctc || item.currentCtc}` : "", item.expected_ctc || item.expectedCtc ? `Expected CTC: ${item.expected_ctc || item.expectedCtc}` : "", item.notice_period || item.noticePeriod ? `Notice: ${item.notice_period || item.noticePeriod}` : ""].filter(Boolean).join("\n")}</div>
-                              {buildVisibleTagList(item).length ? (
+                    <div className="candidate-search-content">
+                      <div className="candidate-search-results">
+                        {!pagedCandidates.length ? <div className="empty-state">No candidates found for this view.</div> : pagedCandidates.map((item) => {
+                          const itemKey = String(item.id || item.assessmentId || "").trim();
+                          const isSelected = itemKey === String(selectedDatabaseCandidate?.id || selectedDatabaseCandidate?.assessmentId || "").trim();
+                          const tags = buildVisibleTagList(item);
+                          return (
+                            <article
+                              className={`item-card compact-card database-result-row${isSelected ? " is-selected" : ""}`}
+                              key={item.id || item.assessmentId}
+                              onClick={() => setDatabaseInlineSelectedId(itemKey)}
+                            >
+                              <div className="database-result-row__main">
+                                <div className="database-result-row__identity">
+                                  <h3>{item.name || item.candidateName || "Candidate"}</h3>
+                                  <p className="database-result-row__role">{item.role || item.currentDesignation || item.jdTitle || "Untitled role"}</p>
+                                  <p className="muted">{[item.company || item.currentCompany || "", item.location || "", item.source ? `Source: ${item.source}` : ""].filter(Boolean).join(" | ")}</p>
+                                </div>
+                                <div className="database-result-row__stats">
+                                  <div><strong>{item.experience || item.totalExperience || "-"}</strong><span>Experience</span></div>
+                                  <div><strong>{item.current_ctc || item.currentCtc || "-"}</strong><span>CTC</span></div>
+                                  <div><strong>{item.notice_period || item.noticePeriod || "-"}</strong><span>Notice</span></div>
+                                </div>
+                                <div className="database-result-row__actions">
+                                  <button onClick={(event) => { event.stopPropagation(); setDatabaseInlineSelectedId(itemKey); }}>Select</button>
+                                  <button className="ghost-btn" onClick={(event) => { event.stopPropagation(); setDatabaseProfileItem(item); }}>Open profile</button>
+                                </div>
+                              </div>
+                              {tags.length ? (
                                 <div className="chip-row">
-                                  {buildVisibleTagList(item).slice(0, 8).map((tag) => <span key={tag} className="chip">{tag}</span>)}
+                                  {tags.slice(0, 5).map((tag) => <span key={tag} className="chip">{tag}</span>)}
                                 </div>
                               ) : null}
-                              <div className="button-row">
-                                <button onClick={() => setDatabaseProfileItem(item)}>Open profile</button>
-                                {candidateHasStoredCv(item) ? (
-                                  <CvOpenActions
-                                    onOpenOriginal={() => openDatabaseCandidateCv(item)}
-                                    onOpenBranded={() => void openBrandedCandidateCv(item)}
-                                  />
-                                ) : null}
+                            </article>
+                          );
+                        })}
+                      </div>
+                      <div className="candidate-search-filters">
+                        {selectedDatabaseCandidate ? (() => {
+                          const ctx = resolveCandidateContext(selectedDatabaseCandidate);
+                          const baseCandidate = ctx.candidate || selectedDatabaseCandidate;
+                          const linkedAssessment = ctx.assessment || null;
+                          const draft = ctx.draft || {};
+                          const tags = buildVisibleTagList(baseCandidate);
+                          const detailName = baseCandidate.name || draft.candidateName || selectedDatabaseCandidate.candidateName || "Candidate";
+                          const detailRole = linkedAssessment?.jdTitle || baseCandidate.role || baseCandidate.currentDesignation || draft.jdTitle || "Untitled role";
+                          const detailCompany = linkedAssessment?.currentCompany || baseCandidate.company || baseCandidate.currentCompany || draft.currentCompany || "-";
+                          const detailLocation = linkedAssessment?.location || baseCandidate.location || draft.location || "-";
+                          const detailExperience = linkedAssessment?.totalExperience || baseCandidate.experience || baseCandidate.totalExperience || draft.totalExperience || "-";
+                          const detailCurrentCtc = linkedAssessment?.currentCtc || baseCandidate.current_ctc || baseCandidate.currentCtc || draft.currentCtc || "-";
+                          const detailExpectedCtc = linkedAssessment?.expectedCtc || baseCandidate.expected_ctc || baseCandidate.expectedCtc || draft.expectedCtc || "-";
+                          const detailNotice = linkedAssessment?.noticePeriod || baseCandidate.notice_period || baseCandidate.noticePeriod || draft.noticePeriod || "-";
+                          const detailEmail = ctx.email || "-";
+                          const detailPhone = ctx.phone || "-";
+                          const detailLinkedin = ctx.linkedin || "-";
+                          const detailEducation = linkedAssessment?.highestEducation || baseCandidate.highest_education || baseCandidate.highestEducation || draft.highestEducation || "-";
+                          return (
+                            <article className="item-card compact-card database-detail-pane">
+                              <div className="database-detail-pane__head">
+                                <div>
+                                  <h3>{detailName} | {detailRole}</h3>
+                                  <p className="muted">{[detailCompany, detailLocation, baseCandidate.source ? `Source: ${baseCandidate.source}` : "", baseCandidate.ownerRecruiter ? `Recruiter: ${baseCandidate.ownerRecruiter}` : ""].filter(Boolean).join(" | ")}</p>
+                                </div>
+                                <div className="button-row tight">
+                                  <button onClick={() => setDatabaseProfileItem(selectedDatabaseCandidate)}>Open profile</button>
+                                  {candidateHasStoredCv(selectedDatabaseCandidate) ? (
+                                    <CvOpenActions
+                                      onOpenOriginal={() => openDatabaseCandidateCv(selectedDatabaseCandidate)}
+                                      onOpenBranded={() => void openBrandedCandidateCv(selectedDatabaseCandidate)}
+                                    />
+                                  ) : null}
+                                </div>
                               </div>
-                            </div>
-                          </div>
-                        </article>
-                      ))}
+                              <div className="database-detail-pane__metrics">
+                                <div><strong>{detailExperience}</strong><span>Experience</span></div>
+                                <div><strong>{detailCurrentCtc}</strong><span>Current CTC</span></div>
+                                <div><strong>{detailExpectedCtc}</strong><span>Expected CTC</span></div>
+                                <div><strong>{detailNotice}</strong><span>Notice Period</span></div>
+                              </div>
+                              <div className="database-detail-pane__grid">
+                                <div className="database-detail-pane__section">
+                                  <h4>Overview</h4>
+                                  <div className="database-detail-pane__kv"><span>Company</span><strong>{detailCompany}</strong></div>
+                                  <div className="database-detail-pane__kv"><span>Location</span><strong>{detailLocation}</strong></div>
+                                  <div className="database-detail-pane__kv"><span>Education</span><strong>{detailEducation}</strong></div>
+                                  <div className="database-detail-pane__kv"><span>Status</span><strong>{linkedAssessment?.candidateStatus || baseCandidate.workflowStatus || "Active"}</strong></div>
+                                </div>
+                                <div className="database-detail-pane__section">
+                                  <h4>Contact</h4>
+                                  <div className="database-detail-pane__kv"><span>Email</span><strong>{detailEmail}</strong></div>
+                                  <div className="database-detail-pane__kv"><span>Phone</span><strong>{detailPhone}</strong></div>
+                                  <div className="database-detail-pane__kv"><span>LinkedIn</span><strong>{detailLinkedin}</strong></div>
+                                </div>
+                              </div>
+                              {tags.length ? (
+                                <div className="database-detail-pane__section">
+                                  <h4>Skills / Tags</h4>
+                                  <div className="chip-row">
+                                    {tags.slice(0, 12).map((tag) => <span key={tag} className="chip">{tag}</span>)}
+                                  </div>
+                                </div>
+                              ) : null}
+                            </article>
+                          );
+                        })() : (
+                          <div className="empty-state">Select a profile to view details.</div>
+                        )}
+                      </div>
                     </div>
                     <div className="button-row">
                       <label className="copy-preset-control">
@@ -23955,12 +24172,20 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 </button>
               </div>
               <div className="form-grid three-col">
-                <label className="full"><span>Search</span><input placeholder="Search candidate name, company, phone, email, LinkedIn..." value={candidateFilters.q} onChange={(e) => setCandidateFilters((c) => ({ ...c, q: e.target.value }))} /></label>
+                <label className="full"><span>Search</span><input placeholder="Search candidate name, company, phone, email, LinkedIn..." value={candidateFilters.q} onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setCandidateFilters((c) => ({ ...c, q: nextValue }));
+                  setCandidateFiltersApplied((c) => ({ ...c, q: nextValue }));
+                }} /></label>
               </div>
               <div className="form-grid three-col captured-view-row">
                 <label>
                   <span>View</span>
-                  <select value={candidateFilters.view} onChange={(e) => setCandidateFilters((current) => ({ ...current, view: e.target.value }))}>
+                  <select value={candidateFilters.view} onChange={(e) => {
+                    const nextValue = e.target.value;
+                    setCandidateFilters((current) => ({ ...current, view: nextValue }));
+                    setCandidateFiltersApplied((current) => ({ ...current, view: nextValue }));
+                  }}>
                     <option value="all">All captured</option>
                     <option value="added_by_me">Added by me</option>
                     <option value="assigned_to_me">Assigned to me (primary)</option>
@@ -23975,69 +24200,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">⏳</span>Inactive</div><div className="metric-value">{renderLoadedMetricValue(capturedNotesStats.inactive || 0)}</div></div>
                 <div className="metric-card compact-metric"><div className="metric-label captured-metric-label"><span className="captured-metric-icon">✅</span>Converted</div><div className="metric-value">{renderLoadedMetricValue(capturedNotesStats.converted)}</div></div>
               </div>
-              <div className="form-grid three-col" style={{ marginTop: 10 }}>
-                <label><span>Date from</span><input type="date" value={candidateFilters.dateFrom} onChange={(e) => setCandidateFilters((c) => ({ ...c, dateFrom: e.target.value }))} /></label>
-                <label><span>Date to</span><input type="date" value={candidateFilters.dateTo} onChange={(e) => setCandidateFilters((c) => ({ ...c, dateTo: e.target.value }))} /></label>
-              </div>
-                <div className="captured-filter-grid">
-                  <MultiSelectDropdown label="Clients" options={capturedCandidateOptions.clients} selected={candidateFilters.clients} onToggle={(value) => setCandidateFilters((current) => ({ ...current, clients: value === "__all__" ? [] : current.clients.includes(value) ? current.clients.filter((item) => item !== value) : [...current.clients, value] }))} />
-                  <MultiSelectDropdown
-                    label="JD / Role"
-                    options={capturedCandidateOptions.jds}
-                    selected={candidateFilters.jds}
-                    allowAll={candidateFilters.clients.length > 0}
-                    emptySummary={candidateFilters.clients.length ? "No active jobs" : "Choose client first"}
-                    onToggle={(value) => setCandidateFilters((current) => ({ ...current, jds: value === "__all__" ? [] : current.jds.includes(value) ? current.jds.filter((item) => item !== value) : [...current.jds, value] }))}
-                  />
-                  {String(state.user?.role || "").toLowerCase() === "admin" ? <MultiSelectDropdown label="Assigned to" options={capturedCandidateOptions.assignedTo} selected={candidateFilters.assignedTo} onToggle={(value) => setCandidateFilters((current) => ({ ...current, assignedTo: value === "__all__" ? [] : current.assignedTo.includes(value) ? current.assignedTo.filter((item) => item !== value) : [...current.assignedTo, value] }))} /> : null}
-                  <MultiSelectDropdown label="Captured by" options={capturedCandidateOptions.capturedBy} selected={candidateFilters.capturedBy} onToggle={(value) => setCandidateFilters((current) => ({ ...current, capturedBy: value === "__all__" ? [] : current.capturedBy.includes(value) ? current.capturedBy.filter((item) => item !== value) : [...current.capturedBy, value] }))} />
-                  <MultiSelectDropdown label="Sources" options={capturedCandidateOptions.sources} selected={candidateFilters.sources} onToggle={(value) => setCandidateFilters((current) => ({ ...current, sources: value === "__all__" ? [] : current.sources.includes(value) ? current.sources.filter((item) => item !== value) : [...current.sources, value] }))} />
-                  <MultiSelectDropdown label="Outcome" options={capturedCandidateOptions.outcomes} selected={candidateFilters.outcomes} onToggle={(value) => setCandidateFilters((current) => ({ ...current, outcomes: value === "__all__" ? [] : current.outcomes.includes(value) ? current.outcomes.filter((item) => item !== value) : [...current.outcomes, value] }))} />
-                  <MultiSelectDropdown label="State" options={capturedCandidateOptions.activeStates} selected={candidateFilters.activeStates} allowAll={false} emptySummary="Active only" onToggle={(value) => setCandidateFilters((current) => ({ ...current, activeStates: current.activeStates.includes(value) ? current.activeStates.filter((item) => item !== value) : [...current.activeStates, value] }))} />
-                </div>
-              <div className="button-row tight" style={{ marginTop: 8 }}>
-                    <button
-                      onClick={() => {
-                        setCapturedListLoading(true);
-                        setCapturedPage(1);
-                        setCandidateFiltersApplied({
-                          ...candidateFilters,
-                      clients: [...(candidateFilters.clients || [])],
-                      jds: [...(candidateFilters.jds || [])],
-                      assignedTo: [...(candidateFilters.assignedTo || [])],
-                      capturedBy: [...(candidateFilters.capturedBy || [])],
-                      sources: [...(candidateFilters.sources || [])],
-                      outcomes: [...(candidateFilters.outcomes || [])],
-                      activeStates: [...(candidateFilters.activeStates || [])]
-                    });
-                  }}
-                >
-                  Apply filters
-                </button>
-                    <button
-                      className="ghost-btn"
-                      onClick={() => {
-                        setCapturedListLoading(true);
-                        const reset = {
-                          q: "",
-                          view: "all",
-                      dateFrom: "",
-                      dateTo: "",
-                      clients: [],
-                      jds: [],
-                      assignedTo: [],
-                      capturedBy: [],
-                      sources: [],
-                      outcomes: [],
-                      activeStates: []
-                    };
-                    setCapturedPage(1);
-                    setCandidateFilters(reset);
-                    setCandidateFiltersApplied(reset);
-                  }}
-                >
-                  Reset
-                </button>
+              <div style={{ marginTop: 10 }}>
+                {renderCandidateQuickFilters()}
               </div>
               <div className="button-row captured-copy-row">
                 <label className="copy-preset-control">

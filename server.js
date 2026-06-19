@@ -7153,6 +7153,11 @@ function databaseSmartChipRowMatchesFrontendFilters(item, filters = {}) {
       || ""
   ).trim();
   const attemptOutcomeValue = String(item?.last_contact_outcome || item?.attemptStatus || item?.outcome || "").trim();
+  const recordDate = String(item?.sharedAt || item?.createdAt || item?.created_at || item?.date || "").trim();
+  const recordDateKey = recordDate ? recordDate.slice(0, 10) : "";
+
+  if (normalizedFilters.dateFrom && (!recordDateKey || recordDateKey < String(normalizedFilters.dateFrom).trim())) return false;
+  if (normalizedFilters.dateTo && (!recordDateKey || recordDateKey > String(normalizedFilters.dateTo).trim())) return false;
 
   if (normalizedFilters.minExperienceYears != null && normalizedFilters.minExperienceYears !== "" && (years == null || years < minYears)) return false;
   if (normalizedFilters.maxExperienceYears != null && normalizedFilters.maxExperienceYears !== "" && (years == null || years > maxYears)) return false;
