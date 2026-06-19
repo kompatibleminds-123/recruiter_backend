@@ -23483,13 +23483,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </div>
                   ) : null}
                 </div>
-                <div className="item-card compact-card candidate-advanced-toggle-card">
-                  <button className="candidate-advanced-toggle" type="button" onClick={() => setCandidateFilterPanelOpen((current) => !current)}>
-                    <span>{candidateFilterPanelOpen ? "Hide advanced database filters" : "Show advanced database filters"}</span>
-                    <span className="muted">Advanced filters apply only to Database Search.</span>
-                  </button>
-                </div>
-                {candidateFilterPanelOpen ? renderCandidateFilterPanel() : null}
                 {candidateAiQueryMode === "boolean" ? (
                   <div className="toolbar candidate-search-toolbar">
                     <input
@@ -23543,6 +23536,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     Searching as: <code>{candidateSearchingAs}</code>
                   </div>
                 ) : null}
+                <div className="item-card compact-card candidate-advanced-toggle-card">
+                  <button className="candidate-advanced-toggle" type="button" onClick={() => setCandidateFilterPanelOpen((current) => !current)}>
+                    <span>{candidateFilterPanelOpen ? "Hide advanced database filters" : "Show advanced database filters"}</span>
+                    <span className="muted">Advanced filters apply only to Database Search.</span>
+                  </button>
+                </div>
+                {candidateFilterPanelOpen ? renderCandidateFilterPanel() : null}
                 {candidateHasSmartChipSelection ? (
                   <div className="stack-list" style={{ marginTop: 10 }}>
                     {SMART_SEARCH_QUICK_CHIPS

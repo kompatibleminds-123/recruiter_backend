@@ -1777,7 +1777,7 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .candidate-database-top-grid {
   display: grid;
-  grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr);
+  grid-template-columns: 1fr;
   gap: 1rem;
 }
 .candidate-common-filter-card {
