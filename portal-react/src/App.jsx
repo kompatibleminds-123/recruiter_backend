@@ -8949,7 +8949,6 @@ function PortalApp({ token, onLogout }) {
   const [databaseQueryItems, setDatabaseQueryItems] = useState([]);
   const [databaseQueryMeta, setDatabaseQueryMeta] = useState({ total: 0, page: 1, limit: 10, totalPages: 1 });
   const [databaseQueryLoading, setDatabaseQueryLoading] = useState(false);
-  const [databaseInlineSelectedId, setDatabaseInlineSelectedId] = useState("");
   const [candidateStructuredFilters, setCandidateStructuredFilters] = useState(EMPTY_CANDIDATE_STRUCTURED_FILTERS); // applied
   const [candidateStructuredFiltersDraft, setCandidateStructuredFiltersDraft] = useState(EMPTY_CANDIDATE_STRUCTURED_FILTERS); // editable
   const [candidateSearchBusy, setCandidateSearchBusy] = useState(false);
@@ -13752,21 +13751,6 @@ function PortalApp({ token, onLogout }) {
     const start = (candidatePage - 1) * safePageSize;
     return candidateUniverse.slice(start, start + safePageSize);
   }, [databaseAllMode, databaseServerQueryMode, databaseListItems, candidateUniverse, databaseQueryItems, candidatePage, candidatePageSize]);
-  useEffect(() => {
-    const items = Array.isArray(pagedCandidates) ? pagedCandidates : [];
-    if (!items.length) {
-      setDatabaseInlineSelectedId("");
-      return;
-    }
-    const existing = items.some((item) => String(item?.id || item?.assessmentId || "").trim() === String(databaseInlineSelectedId || "").trim());
-    if (!existing) {
-      setDatabaseInlineSelectedId(String(items[0]?.id || items[0]?.assessmentId || "").trim());
-    }
-  }, [pagedCandidates, databaseInlineSelectedId]);
-  const selectedDatabaseCandidate = useMemo(() => (
-    (Array.isArray(pagedCandidates) ? pagedCandidates : []).find((item) => String(item?.id || item?.assessmentId || "").trim() === String(databaseInlineSelectedId || "").trim())
-      || ((Array.isArray(pagedCandidates) && pagedCandidates.length) ? pagedCandidates[0] : null)
-  ), [pagedCandidates, databaseInlineSelectedId]);
   const totalCandidatePages = databaseAllMode
     ? Math.max(1, Number(databaseListMeta?.totalPages || 1))
     : databaseServerQueryMode
@@ -23401,12 +23385,34 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             <div className="page-grid">
               <Section kicker="Candidate Universe" title="Database">
                 <p className="muted">This view can surface captured, applied, and assessment-linked candidates together. Candidates without CV uploads still remain searchable through saved structured fields, recruiter notes, attempts, and assessment data. Hidden CV metadata is used only by search and not shown in the UI.</p>
+                {renderCandidateQuickFilters()}
+                <div className="item-card compact-card candidate-quick-chip-builder">
+                  <h3>Smart chips</h3>
+                  <p className="muted">One-click shortlist blocks. Smart chips stay aligned with your applied Quick Filters.</p>
+                  <div className="filter-block">
+                    <div className="chip-row">
+                      {SMART_SEARCH_QUICK_CHIPS.map((chip) => (
+                        <button
+                          key={chip.id}
+                          className={`chip chip-toggle${candidateQuickChipIds.includes(chip.id) ? " active" : ""}`}
+                          onClick={() => setCandidateQuickChipIds((current) => (
+                            current.includes(chip.id)
+                              ? current.filter((id) => id !== chip.id)
+                              : [...current, chip.id]
+                          ))}
+                        >
+                          {chip.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
                 <div className="candidate-database-top-grid">
                   <div className="item-card compact-card">
                     <h3>Search mode</h3>
                     <p className="muted">Use Boolean for exact keyword retrieval. Use Smart when you want plain-English converted into deterministic Boolean + filters.</p>
                     <div className="button-row">
-                    <button className={candidateAiQueryMode === "boolean" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("boolean")}>Boolean</button>
+                      <button className={candidateAiQueryMode === "boolean" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("boolean")}>Boolean</button>
                       <button className={candidateAiQueryMode === "natural" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("natural")}>Smart</button>
                     </div>
                   </div>
@@ -23417,7 +23423,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           <h3>Smart keyword builder</h3>
                           <p className="muted">Use comma separated values. We build a clean Boolean preview before search.</p>
                         </div>
-                        <button className="ghost-btn" onClick={() => setCandidateFilterPanelOpen((current) => !current)}>{candidateFilterPanelOpen ? "Hide advanced filters" : "Show advanced filters"}</button>
                       </div>
                       <div className="candidate-keyword-grid">
                         <label><span>Must keywords</span><input value={candidateKeywordMust} onChange={(e) => setCandidateKeywordMust(e.target.value)} placeholder=".NET Core, C#, Azure" /></label>
@@ -23434,6 +23439,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </div>
                   ) : null}
                 </div>
+                <div className="item-card compact-card candidate-advanced-toggle-card">
+                  <button className="candidate-advanced-toggle" type="button" onClick={() => setCandidateFilterPanelOpen((current) => !current)}>
+                    <span>{candidateFilterPanelOpen ? "Hide advanced database filters" : "Show advanced database filters"}</span>
+                    <span className="muted">Advanced filters apply only to Database Search.</span>
+                  </button>
+                </div>
+                {candidateFilterPanelOpen ? renderCandidateFilterPanel() : null}
                 {candidateAiQueryMode === "boolean" ? (
                   <div className="toolbar candidate-search-toolbar">
                     <input
@@ -23457,38 +23469,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       setCandidateSearchingAs("");
                     }}>Reset search</button>
                   </div>
-                ) : null}
-                {candidateSearchBusy ? (
-                  <div className="muted" style={{ marginTop: 6 }}>Searching candidates...</div>
-                ) : null}
-                {candidateSmartChipLoading ? (
-                  <div className="muted" style={{ marginTop: 6 }}>Loading quick chips...</div>
-                ) : null}
-                {renderCandidateQuickFilters()}
-                {candidateAiQueryMode === "natural" ? (
-                  <div className="item-card compact-card candidate-quick-chip-builder">
-                    <h3>Smart chips</h3>
-                    <p className="muted">One-click shortlist blocks. Smart chips stay aligned with your applied Quick Filters.</p>
-                    <div className="filter-block">
-                      <div className="chip-row">
-                        {SMART_SEARCH_QUICK_CHIPS.map((chip) => (
-                          <button
-                            key={chip.id}
-                            className={`chip chip-toggle${candidateQuickChipIds.includes(chip.id) ? " active" : ""}`}
-                            onClick={() => setCandidateQuickChipIds((current) => (
-                              current.includes(chip.id)
-                                ? current.filter((id) => id !== chip.id)
-                                : [...current, chip.id]
-                            ))}
-                          >
-                            {chip.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-                {candidateAiQueryMode === "natural" ? (
+                ) : (
                   <div className="toolbar candidate-search-toolbar">
                     <button disabled={candidateSearchBusy} onClick={() => void runCandidateSearch()}>Run Smart Search</button>
                     <button className="ghost-btn" onClick={() => {
@@ -23506,19 +23487,18 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       setCandidateSearchingAs("");
                     }}>Reset search</button>
                   </div>
+                )}
+                {candidateSearchBusy ? (
+                  <div className="muted" style={{ marginTop: 6 }}>Searching candidates...</div>
+                ) : null}
+                {candidateSmartChipLoading ? (
+                  <div className="muted" style={{ marginTop: 6 }}>Loading quick chips...</div>
                 ) : null}
                 {candidateAiQueryMode === "natural" && candidateSearchingAs ? (
                   <div className="muted" style={{ marginTop: 8 }}>
                     Searching as: <code>{candidateSearchingAs}</code>
                   </div>
                 ) : null}
-                <div className="item-card compact-card candidate-advanced-toggle-card">
-                  <button className="candidate-advanced-toggle" type="button" onClick={() => setCandidateFilterPanelOpen((current) => !current)}>
-                    <span>{candidateFilterPanelOpen ? "Hide advanced database filters" : "Show advanced database filters"}</span>
-                    <span className="muted">Advanced filters apply only to Database Search.</span>
-                  </button>
-                </div>
-                {candidateFilterPanelOpen ? renderCandidateFilterPanel() : null}
                 {candidateHasSmartChipSelection ? (
                   <div className="stack-list" style={{ marginTop: 10 }}>
                     {SMART_SEARCH_QUICK_CHIPS
@@ -23658,114 +23638,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         {(databaseAllMode ? databaseListLoading : databaseQueryLoading) ? <div className="muted">Loading database...</div> : null}
                       </div>
                     ) : null}
-                    <div className="candidate-search-content">
-                      <div className="candidate-search-results">
-                        {!pagedCandidates.length ? <div className="empty-state">No candidates found for this view.</div> : pagedCandidates.map((item) => {
-                          const itemKey = String(item.id || item.assessmentId || "").trim();
-                          const isSelected = itemKey === String(selectedDatabaseCandidate?.id || selectedDatabaseCandidate?.assessmentId || "").trim();
-                          const tags = buildVisibleTagList(item);
-                          return (
-                            <article
-                              className={`item-card compact-card database-result-row${isSelected ? " is-selected" : ""}`}
-                              key={item.id || item.assessmentId}
-                              onClick={() => setDatabaseInlineSelectedId(itemKey)}
-                            >
-                              <div className="database-result-row__main">
-                                <div className="database-result-row__identity">
-                                  <h3>{item.name || item.candidateName || "Candidate"}</h3>
-                                  <p className="database-result-row__role">{item.role || item.currentDesignation || item.jdTitle || "Untitled role"}</p>
-                                  <p className="muted">{[item.company || item.currentCompany || "", item.location || "", item.source ? `Source: ${item.source}` : ""].filter(Boolean).join(" | ")}</p>
-                                </div>
-                                <div className="database-result-row__stats">
-                                  <div><strong>{item.experience || item.totalExperience || "-"}</strong><span>Experience</span></div>
-                                  <div><strong>{item.current_ctc || item.currentCtc || "-"}</strong><span>CTC</span></div>
-                                  <div><strong>{item.notice_period || item.noticePeriod || "-"}</strong><span>Notice</span></div>
-                                </div>
-                                <div className="database-result-row__actions">
-                                  <button onClick={(event) => { event.stopPropagation(); setDatabaseInlineSelectedId(itemKey); }}>Select</button>
-                                  <button className="ghost-btn" onClick={(event) => { event.stopPropagation(); setDatabaseProfileItem(item); }}>Open profile</button>
-                                </div>
-                              </div>
-                              {tags.length ? (
-                                <div className="chip-row">
-                                  {tags.slice(0, 5).map((tag) => <span key={tag} className="chip">{tag}</span>)}
-                                </div>
-                              ) : null}
-                            </article>
-                          );
-                        })}
-                      </div>
-                      <div className="candidate-search-filters">
-                        {selectedDatabaseCandidate ? (() => {
-                          const ctx = resolveCandidateContext(selectedDatabaseCandidate);
-                          const baseCandidate = ctx.candidate || selectedDatabaseCandidate;
-                          const linkedAssessment = ctx.assessment || null;
-                          const draft = ctx.draft || {};
-                          const tags = buildVisibleTagList(baseCandidate);
-                          const detailName = baseCandidate.name || draft.candidateName || selectedDatabaseCandidate.candidateName || "Candidate";
-                          const detailRole = linkedAssessment?.jdTitle || baseCandidate.role || baseCandidate.currentDesignation || draft.jdTitle || "Untitled role";
-                          const detailCompany = linkedAssessment?.currentCompany || baseCandidate.company || baseCandidate.currentCompany || draft.currentCompany || "-";
-                          const detailLocation = linkedAssessment?.location || baseCandidate.location || draft.location || "-";
-                          const detailExperience = linkedAssessment?.totalExperience || baseCandidate.experience || baseCandidate.totalExperience || draft.totalExperience || "-";
-                          const detailCurrentCtc = linkedAssessment?.currentCtc || baseCandidate.current_ctc || baseCandidate.currentCtc || draft.currentCtc || "-";
-                          const detailExpectedCtc = linkedAssessment?.expectedCtc || baseCandidate.expected_ctc || baseCandidate.expectedCtc || draft.expectedCtc || "-";
-                          const detailNotice = linkedAssessment?.noticePeriod || baseCandidate.notice_period || baseCandidate.noticePeriod || draft.noticePeriod || "-";
-                          const detailEmail = ctx.email || "-";
-                          const detailPhone = ctx.phone || "-";
-                          const detailLinkedin = ctx.linkedin || "-";
-                          const detailEducation = linkedAssessment?.highestEducation || baseCandidate.highest_education || baseCandidate.highestEducation || draft.highestEducation || "-";
-                          return (
-                            <article className="item-card compact-card database-detail-pane">
-                              <div className="database-detail-pane__head">
-                                <div>
-                                  <h3>{detailName} | {detailRole}</h3>
-                                  <p className="muted">{[detailCompany, detailLocation, baseCandidate.source ? `Source: ${baseCandidate.source}` : "", baseCandidate.ownerRecruiter ? `Recruiter: ${baseCandidate.ownerRecruiter}` : ""].filter(Boolean).join(" | ")}</p>
-                                </div>
-                                <div className="button-row tight">
-                                  <button onClick={() => setDatabaseProfileItem(selectedDatabaseCandidate)}>Open profile</button>
-                                  {candidateHasStoredCv(selectedDatabaseCandidate) ? (
-                                    <CvOpenActions
-                                      onOpenOriginal={() => openDatabaseCandidateCv(selectedDatabaseCandidate)}
-                                      onOpenBranded={() => void openBrandedCandidateCv(selectedDatabaseCandidate)}
-                                    />
-                                  ) : null}
-                                </div>
-                              </div>
-                              <div className="database-detail-pane__metrics">
-                                <div><strong>{detailExperience}</strong><span>Experience</span></div>
-                                <div><strong>{detailCurrentCtc}</strong><span>Current CTC</span></div>
-                                <div><strong>{detailExpectedCtc}</strong><span>Expected CTC</span></div>
-                                <div><strong>{detailNotice}</strong><span>Notice Period</span></div>
-                              </div>
-                              <div className="database-detail-pane__grid">
-                                <div className="database-detail-pane__section">
-                                  <h4>Overview</h4>
-                                  <div className="database-detail-pane__kv"><span>Company</span><strong>{detailCompany}</strong></div>
-                                  <div className="database-detail-pane__kv"><span>Location</span><strong>{detailLocation}</strong></div>
-                                  <div className="database-detail-pane__kv"><span>Education</span><strong>{detailEducation}</strong></div>
-                                  <div className="database-detail-pane__kv"><span>Status</span><strong>{linkedAssessment?.candidateStatus || baseCandidate.workflowStatus || "Active"}</strong></div>
-                                </div>
-                                <div className="database-detail-pane__section">
-                                  <h4>Contact</h4>
-                                  <div className="database-detail-pane__kv"><span>Email</span><strong>{detailEmail}</strong></div>
-                                  <div className="database-detail-pane__kv"><span>Phone</span><strong>{detailPhone}</strong></div>
-                                  <div className="database-detail-pane__kv"><span>LinkedIn</span><strong>{detailLinkedin}</strong></div>
-                                </div>
-                              </div>
-                              {tags.length ? (
-                                <div className="database-detail-pane__section">
-                                  <h4>Skills / Tags</h4>
-                                  <div className="chip-row">
-                                    {tags.slice(0, 12).map((tag) => <span key={tag} className="chip">{tag}</span>)}
-                                  </div>
-                                </div>
-                              ) : null}
-                            </article>
-                          );
-                        })() : (
-                          <div className="empty-state">Select a profile to view details.</div>
-                        )}
-                      </div>
+                    <div className="stack-list">
+                      {!pagedCandidates.length ? <div className="empty-state">No candidates found for this view.</div> : pagedCandidates.map((item) => renderCandidateCard(item))}
                     </div>
                     <div className="button-row">
                       <label className="copy-preset-control">
