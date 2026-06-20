@@ -10053,7 +10053,7 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     if (!token) return;
     if (String(location?.pathname || "").trim() !== "/candidates") return;
-    const hasSelectedQuickChips = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
+    const hasSelectedQuickChips = candidateQuickChipIds.length > 0;
     if (hasSelectedQuickChips) return;
     if (candidateSmartChipRowsStableRef.current && !isEmptySmartChipSnapshot(candidateSmartChipRowsStableRef.current)) {
       setCandidateSmartChipRowsRemote(candidateSmartChipRowsStableRef.current);
@@ -10061,7 +10061,6 @@ function PortalApp({ token, onLogout }) {
   }, [
     token,
     location?.pathname,
-    candidateAiQueryMode,
     candidateQuickChipIds,
     candidateSmartChipScopedFilters,
     candidateSmartDateFrom,
@@ -11044,7 +11043,7 @@ function PortalApp({ token, onLogout }) {
       pathname === "/interview" ||
       forceCore ||
       forceAll);
-    const needsDatabaseCandidates = !isDashboardRoute && (pathname === "/candidates" || forceCore || forceAll);
+    const needsDatabaseCandidates = false;
     const needsAssessments =
       !isDashboardRoute && (
       pathname === "/dashboard" ||
@@ -11068,7 +11067,7 @@ function PortalApp({ token, onLogout }) {
     const candidateFetchLimit = useLightCandidateFetch ? 50 : 5000;
     const candidateFetchPage = 1;
     const candidateFetchMetaSuffix = useLightCandidateFetch ? "&includeMeta=1" : "";
-    const databaseFetchLimit = useLightCandidateFetch ? 50 : 100;
+    const databaseFetchLimit = 10;
     // Billing/access flags are used in sidebar gating across the app,
     // so fetch billing overview on all recruiter routes (plans list only needed on /plan).
     const needsBilling = true;
@@ -13633,13 +13632,18 @@ function PortalApp({ token, onLogout }) {
     const clients = new Set();
     const recruiters = new Set();
     const jdPairs = [];
+    (state.jobs || []).forEach((job) => {
+      const clientLabel = String(job?.clientName || job?.client_name || "").trim();
+      const jdLabel = String(job?.title || "").trim();
+      if (clientLabel) clients.add(clientLabel);
+      if (jdLabel) jdPairs.push({ client: clientLabel, label: jdLabel });
+    });
     candidateUniverseAll.forEach((item) => {
       const clientLabel = getDatabaseQuickFilterClientLabel(item);
       const recruiterLabel = getDatabaseQuickFilterRecruiterLabel(item);
       const jdLabel = getDatabaseQuickFilterJdLabel(item);
       if (clientLabel) clients.add(clientLabel);
       if (recruiterLabel) recruiters.add(recruiterLabel);
-      if (clientLabel) clients.add(clientLabel);
       if (jdLabel) jdPairs.push({ client: clientLabel, label: jdLabel });
     });
     (state.users || []).forEach((user) => {
@@ -13651,7 +13655,7 @@ function PortalApp({ token, onLogout }) {
       recruiters: Array.from(recruiters).sort((a, b) => a.localeCompare(b)),
       jdPairs
     };
-  }, [candidateUniverseAll, state.users, getDatabaseQuickFilterClientLabel, getDatabaseQuickFilterRecruiterLabel, getDatabaseQuickFilterJdLabel]);
+  }, [candidateUniverseAll, state.jobs, state.users, getDatabaseQuickFilterClientLabel, getDatabaseQuickFilterRecruiterLabel, getDatabaseQuickFilterJdLabel]);
   const candidateQuickFilterJdOptions = useMemo(() => {
     const selectedClient = String(candidateQuickFiltersDraft.client || "").trim().toLowerCase();
     const labels = new Set();
@@ -13824,19 +13828,20 @@ function PortalApp({ token, onLogout }) {
       return true;
     });
   }, [candidateBaseUniverse, candidateStructuredFilters, candidateQuickFiltersApplied, state.assessments]);
-  const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
+  const candidateHasSmartChipSelection = candidateQuickChipIds.length > 0;
   const databaseFiltersActive = !candidateHasSmartChipSelection && (candidateStructuredFiltersActive || candidateQuickFiltersActive);
-  const databaseSearchResultsMode = !candidateHasSmartChipSelection && candidateSearchMode === "search" && !databaseFiltersActive;
-  const databaseAllMode = candidateSearchMode === "all"
-    && !candidateHasSmartChipSelection
-    && !databaseFiltersActive;
-  const databaseServerQueryMode = false;
+  const databaseSearchResultsMode = !candidateHasSmartChipSelection && candidateSearchMode === "search";
+  const databaseAllMode = !candidateHasSmartChipSelection && candidateSearchMode === "all";
+  const databaseServerQueryMode = !candidateHasSmartChipSelection;
   const pagedCandidates = useMemo(() => {
+    if (databaseServerQueryMode) return Array.isArray(databaseQueryItems) ? databaseQueryItems : [];
     const safePageSize = [10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10;
     const start = (candidatePage - 1) * safePageSize;
     return candidateUniverse.slice(start, start + safePageSize);
-  }, [candidateUniverse, candidatePage, candidatePageSize]);
-  const totalCandidatePages = Math.max(1, Math.ceil((candidateUniverse.length || 0) / ([10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10)));
+  }, [candidateUniverse, candidatePage, candidatePageSize, databaseServerQueryMode, databaseQueryItems]);
+  const totalCandidatePages = databaseServerQueryMode
+    ? Math.max(1, Number(databaseQueryMeta?.totalPages || 1))
+    : Math.max(1, Math.ceil((candidateUniverse.length || 0) / ([10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10)));
   const renderDatabaseCandidateCard = (item) => {
     const stableItemKey = String(
       item?.id ||
@@ -13955,17 +13960,6 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     if (!token) return;
     if (String(location?.pathname || "").trim() !== "/candidates") return;
-    if (databaseCandidatesHydratedRef.current && Array.isArray(state.databaseCandidates) && state.databaseCandidates.length) return;
-    if (candidateSearchMode !== "all") return;
-    if (candidateHasSmartChipSelection) return;
-    if (candidateStructuredFiltersActive) return;
-    if (candidateQuickFiltersActive) return;
-    void reloadDatabaseListPage(candidatePage, candidatePageSize);
-  }, [token, location?.pathname, state.databaseCandidates, candidateSearchMode, candidateHasSmartChipSelection, candidateStructuredFiltersActive, candidateQuickFiltersActive, candidatePage, candidatePageSize]);
-
-  useEffect(() => {
-    if (!token) return;
-    if (String(location?.pathname || "").trim() !== "/candidates") return;
     if (!databaseServerQueryMode) {
       setDatabaseQueryLoading(false);
       setDatabaseQueryItems([]);
@@ -14067,7 +14061,50 @@ function PortalApp({ token, onLogout }) {
     } else {
       setCandidateSmartChipRowsRemote(null);
     }
-    setCandidateSmartChipLoading(false);
+    const requestId = (candidateSmartChipSummaryRequestRef.current || 0) + 1;
+    candidateSmartChipSummaryRequestRef.current = requestId;
+    const searchIds = Array.isArray(candidateSearchResults)
+      ? candidateSearchResults.flatMap((item) => [
+          item?.id,
+          item?.candidate_id,
+          item?.candidateId,
+          item?.assessment_id,
+          item?.assessmentId
+        ]).map((value) => String(value || "").trim()).filter(Boolean)
+      : [];
+    api("/company/database/quick-chip-rows", token, "POST", {
+      filters: candidateSmartChipScopedFilters,
+      searchMode: candidateSearchMode,
+      searchIds,
+      dateFrom: candidateSmartDateFrom,
+      dateTo: candidateSmartDateTo
+    }).then((result) => {
+      if (candidateSmartChipSummaryRequestRef.current !== requestId) return;
+      const payload = result?.result && typeof result.result === "object" ? result.result : result;
+      const rows = payload?.rows && typeof payload.rows === "object" ? payload.rows : {};
+      const summary = payload?.summary && typeof payload.summary === "object" ? payload.summary : null;
+      candidateSmartChipRowsStableRef.current = rows;
+      setCandidateSmartChipRowsRemote(rows);
+      if (summary) {
+        candidateSmartChipSummaryStableRef.current = summary;
+        setCandidateSmartChipSummary(summary);
+      }
+      if (typeof window !== "undefined" && candidateSmartChipCacheKey) {
+        try {
+          window.localStorage.setItem(candidateSmartChipCacheKey, JSON.stringify(rows));
+        } catch {}
+      }
+      if (typeof window !== "undefined" && candidateSmartChipSummaryCacheKey && summary) {
+        try {
+          window.localStorage.setItem(candidateSmartChipSummaryCacheKey, JSON.stringify(summary));
+        } catch {}
+      }
+    }).catch(() => {
+      if (candidateSmartChipSummaryRequestRef.current !== requestId) return;
+    }).finally(() => {
+      if (candidateSmartChipSummaryRequestRef.current !== requestId) return;
+      setCandidateSmartChipLoading(false);
+    });
   }, [
     token,
     location?.pathname,
@@ -14077,7 +14114,9 @@ function PortalApp({ token, onLogout }) {
     candidateSmartDateFrom,
     candidateSmartDateTo,
     candidateSmartChipCacheKey,
-    candidateSmartChipSummaryCacheKey
+    candidateSmartChipSummaryCacheKey,
+    candidateSearchMode,
+    candidateSearchResults
   ]);
 
   const capturedCandidateOptions = useMemo(() => {
@@ -18760,8 +18799,99 @@ function PortalApp({ token, onLogout }) {
     });
   }
 
+  async function fetchFilteredDatabaseExportRows() {
+    const searchIds = Array.isArray(candidateSearchResults)
+      ? candidateSearchResults.flatMap((item) => [
+          item?.id,
+          item?.candidate_id,
+          item?.candidateId,
+          item?.assessment_id,
+          item?.assessmentId
+        ]).map((value) => String(value || "").trim()).filter(Boolean)
+      : [];
+    const result = await api("/company/database/export", token, "POST", {
+      filters: {
+        ...candidateStructuredFilters,
+        dateFrom: candidateQuickFiltersApplied.dateFrom,
+        dateTo: candidateQuickFiltersApplied.dateTo,
+        client: candidateQuickFiltersApplied.client,
+        recruiter: candidateQuickFiltersApplied.recruiter,
+        targetLabel: candidateQuickFiltersApplied.jd
+      },
+      searchMode: candidateSearchMode,
+      searchIds
+    });
+    const payload = result?.result && typeof result.result === "object" ? result.result : result;
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    return items.map((item, index) => {
+      const ctx = resolveCandidateContext(item);
+      const baseCandidate = ctx.candidate || {};
+      const linkedAssessment = ctx.assessment || null;
+      const draft = ctx.draft || {};
+      const phone = ctx.phone || "";
+      const email = ctx.email || "";
+      const recruiterNotes = String(baseCandidate?.recruiter_context_notes || baseCandidate?.recruiterNotes || linkedAssessment?.recruiterNotes || "").trim();
+      const otherPointers = String(baseCandidate?.other_pointers || baseCandidate?.otherPointers || linkedAssessment?.otherPointers || "").trim();
+      const lastContactNotes = String(ctx.otherStandardQuestions || "").trim();
+      const candidateNotes = String(baseCandidate?.notes || "").trim();
+      const createdAt = baseCandidate?.created_at || baseCandidate?.createdAt || item?.createdAt || "";
+      const normalizedSkills = Array.isArray(baseCandidate?.skills)
+        ? baseCandidate.skills
+        : Array.isArray(item?.skills)
+          ? item.skills
+          : Array.isArray(item?.inferredTags)
+            ? item.inferredTags
+            : [];
+      return {
+        index: index + 1,
+        s_no: index + 1,
+        id: String(baseCandidate?.id || item?.id || linkedAssessment?.id || "").trim(),
+        name: baseCandidate?.name || item?.candidateName || linkedAssessment?.candidateName || draft?.candidateName || "",
+        phone,
+        email,
+        location: baseCandidate?.location || linkedAssessment?.location || draft?.location || item?.location || "",
+        company: baseCandidate?.company || item?.company || linkedAssessment?.currentCompany || draft?.currentCompany || "",
+        current_company: baseCandidate?.company || item?.company || linkedAssessment?.currentCompany || draft?.currentCompany || "",
+        role: baseCandidate?.role || item?.role || linkedAssessment?.currentDesignation || draft?.currentDesignation || item?.position || "",
+        current_designation: baseCandidate?.role || linkedAssessment?.currentDesignation || draft?.currentDesignation || "",
+        total_experience: baseCandidate?.experience || item?.totalExperience || linkedAssessment?.totalExperience || draft?.totalExperience || "",
+        highest_education: baseCandidate?.highest_education || baseCandidate?.highestEducation || linkedAssessment?.highestEducation || draft?.highestEducation || "",
+        current_ctc: baseCandidate?.current_ctc || linkedAssessment?.currentCtc || draft?.currentCtc || "",
+        expected_ctc: baseCandidate?.expected_ctc || linkedAssessment?.expectedCtc || draft?.expectedCtc || "",
+        notice_period: baseCandidate?.notice_period || linkedAssessment?.noticePeriod || draft?.noticePeriod || "",
+        lwd_or_doj: baseCandidate?.lwd_or_doj || linkedAssessment?.lwdOrDoj || linkedAssessment?.offerDoj || draft?.lwdOrDoj || "",
+        offer_in_hand: baseCandidate?.offer_in_hand || linkedAssessment?.offerInHand || linkedAssessment?.offerAmount || draft?.offerInHand || "",
+        reason_of_change: linkedAssessment?.reasonForChange || buildReasonOfChangeForExport(baseCandidate),
+        created_at: createdAt,
+        skills: normalizedSkills,
+        domain_industry: baseCandidate?.domain_industry || baseCandidate?.domainIndustry || "",
+        current_org_tenure: baseCandidate?.current_org_tenure || baseCandidate?.currentOrgTenure || linkedAssessment?.currentOrgTenure || "",
+        assigned_to_name: baseCandidate?.assigned_to_name || baseCandidate?.assignedToName || item?.assigned_to_name || item?.assignedToName || "",
+        recruiter_name: baseCandidate?.assigned_to_name || baseCandidate?.assignedToName || item?.assigned_to_name || item?.assignedToName || "",
+        recruiter_context_notes: recruiterNotes,
+        other_pointers: otherPointers,
+        notes: candidateNotes || String(linkedAssessment?.callbackNotes || "").trim(),
+        other_standard_questions: lastContactNotes,
+        combined_assessment_insights: buildCombinedAssessmentInsightsForExportV2({
+          recruiter_context_notes: recruiterNotes,
+          other_pointers: otherPointers,
+          other_standard_questions: lastContactNotes
+        }),
+        draft_payload: baseCandidate?.draft_payload || baseCandidate?.draftPayload || {},
+        screening_answers: ctx.screeningMap || baseCandidate?.screening_answers || baseCandidate?.screeningAnswers || {},
+        raw_note: baseCandidate?.raw_note || baseCandidate?.rawNote || "",
+        linkedin: ctx.linkedin || baseCandidate?.linkedin || linkedAssessment?.linkedinUrl || draft?.linkedin || "",
+        jd_title: baseCandidate?.jd_title || baseCandidate?.jdTitle || linkedAssessment?.jdTitle || item?.position || "",
+        client_name: baseCandidate?.client_name || baseCandidate?.clientName || linkedAssessment?.clientName || "",
+        outcome: linkedAssessment?.candidateStatus || item?.candidateStatus || baseCandidate?.last_contact_outcome || baseCandidate?.lastContactOutcome || "",
+        assessment_status: linkedAssessment?.candidateStatus || item?.candidateStatus || baseCandidate?.last_contact_outcome || baseCandidate?.lastContactOutcome || "",
+        follow_up_at: formatDateForCopy(linkedAssessment?.followUpAt || item?.followUpAt || item?.interviewAt || baseCandidate?.next_follow_up_at || "")
+      };
+    });
+  }
+
   async function copyCandidatesExcel() {
-    const rows = buildCandidateUniverseCopyRows();
+    const rows = await fetchFilteredDatabaseExportRows();
     const preset = buildCapturedExcelRows(rows, activeCopyPresetId || copySettings.excelPreset, copySettings);
     const lines = [
       preset.headers.join("\t"),
@@ -18772,21 +18902,21 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function copyCandidatesWhatsapp() {
-    const rows = buildCandidateUniverseCopyRows();
+    const rows = await fetchFilteredDatabaseExportRows();
     const text = rows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("workspace", "Candidate search results copied in WhatsApp format.", "ok");
   }
 
   async function copyCandidatesEmail() {
-    const rows = buildCandidateUniverseCopyRows();
+    const rows = await fetchFilteredDatabaseExportRows();
     const text = rows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("workspace", "Candidate search results copied in email format.", "ok");
   }
 
-  function downloadCandidatesExcel() {
-    const rows = buildCandidateUniverseCopyRows();
+  async function downloadCandidatesExcel() {
+    const rows = await fetchFilteredDatabaseExportRows();
     downloadPresetExcelFile(`candidate-search-${new Date().toISOString().slice(0, 10)}.xls`, rows, activeCopyPresetId || copySettings.excelPreset, copySettings, "Candidates");
     setStatus("workspace", "Candidate search results downloaded in Excel format.", "ok");
   }
@@ -23689,7 +23819,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 ) : null}
                 {!candidateSearchBusy && candidateSearchMode === "search" && String(candidateSearchQueryUsed || "").trim() ? (
                   <div className="status ok" style={{ marginTop: 8 }}>
-                    {`${candidateAiQueryMode === "boolean" ? "Boolean" : "Smart"} search found ${candidateUniverse.length} profiles.`}
+                    {`${candidateAiQueryMode === "boolean" ? "Boolean" : "Smart"} search found ${databaseServerQueryMode ? Number(databaseQueryMeta?.total || 0) : candidateUniverse.length} profiles.`}
                   </div>
                 ) : null}
                 {candidateAiQueryMode === "natural" && candidateSearchingAs ? (
@@ -23860,6 +23990,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <button className="ghost-btn" onClick={() => downloadCandidatesExcel()}>Download results</button>
                       ) : null}
                       <div className="database-results-toolbar__spacer" />
+                      <div className="muted">{`${Number(databaseQueryMeta?.total || 0)} profiles`}</div>
                       {(databaseAllMode ? databaseListLoading : databaseQueryLoading) ? <div className="muted">Loading database...</div> : null}
                       <div className="button-row database-results-toolbar__pager">
                         <label className="copy-preset-control" style={{ margin: 0 }}>

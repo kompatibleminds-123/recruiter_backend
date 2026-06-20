@@ -8046,35 +8046,31 @@ async function listAllDatabaseCandidatesForUser(user, { pageSize = 200 } = {}) {
   ];
 }
 
-async function buildDatabaseQueryPageForUser({ user, filters = {}, searchMode = "", searchIds = [], page = 1, limit = 10 } = {}) {
+async function buildDatabaseQueryRowsForUser({ user, filters = {}, searchMode = "", searchIds = [] } = {}) {
   const normalizedFilters = normalizeDatabaseQuickChipFilters(filters);
-  const safePage = Math.max(1, Number(page || 1));
-  const safeLimit = Math.max(1, Math.min(50, Number(limit || 10)));
-  const safeOffset = (safePage - 1) * safeLimit;
   const normalizedSearchMode = String(searchMode || "all").trim().toLowerCase();
   const searchSet = new Set((Array.isArray(searchIds) ? searchIds : []).map((value) => String(value || "").trim()).filter(Boolean));
-  if (normalizedSearchMode === "search" && !searchSet.size) {
-    return { items: [], total: 0, page: safePage, limit: safeLimit, totalPages: 1 };
-  }
-  const [candidates, assessments, jobs] = await Promise.all([
-    listAllDatabaseCandidatesForUser(user),
-    getAssessmentsUniverseForUser(user),
-    listCompanyJobs(user.companyId, user.id)
-  ]);
-  const universe = buildCandidateSearchUniverse(candidates, assessments, jobs).filter((item) => {
+  if (normalizedSearchMode === "search" && !searchSet.size) return [];
+  const candidates = await listAllDatabaseCandidatesForUser(user);
+  const rows = (Array.isArray(candidates) ? candidates : []).filter((item) => {
     if (normalizedSearchMode === "search" && searchSet.size) {
       const ids = [
         item?.id,
-        item?.raw?.candidate?.id,
-        item?.raw?.assessment?.id,
-        item?.candidateId,
-        item?.assessmentId
+        item?.candidate_id,
+        item?.candidateId
       ].map((value) => String(value || "").trim()).filter(Boolean);
       if (!ids.some((id) => searchSet.has(id))) return false;
     }
     return databaseSmartChipRowMatchesFrontendFilters(item, normalizedFilters, user);
   });
-  const sorted = sortDatabaseUniverseForList(universe);
+  return sortDatabaseUniverseForList(rows);
+}
+
+async function buildDatabaseQueryPageForUser({ user, filters = {}, searchMode = "", searchIds = [], page = 1, limit = 10 } = {}) {
+  const safePage = Math.max(1, Number(page || 1));
+  const safeLimit = Math.max(1, Math.min(50, Number(limit || 10)));
+  const safeOffset = (safePage - 1) * safeLimit;
+  const sorted = await buildDatabaseQueryRowsForUser({ user, filters, searchMode, searchIds });
   const total = sorted.length;
   return {
     items: sorted.slice(safeOffset, safeOffset + safeLimit),
@@ -18700,6 +18696,53 @@ const server = http.createServer(async (req, res) => {
         limit
       });
       sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/database/stats") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(user, "database save and search");
+      const body = await readJsonBody(req);
+      const filters = body?.filters && typeof body.filters === "object" ? body.filters : {};
+      const searchMode = String(body?.searchMode || "all").trim().toLowerCase();
+      const searchIds = Array.isArray(body?.searchIds) ? body.searchIds : [];
+      const limit = Math.max(1, Math.min(50, Number(body?.limit || 10)));
+      const rows = await buildDatabaseQueryRowsForUser({ user, filters, searchMode, searchIds });
+      const total = rows.length;
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          total,
+          limit,
+          totalPages: Math.max(1, Math.ceil(total / Math.max(1, limit)))
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/database/export") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(user, "database save and search");
+      const body = await readJsonBody(req);
+      const filters = body?.filters && typeof body.filters === "object" ? body.filters : {};
+      const searchMode = String(body?.searchMode || "all").trim().toLowerCase();
+      const searchIds = Array.isArray(body?.searchIds) ? body.searchIds : [];
+      const rows = await buildDatabaseQueryRowsForUser({ user, filters, searchMode, searchIds });
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          total: rows.length,
+          items: rows
+        }
+      });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
