@@ -13547,50 +13547,25 @@ function PortalApp({ token, onLogout }) {
     }
     void loadCvLinks();
   }, [selectedAssessmentRows, token, clientShareCvLinkFingerprint]);
+  const getCandidateUniverseRowIds = useCallback((item = {}) => ([
+    item?.id,
+    item?.candidateId,
+    item?.candidate_id,
+    item?.assessmentId,
+    item?.assessment_id,
+    item?.raw?.candidate?.id,
+    item?.raw?.assessment?.id
+  ].map((value) => String(value || "").trim()).filter(Boolean)), []);
   const candidateUniverseAll = useMemo(() => {
     const rawDatabaseRows = Array.isArray(state.databaseCandidates) && state.databaseCandidates.length
       ? state.databaseCandidates
       : (Array.isArray(databaseListItems) && databaseListItems.length ? databaseListItems : (state.candidates || []));
     const databaseRows = rawDatabaseRows.map((item) => normalizeApplicantVisibleRow(item));
-    const linkedAssessmentIds = new Set(databaseRows.map((item) => String(item.assessment_id || "").trim()).filter(Boolean));
-    const candidateNames = new Set(databaseRows.map((item) => String(item.name || "").trim().toLowerCase()).filter(Boolean));
-    const assessmentOnlyItems = (state.assessments || [])
-      .filter((item) => {
-        const assessmentId = String(item.id || "").trim();
-        if (assessmentId && linkedAssessmentIds.has(assessmentId)) return false;
-        const nameKey = String(item.candidateName || "").trim().toLowerCase();
-        return !nameKey || !candidateNames.has(nameKey);
-      })
-      .map((item) => ({
-        id: item.id,
-        assessmentId: item.id,
-        name: resolveCandidateDisplayName(item),
-        candidateName: resolveCandidateDisplayName(item),
-        role: item.currentDesignation || "",
-        company: item.currentCompany || "",
-        experience: item.totalExperience || "",
-        totalExperience: item.totalExperience || "",
-        current_ctc: item.currentCtc || "",
-        expected_ctc: item.expectedCtc || "",
-        notice_period: item.noticePeriod || "",
-        highest_education: item.highestEducation || "",
-        linkedin: item.linkedinUrl || "",
-        location: item.location || "",
-        client_name: item.clientName || "",
-        jd_title: item.jdTitle || "",
-        assigned_to_name: item.assigned_to_name || item.assignedToName || "",
-        recruiter_name: item.recruiter_name || item.recruiterName || "",
-        source: "assessment_only",
-        notes: item.callbackNotes || "",
-        recruiter_context_notes: item.recruiterNotes || "",
-        other_pointers: item.otherPointers || ""
-      }));
-    const combined = [...databaseRows, ...assessmentOnlyItems];
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
-    if (isAdmin) return combined;
+    if (isAdmin) return databaseRows;
     const currentUserId = String(state.user?.id || "").trim();
     const currentUserName = String(state.user?.name || "").trim().toLowerCase();
-    return combined.filter((item) => {
+    return databaseRows.filter((item) => {
       const assignedUserId = String(item?.assigned_to_user_id || item?.assignedToUserId || "").trim();
       const ownerRecruiterId = String(item?.ownerRecruiterId || item?.recruiter_id || "").trim();
       const assignedToName = String(item?.assigned_to_name || item?.assignedToName || "").trim().toLowerCase();
@@ -13599,7 +13574,7 @@ function PortalApp({ token, onLogout }) {
       if (currentUserName && (assignedToName === currentUserName || recruiterName === currentUserName)) return true;
       return false;
     });
-  }, [databaseListItems, state.assessments, state.candidates, state.databaseCandidates, state.user]);
+  }, [databaseListItems, state.candidates, state.databaseCandidates, state.user]);
   const getDatabaseQuickFilterRecruiterLabel = useCallback((item = {}) => {
     const sourceKind = String(item?.sourceType || item?.source || "").trim().toLowerCase();
     if (sourceKind === "assessment_only") {
@@ -13703,13 +13678,15 @@ function PortalApp({ token, onLogout }) {
       : null;
     const baseRows = remoteRows || candidateSmartChipRowsStableRef.current || {};
     const rows = Array.isArray(baseRows?.[activeCandidateQuickChipId]) ? baseRows[activeCandidateQuickChipId] : [];
-    return rows.map((row) => row?.item).filter(Boolean);
-  }, [activeCandidateQuickChipId, candidateSmartChipRowsRemote]);
+    const allowedIds = new Set(rows.flatMap((row) => getCandidateUniverseRowIds(row?.item || row || {})));
+    return candidateUniverseAll.filter((item) => getCandidateUniverseRowIds(item).some((id) => allowedIds.has(id)));
+  }, [activeCandidateQuickChipId, candidateSmartChipRowsRemote, candidateUniverseAll, getCandidateUniverseRowIds]);
   const candidateBaseUniverse = useMemo(() => {
     if (activeCandidateQuickChipId) return candidateSelectedChipSourceItems;
     if (candidateSearchMode === "all" || !String(candidateSearchQueryUsed || "").trim()) return candidateUniverseAll;
-    return candidateSearchResults || [];
-  }, [activeCandidateQuickChipId, candidateSelectedChipSourceItems, candidateSearchMode, candidateSearchResults, candidateSearchQueryUsed, candidateUniverseAll]);
+    const allowedIds = new Set((Array.isArray(candidateSearchResults) ? candidateSearchResults : []).flatMap((item) => getCandidateUniverseRowIds(item)));
+    return candidateUniverseAll.filter((item) => getCandidateUniverseRowIds(item).some((id) => allowedIds.has(id)));
+  }, [activeCandidateQuickChipId, candidateSelectedChipSourceItems, candidateSearchMode, candidateSearchResults, candidateSearchQueryUsed, candidateUniverseAll, getCandidateUniverseRowIds]);
   const candidateUniverse = useMemo(() => {
     const assessmentById = new Map((state.assessments || []).map((item) => [String(item?.id || "").trim(), item]));
     return candidateBaseUniverse.filter((item) => {
