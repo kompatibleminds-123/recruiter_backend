@@ -13885,15 +13885,21 @@ function PortalApp({ token, onLogout }) {
   const candidateHasSmartChipSelection = candidateQuickChipIds.length > 0;
   const databaseFiltersActive = !candidateHasSmartChipSelection && (candidateStructuredFiltersActive || candidateQuickFiltersActive);
   const databaseSearchResultsMode = !candidateHasSmartChipSelection && candidateSearchMode === "search";
-  const databaseAllMode = false;
-  const databaseServerQueryMode = false;
-  const databaseDisplayLoading = !candidateHasSmartChipSelection && (!databaseCandidatesHydratedRef.current || candidateSearchBusy);
+  const databaseAllMode = candidateSearchMode === "all" && !candidateHasSmartChipSelection && !candidateStructuredFiltersActive;
+  const databaseServerQueryMode = !candidateHasSmartChipSelection && (candidateSearchMode === "search" || candidateStructuredFiltersActive);
+  const databaseDisplayLoading = !candidateHasSmartChipSelection && ((databaseAllMode ? databaseListLoading : databaseQueryLoading) || candidateSearchBusy);
   const pagedCandidates = useMemo(() => {
+    if (databaseServerQueryMode) return Array.isArray(databaseQueryItems) ? databaseQueryItems : [];
+    if (databaseAllMode) return Array.isArray(databaseListItems) ? databaseListItems : [];
     const safePageSize = [10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10;
     const start = (candidatePage - 1) * safePageSize;
     return candidateUniverse.slice(start, start + safePageSize);
-  }, [candidateUniverse, candidatePage, candidatePageSize]);
-  const totalCandidatePages = Math.max(1, Math.ceil((candidateUniverse.length || 0) / ([10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10)));
+  }, [candidateUniverse, candidatePage, candidatePageSize, databaseServerQueryMode, databaseQueryItems, databaseAllMode, databaseListItems]);
+  const totalCandidatePages = databaseServerQueryMode
+    ? Math.max(1, Number(databaseQueryMeta?.totalPages || 1))
+    : databaseAllMode
+      ? Math.max(1, Number(databaseListMeta?.totalPages || 1))
+      : Math.max(1, Math.ceil((candidateUniverse.length || 0) / ([10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10)));
   const renderDatabaseCandidateCard = (item) => {
     const stableItemKey = String(
       item?.id ||
@@ -14010,9 +14016,69 @@ function PortalApp({ token, onLogout }) {
   }, [activeCandidateQuickChipId, candidateSmartChipRowsEffective, candidateUniverse]);
 
   useEffect(() => {
-    setDatabaseQueryLoading(false);
-    setDatabaseListLoading(false);
-  }, [candidateUniverse.length]);
+    if (!token) return;
+    if (String(location?.pathname || "").trim() !== "/candidates") return;
+    if (!databaseAllMode) return;
+    void reloadDatabaseListPage(candidatePage, candidatePageSize);
+  }, [token, location?.pathname, databaseAllMode, candidatePage, candidatePageSize, candidateQuickFiltersApplied]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (String(location?.pathname || "").trim() !== "/candidates") return;
+    if (!databaseServerQueryMode) {
+      setDatabaseQueryLoading(false);
+      setDatabaseQueryItems([]);
+      setDatabaseQueryMeta({ total: 0, page: 1, limit: [10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10, totalPages: 1 });
+      return;
+    }
+    let cancelled = false;
+    setDatabaseQueryLoading(true);
+    const searchIds = Array.isArray(candidateSearchResults)
+      ? candidateSearchResults.flatMap((item) => [
+          item?.id,
+          item?.candidate_id,
+          item?.candidateId,
+          item?.assessment_id,
+          item?.assessmentId
+        ]).map((value) => String(value || "").trim()).filter(Boolean)
+      : [];
+    api("/company/database/query", token, "POST", {
+      filters: {
+        ...candidateStructuredFilters,
+        dateFrom: candidateQuickFiltersApplied.dateFrom,
+        dateTo: candidateQuickFiltersApplied.dateTo,
+        client: candidateQuickFiltersApplied.client,
+        recruiter: candidateQuickFiltersApplied.recruiter,
+        jd: candidateQuickFiltersApplied.jd
+      },
+      searchMode: candidateSearchMode,
+      searchIds,
+      page: candidatePage,
+      limit: candidatePageSize
+    }).then((result) => {
+      if (cancelled) return;
+      const payload = result?.result && typeof result.result === "object" ? result.result : result;
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      setDatabaseQueryItems(items);
+      setDatabaseQueryMeta({
+        total: Number(payload?.total || 0),
+        page: Number(payload?.page || candidatePage || 1),
+        limit: Number(payload?.limit || candidatePageSize || 10),
+        totalPages: Math.max(1, Number(payload?.totalPages || 1))
+      });
+    }).catch((error) => {
+      if (cancelled) return;
+      console.error("database query failed", error);
+      setDatabaseQueryItems([]);
+      setDatabaseQueryMeta({ total: 0, page: 1, limit: [10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10, totalPages: 1 });
+    }).finally(() => {
+      if (cancelled) return;
+      setDatabaseQueryLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, location?.pathname, databaseServerQueryMode, candidateStructuredFilters, candidateQuickFiltersApplied, candidateSearchMode, candidateSearchResults, candidatePage, candidatePageSize]);
 
   useEffect(() => {
     if (String(location?.pathname || "").trim() !== "/candidates") return;
@@ -23818,7 +23884,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 ) : null}
                 {!candidateSearchBusy && candidateSearchMode === "search" && String(candidateSearchQueryUsed || "").trim() ? (
                   <div className="status ok" style={{ marginTop: 8 }}>
-                    {`${candidateAiQueryMode === "boolean" ? "Boolean" : "Smart"} search found ${candidateUniverse.length} profiles.`}
+                    {`${candidateAiQueryMode === "boolean" ? "Boolean" : "Smart"} search found ${databaseServerQueryMode ? Number(databaseQueryMeta?.total || 0) : candidateUniverse.length} profiles.`}
                   </div>
                 ) : null}
                 {candidateAiQueryMode === "natural" && candidateSearchingAs ? (
@@ -23989,7 +24055,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <button className="ghost-btn" onClick={() => downloadCandidatesExcel()}>Download results</button>
                       ) : null}
                       <div className="database-results-toolbar__spacer" />
-                      <div className="muted">{`${Number(candidateUniverse.length || 0)} profiles`}</div>
+                      <div className="muted">{`${Number(databaseAllMode ? (databaseListMeta?.total || 0) : (databaseQueryMeta?.total || 0))} profiles`}</div>
                       {databaseDisplayLoading ? <div className="muted">Loading database...</div> : null}
                       <div className="button-row database-results-toolbar__pager">
                         <label className="copy-preset-control" style={{ margin: 0 }}>
