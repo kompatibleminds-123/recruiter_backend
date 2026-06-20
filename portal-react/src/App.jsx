@@ -11705,12 +11705,18 @@ function PortalApp({ token, onLogout }) {
       includeDatabase ? api(`/company/database-candidates?limit=${safeLimit}&page=${safePage}${metaSuffix}`, token).catch(() => []) : Promise.resolve(null)
     ]);
     if (seq !== candidatesSliceLoadSeqRef.current) return;
-    const candidateRows = Array.isArray(candidatesResult)
-      ? candidatesResult
-      : (Array.isArray(candidatesResult?.items) ? candidatesResult.items : []);
-    const databaseRows = Array.isArray(databaseCandidatesResult)
-      ? databaseCandidatesResult
-      : (Array.isArray(databaseCandidatesResult?.items) ? databaseCandidatesResult.items : []);
+    const candidatePayload = candidatesResult?.result && typeof candidatesResult.result === "object"
+      ? candidatesResult.result
+      : candidatesResult;
+    const databasePayload = databaseCandidatesResult?.result && typeof databaseCandidatesResult.result === "object"
+      ? databaseCandidatesResult.result
+      : databaseCandidatesResult;
+    const candidateRows = Array.isArray(candidatePayload)
+      ? candidatePayload
+      : (Array.isArray(candidatePayload?.items) ? candidatePayload.items : []);
+    const databaseRows = Array.isArray(databasePayload)
+      ? databasePayload
+      : (Array.isArray(databasePayload?.items) ? databasePayload.items : []);
     if (includeDatabase) {
       databaseCandidatesHydratedRef.current = true;
     }
@@ -13560,7 +13566,57 @@ function PortalApp({ token, onLogout }) {
     const rawDatabaseRows = Array.isArray(state.databaseCandidates) && state.databaseCandidates.length
       ? state.databaseCandidates
       : (Array.isArray(databaseListItems) && databaseListItems.length ? databaseListItems : (state.candidates || []));
-    const databaseRows = rawDatabaseRows.map((item) => normalizeApplicantVisibleRow(item));
+    const assessmentById = new Map((Array.isArray(state.assessments) ? state.assessments : []).map((item) => [String(item?.id || "").trim(), item]));
+    const firstNonEmpty = (...values) => {
+      for (const value of values) {
+        if (value == null) continue;
+        const text = String(value).trim();
+        if (text) return text;
+      }
+      return "";
+    };
+    const databaseRows = rawDatabaseRows.map((item) => {
+      const normalized = normalizeApplicantVisibleRow(item);
+      const assessmentId = String(normalized?.assessment_id || normalized?.assessmentId || "").trim();
+      const linkedAssessment = assessmentId ? assessmentById.get(assessmentId) : null;
+      if (!linkedAssessment) return normalized;
+      return {
+        ...normalized,
+        role: firstNonEmpty(normalized?.role, linkedAssessment?.currentDesignation),
+        currentDesignation: firstNonEmpty(normalized?.currentDesignation, linkedAssessment?.currentDesignation, normalized?.role),
+        current_designation: firstNonEmpty(normalized?.current_designation, linkedAssessment?.currentDesignation, normalized?.role),
+        company: firstNonEmpty(normalized?.company, linkedAssessment?.currentCompany),
+        currentCompany: firstNonEmpty(normalized?.currentCompany, linkedAssessment?.currentCompany, normalized?.company),
+        location: firstNonEmpty(normalized?.location, linkedAssessment?.location),
+        experience: firstNonEmpty(normalized?.experience, linkedAssessment?.totalExperience),
+        totalExperience: firstNonEmpty(normalized?.totalExperience, linkedAssessment?.totalExperience, normalized?.experience),
+        current_ctc: firstNonEmpty(normalized?.current_ctc, linkedAssessment?.currentCtc),
+        currentCtc: firstNonEmpty(normalized?.currentCtc, linkedAssessment?.currentCtc, normalized?.current_ctc),
+        expected_ctc: firstNonEmpty(normalized?.expected_ctc, linkedAssessment?.expectedCtc),
+        expectedCtc: firstNonEmpty(normalized?.expectedCtc, linkedAssessment?.expectedCtc, normalized?.expected_ctc),
+        notice_period: firstNonEmpty(normalized?.notice_period, linkedAssessment?.noticePeriod),
+        noticePeriod: firstNonEmpty(normalized?.noticePeriod, linkedAssessment?.noticePeriod, normalized?.notice_period),
+        highest_education: firstNonEmpty(normalized?.highest_education, linkedAssessment?.highestEducation),
+        highestEducation: firstNonEmpty(normalized?.highestEducation, linkedAssessment?.highestEducation, normalized?.highest_education),
+        client_name: firstNonEmpty(normalized?.client_name, linkedAssessment?.clientName),
+        clientName: firstNonEmpty(normalized?.clientName, linkedAssessment?.clientName, normalized?.client_name),
+        jd_title: firstNonEmpty(normalized?.jd_title, linkedAssessment?.jdTitle),
+        jdTitle: firstNonEmpty(normalized?.jdTitle, linkedAssessment?.jdTitle, normalized?.jd_title),
+        recruiter_name: firstNonEmpty(normalized?.recruiter_name, linkedAssessment?.recruiterName),
+        recruiterName: firstNonEmpty(normalized?.recruiterName, linkedAssessment?.recruiterName, normalized?.recruiter_name),
+        candidateStatus: firstNonEmpty(normalized?.candidateStatus, linkedAssessment?.candidateStatus, linkedAssessment?.status),
+        candidate_status: firstNonEmpty(normalized?.candidate_status, linkedAssessment?.candidateStatus, linkedAssessment?.status),
+        recruiter_context_notes: firstNonEmpty(normalized?.recruiter_context_notes, linkedAssessment?.recruiterNotes),
+        other_pointers: firstNonEmpty(normalized?.other_pointers, linkedAssessment?.otherPointers),
+        notes: firstNonEmpty(normalized?.notes, linkedAssessment?.callbackNotes),
+        assessment: linkedAssessment,
+        raw: {
+          ...(normalized?.raw && typeof normalized.raw === "object" ? normalized.raw : {}),
+          assessment: linkedAssessment,
+          candidate: item
+        }
+      };
+    });
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
     if (isAdmin) return databaseRows;
     const currentUserId = String(state.user?.id || "").trim();
@@ -13574,7 +13630,7 @@ function PortalApp({ token, onLogout }) {
       if (currentUserName && (assignedToName === currentUserName || recruiterName === currentUserName)) return true;
       return false;
     });
-  }, [databaseListItems, state.candidates, state.databaseCandidates, state.user]);
+  }, [databaseListItems, state.assessments, state.candidates, state.databaseCandidates, state.user]);
   const getDatabaseQuickFilterRecruiterLabel = useCallback((item = {}) => {
     const sourceKind = String(item?.sourceType || item?.source || "").trim().toLowerCase();
     if (sourceKind === "assessment_only") {
