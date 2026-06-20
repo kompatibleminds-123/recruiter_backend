@@ -7106,6 +7106,50 @@ function normalizeDatabaseQuickChipFilters(raw = {}) {
   };
 }
 
+function getDatabaseQuickFilterClientValue(item = {}) {
+  return String(
+    item?.client_name
+    || item?.clientName
+    || item?.raw?.candidate?.client_name
+    || item?.raw?.candidate?.clientName
+    || item?.raw?.assessment?.client_name
+    || item?.raw?.assessment?.clientName
+    || ""
+  ).trim();
+}
+
+function getDatabaseQuickFilterJdValue(item = {}) {
+  return String(
+    item?.jd_title
+    || item?.jdTitle
+    || item?.raw?.candidate?.jd_title
+    || item?.raw?.candidate?.jdTitle
+    || item?.raw?.assessment?.jd_title
+    || item?.raw?.assessment?.jdTitle
+    || ""
+  ).trim();
+}
+
+function getDatabaseQuickFilterRecruiterValue(item = {}) {
+  const sourceKind = String(item?.sourceType || item?.source || "").trim().toLowerCase();
+  if (sourceKind === "assessment_only") {
+    return String(
+      item?.recruiter_name
+      || item?.recruiterName
+      || item?.raw?.assessment?.recruiter_name
+      || item?.raw?.assessment?.recruiterName
+      || ""
+    ).trim();
+  }
+  return String(
+    item?.assigned_to_name
+    || item?.assignedToName
+    || item?.raw?.candidate?.assigned_to_name
+    || item?.raw?.candidate?.assignedToName
+    || ""
+  ).trim();
+}
+
 function databaseSmartChipRowMatchesFrontendFilters(item, filters = {}) {
   const normalizedFilters = filters && typeof filters === "object" ? filters : {};
   const years = parseExperienceToYears(item?.experience || item?.totalExperience || "");
@@ -7141,22 +7185,14 @@ function databaseSmartChipRowMatchesFrontendFilters(item, filters = {}) {
     item?.other_pointers || "",
     item?.recruiter_context_notes || ""
   ].join(" ").toLowerCase();
-  const clientValue = String(item?.client_name || item?.clientName || "").trim();
-  const recruiterValues = [
-    item?.recruiterName || "",
-    item?.ownerRecruiter || "",
-    item?.sourcedRecruiter || "",
-    item?.assigned_to_name || item?.assignedToName || "",
-    item?.recruiter_name || item?.recruiterName || "",
-    item?.applyAssignedToName || item?.apply_assigned_to_name || "",
-    item?.raw?.candidate?.assigned_to_name || item?.raw?.candidate?.assignedToName || "",
-    item?.raw?.candidate?.recruiter_name || item?.raw?.candidate?.recruiterName || "",
-    item?.raw?.candidate?.applyAssignedToName || item?.raw?.candidate?.apply_assigned_to_name || ""
-  ].map((value) => String(value || "").trim()).filter(Boolean);
+  const clientValue = getDatabaseQuickFilterClientValue(item);
+  const recruiterValue = getDatabaseQuickFilterRecruiterValue(item);
+  const jdValue = getDatabaseQuickFilterJdValue(item);
   const draftPayload = normalizeJsonObjectInput(item?.draft_payload || item?.draftPayload || item?.raw?.candidate?.draft_payload || item?.raw?.candidate?.draftPayload || {});
   const genderValue = String(item?.gender || draftPayload?.gender || "").trim();
   const normalizedClientValue = clientValue.toLowerCase();
-  const normalizedRecruiterValues = recruiterValues.map((value) => value.toLowerCase());
+  const normalizedRecruiterValue = recruiterValue.toLowerCase();
+  const normalizedJdValue = jdValue.toLowerCase();
   const normalizedGenderValue = genderValue.toLowerCase();
   const linkedAssessment = item?.raw?.assessment || item?.assessment || null;
   const assessmentStatusValue = String(
@@ -7187,7 +7223,7 @@ function databaseSmartChipRowMatchesFrontendFilters(item, filters = {}) {
   }
   if (normalizedFilters.role || normalizedFilters.targetLabel) {
     const requiredRoles = parseMultiChipTokens(normalizedFilters.role || normalizedFilters.targetLabel).map((entry) => entry.toLowerCase());
-    if (requiredRoles.length && !requiredRoles.some((term) => roleHay.includes(term))) return false;
+    if (requiredRoles.length && !requiredRoles.includes(normalizedJdValue)) return false;
   }
   if (normalizedFilters.keySkills) {
     const requiredSkills = splitSearchKeywords(normalizedFilters.keySkills);
@@ -7208,7 +7244,7 @@ function databaseSmartChipRowMatchesFrontendFilters(item, filters = {}) {
     return false;
   }
   const selectedRecruiters = parseMultiChipTokens(normalizedFilters.recruiter || normalizedFilters.recruiterName).map((entry) => entry.toLowerCase());
-  if (selectedRecruiters.length && !selectedRecruiters.some((entry) => normalizedRecruiterValues.includes(entry))) return false;
+  if (selectedRecruiters.length && !selectedRecruiters.includes(normalizedRecruiterValue)) return false;
   const selectedGenders = parseMultiChipTokens(normalizedFilters.gender).map((entry) => entry.toLowerCase());
   if (selectedGenders.length && !selectedGenders.includes(normalizedGenderValue)) return false;
   const selectedAssessmentStatuses = parseMultiChipTokens(normalizedFilters.assessmentStatus).map((entry) => entry.toLowerCase());
@@ -7225,23 +7261,9 @@ function databaseSmartChipRowMatchesFrontendFilters(item, filters = {}) {
 
 function databaseQuickChipRowMatchesSharedFilters(item, filters = {}) {
   const normalizedFilters = filters && typeof filters === "object" ? filters : {};
-  const clientValue = String(item?.client_name || item?.clientName || "").trim().toLowerCase();
-  const recruiterValue = String(
-    item?.ownerRecruiter
-    || item?.recruiterName
-    || item?.sourcedRecruiter
-    || item?.assigned_to_name
-    || item?.assignedToName
-    || ""
-  ).trim().toLowerCase();
-  const roleHay = [
-    item?.role || "",
-    item?.position || "",
-    item?.jdTitle || "",
-    item?.currentDesignation || "",
-    item?.raw?.assessment?.jdTitle || "",
-    item?.raw?.assessment?.jd_title || ""
-  ].join(" ").toLowerCase();
+  const clientValue = getDatabaseQuickFilterClientValue(item).toLowerCase();
+  const recruiterValue = getDatabaseQuickFilterRecruiterValue(item).toLowerCase();
+  const jdValue = getDatabaseQuickFilterJdValue(item).toLowerCase();
 
   const selectedClients = parseMultiChipTokens(normalizedFilters.client).map((entry) => entry.toLowerCase());
   if (selectedClients.length && !selectedClients.includes(clientValue)) return false;
@@ -7250,7 +7272,7 @@ function databaseQuickChipRowMatchesSharedFilters(item, filters = {}) {
   if (selectedRecruiters.length && !selectedRecruiters.includes(recruiterValue)) return false;
 
   const requiredRoles = parseMultiChipTokens(normalizedFilters.targetLabel || normalizedFilters.role).map((entry) => entry.toLowerCase());
-  if (requiredRoles.length && !requiredRoles.some((term) => roleHay.includes(term))) return false;
+  if (requiredRoles.length && !requiredRoles.includes(jdValue)) return false;
 
   return true;
 }

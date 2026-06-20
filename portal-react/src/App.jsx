@@ -13632,6 +13632,7 @@ function PortalApp({ token, onLogout }) {
         client_name: item.clientName || "",
         jd_title: item.jdTitle || "",
         assigned_to_name: item.assigned_to_name || item.assignedToName || "",
+        recruiter_name: item.recruiter_name || item.recruiterName || "",
         source: "assessment_only",
         notes: item.callbackNotes || "",
         recruiter_context_notes: item.recruiterNotes || "",
@@ -13652,31 +13653,53 @@ function PortalApp({ token, onLogout }) {
       return false;
     });
   }, [databaseListItems, state.assessments, state.candidates, state.databaseCandidates, state.user]);
+  const getDatabaseQuickFilterRecruiterLabel = useCallback((item = {}) => {
+    const sourceKind = String(item?.sourceType || item?.source || "").trim().toLowerCase();
+    if (sourceKind === "assessment_only") {
+      return String(
+        item?.recruiter_name
+        || item?.recruiterName
+        || item?.raw?.assessment?.recruiter_name
+        || item?.raw?.assessment?.recruiterName
+        || ""
+      ).trim();
+    }
+    return String(
+      item?.assigned_to_name
+      || item?.assignedToName
+      || item?.raw?.candidate?.assigned_to_name
+      || item?.raw?.candidate?.assignedToName
+      || ""
+    ).trim();
+  }, []);
+  const getDatabaseQuickFilterClientLabel = useCallback((item = {}) => String(
+    item?.client_name
+    || item?.clientName
+    || item?.raw?.candidate?.client_name
+    || item?.raw?.candidate?.clientName
+    || item?.raw?.assessment?.client_name
+    || item?.raw?.assessment?.clientName
+    || ""
+  ).trim(), []);
+  const getDatabaseQuickFilterJdLabel = useCallback((item = {}) => String(
+    item?.jd_title
+    || item?.jdTitle
+    || item?.raw?.candidate?.jd_title
+    || item?.raw?.candidate?.jdTitle
+    || item?.raw?.assessment?.jd_title
+    || item?.raw?.assessment?.jdTitle
+    || ""
+  ).trim(), []);
   const candidateQuickFilterOptions = useMemo(() => {
     const clients = new Set();
     const recruiters = new Set();
     const jdPairs = [];
     candidateUniverseAll.forEach((item) => {
-      const clientLabel = String(item?.client_name || item?.clientName || "").trim();
-      const recruiterLabel = String(
-        item?.ownerRecruiter
-        || item?.recruiterName
-        || item?.sourcedRecruiter
-        || item?.assigned_to_name
-        || item?.assignedToName
-        || item?.recruiter_name
-        || item?.recruiterName
-        || item?.applyAssignedToName
-        || item?.apply_assigned_to_name
-        || ""
-      ).trim();
+      const clientLabel = getDatabaseQuickFilterClientLabel(item);
+      const recruiterLabel = getDatabaseQuickFilterRecruiterLabel(item);
+      const jdLabel = getDatabaseQuickFilterJdLabel(item);
       if (clientLabel) clients.add(clientLabel);
       if (recruiterLabel) recruiters.add(recruiterLabel);
-    });
-    (state.jobs || []).forEach((job) => {
-      if (job?.archived === true || String(job?.status || "").trim().toLowerCase() === "archived") return;
-      const clientLabel = String(job?.clientName || job?.client_name || "").trim();
-      const jdLabel = String(job?.title || "").trim();
       if (clientLabel) clients.add(clientLabel);
       if (jdLabel) jdPairs.push({ client: clientLabel, label: jdLabel });
     });
@@ -13689,7 +13712,7 @@ function PortalApp({ token, onLogout }) {
       recruiters: Array.from(recruiters).sort((a, b) => a.localeCompare(b)),
       jdPairs
     };
-  }, [candidateUniverseAll, state.jobs, state.users]);
+  }, [candidateUniverseAll, state.users, getDatabaseQuickFilterClientLabel, getDatabaseQuickFilterRecruiterLabel, getDatabaseQuickFilterJdLabel]);
   const candidateQuickFilterJdOptions = useMemo(() => {
     const selectedClient = String(candidateQuickFiltersDraft.client || "").trim().toLowerCase();
     const labels = new Set();
@@ -13707,21 +13730,10 @@ function PortalApp({ token, onLogout }) {
     const genders = new Set();
     const clients = new Set();
     candidateUniverseAll.forEach((item) => {
-      const recruiter = String(
-        item.ownerRecruiter
-        || item.recruiterName
-        || item.sourcedRecruiter
-        || item.assigned_to_name
-        || item.assignedToName
-        || item.recruiter_name
-        || item.recruiterName
-        || item.applyAssignedToName
-        || item.apply_assigned_to_name
-        || ""
-      ).trim();
+      const recruiter = getDatabaseQuickFilterRecruiterLabel(item);
       const draftPayload = parsePortalObjectField(item?.draft_payload || item?.draftPayload);
       const gender = String(item.gender || draftPayload?.gender || "").trim();
-      const client = String(item.client_name || item.clientName || "").trim();
+      const client = getDatabaseQuickFilterClientLabel(item);
       if (recruiter) recruiters.add(recruiter);
       if (gender) genders.add(gender);
       if (client) clients.add(client);
@@ -13731,7 +13743,7 @@ function PortalApp({ token, onLogout }) {
       recruiters: Array.from(recruiters).sort(),
       genders: Array.from(genders).sort()
     };
-  }, [candidateUniverseAll]);
+  }, [candidateUniverseAll, getDatabaseQuickFilterRecruiterLabel, getDatabaseQuickFilterClientLabel]);
   const candidateBaseUniverse = useMemo(() => {
     if (candidateSearchMode === "all" || !String(candidateSearchQueryUsed || "").trim()) return candidateUniverseAll;
     return candidateSearchResults || [];
@@ -13780,22 +13792,14 @@ function PortalApp({ token, onLogout }) {
         item.other_pointers || "",
         item.recruiter_context_notes || ""
       ].join(" ").toLowerCase();
-      const clientValue = String(item.client_name || item.clientName || "").trim();
-      const recruiterValues = [
-        item.ownerRecruiter || "",
-        item.recruiterName || "",
-        item.sourcedRecruiter || "",
-        item.assigned_to_name || item.assignedToName || "",
-        item.recruiter_name || item.recruiterName || "",
-        item.applyAssignedToName || item.apply_assigned_to_name || "",
-        item.raw?.candidate?.assigned_to_name || item.raw?.candidate?.assignedToName || "",
-        item.raw?.candidate?.recruiter_name || item.raw?.candidate?.recruiterName || "",
-        item.raw?.candidate?.applyAssignedToName || item.raw?.candidate?.apply_assigned_to_name || ""
-      ].map((value) => String(value || "").trim()).filter(Boolean);
+      const quickClientLabel = getDatabaseQuickFilterClientLabel(item);
+      const quickRecruiterLabel = getDatabaseQuickFilterRecruiterLabel(item);
+      const quickJdLabel = getDatabaseQuickFilterJdLabel(item);
       const draftPayload = parsePortalObjectField(item?.draft_payload || item?.draftPayload);
       const genderValue = String(item.gender || draftPayload?.gender || "").trim();
-      const normalizedClientValue = clientValue.toLowerCase();
-      const normalizedRecruiterValues = recruiterValues.map((value) => value.toLowerCase());
+      const normalizedClientValue = quickClientLabel.toLowerCase();
+      const normalizedRecruiterValue = quickRecruiterLabel.toLowerCase();
+      const normalizedJdValue = quickJdLabel.toLowerCase();
       const normalizedGenderValue = genderValue.toLowerCase();
       const quickClientValue = String(candidateQuickFiltersApplied.client || "").trim().toLowerCase();
       const quickRecruiterValue = String(candidateQuickFiltersApplied.recruiter || "").trim().toLowerCase();
@@ -13823,8 +13827,8 @@ function PortalApp({ token, onLogout }) {
         if (quickDateTo && (!quickDateKey || quickDateKey > quickDateTo)) return false;
       }
       if (quickClientValue && normalizedClientValue !== quickClientValue) return false;
-      if (quickRecruiterValue && !normalizedRecruiterValues.includes(quickRecruiterValue)) return false;
-      if (quickJdValue && !roleHay.includes(quickJdValue)) return false;
+      if (quickRecruiterValue && normalizedRecruiterValue !== quickRecruiterValue) return false;
+      if (quickJdValue && normalizedJdValue !== quickJdValue) return false;
       if (candidateStructuredFilters.minExperience && (years == null || years < minYears)) return false;
       if (candidateStructuredFilters.maxExperience && (years == null || years > maxYears)) return false;
       if (candidateStructuredFilters.location) {
@@ -13861,7 +13865,7 @@ function PortalApp({ token, onLogout }) {
         if (!selectedSources.includes(sourceValue)) return false;
       }
       const selectedRecruiters = parseMultiChipTokens(candidateStructuredFilters.recruiter).map((item) => item.toLowerCase());
-      if (selectedRecruiters.length && !selectedRecruiters.some((item) => normalizedRecruiterValues.includes(item))) return false;
+      if (selectedRecruiters.length && !selectedRecruiters.includes(normalizedRecruiterValue)) return false;
       const selectedGenders = parseMultiChipTokens(candidateStructuredFilters.gender).map((item) => item.toLowerCase());
       if (selectedGenders.length && !selectedGenders.includes(normalizedGenderValue)) return false;
       const selectedAssessmentStatuses = parseMultiChipTokens(candidateStructuredFilters.assessmentStatus).map((item) => item.toLowerCase());
