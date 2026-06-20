@@ -7808,11 +7808,17 @@ function buildDatabaseQuickChipInterviewHistoryRowsFromDashboardUniverse({
   return rows;
 }
 
-async function buildDatabaseQuickChipDataForUser({ user, filters = {}, searchMode = "", searchIds = [], dateFrom = "", dateTo = "" } = {}) {
+async function buildDatabaseQuickChipDataForUser({ user, filters = {}, searchMode = "", searchIds = [], selectedChips = [], dateFrom = "", dateTo = "" } = {}) {
   const normalizedFilters = normalizeDatabaseQuickChipFilters(filters);
   const hasSharedFilters = hasDatabaseQuickChipSharedFilters(normalizedFilters);
   const dateFromValue = String(dateFrom || normalizedFilters.dateFrom || "").trim();
   const dateToValue = String(dateTo || normalizedFilters.dateTo || "").trim();
+  const selectedChipSet = new Set((Array.isArray(selectedChips) ? selectedChips : []).map((item) => String(item || "").trim()).filter(Boolean));
+  const shouldBuildAllChips = selectedChipSet.size === 0;
+  const needsAssessmentEvents = shouldBuildAllChips
+    || selectedChipSet.has("interview_history")
+    || selectedChipSet.has("shared_today")
+    || selectedChipSet.has("shared_this_week");
   const assessments = await getAssessmentsUniverseForUser(user);
   const candidateIds = Array.from(new Set((Array.isArray(assessments) ? assessments : []).map((assessment) => String(
     assessment?.candidateId || assessment?.candidate_id || assessment?.payload?.candidateId || assessment?.payload?.candidate_id || ""
@@ -7820,7 +7826,7 @@ async function buildDatabaseQuickChipDataForUser({ user, filters = {}, searchMod
   const [candidates, jobs, assessmentEvents] = await Promise.all([
     fetchCandidatesByIdsForCompany(user.companyId, candidateIds),
     listCompanyJobs(user.companyId, user.id),
-    listAssessmentEvents({ companyId: user.companyId, limit: 10000 })
+    needsAssessmentEvents ? listAssessmentEvents({ companyId: user.companyId, limit: 10000 }) : Promise.resolve([])
   ]);
   const searchSet = new Set((Array.isArray(searchIds) ? searchIds : []).map((value) => String(value || "").trim()).filter(Boolean));
   const baseUniverse = buildCandidateSearchUniverse(candidates, assessments, jobs);
@@ -7848,15 +7854,17 @@ async function buildDatabaseQuickChipDataForUser({ user, filters = {}, searchMod
     dateFrom: dateFromValue,
     dateTo: dateToValue
   });
-  rows.interview_history = buildDatabaseQuickChipInterviewHistoryRowsFromDashboardUniverse({
-    user,
-    universe,
-    assessments,
-    candidates,
-    assessmentEvents,
-    dateFrom: dateFromValue,
-    dateTo: dateToValue
-  });
+  if (shouldBuildAllChips || selectedChipSet.has("interview_history")) {
+    rows.interview_history = buildDatabaseQuickChipInterviewHistoryRowsFromDashboardUniverse({
+      user,
+      universe,
+      assessments,
+      candidates,
+      assessmentEvents,
+      dateFrom: dateFromValue,
+      dateTo: dateToValue
+    });
+  }
   const summary = Object.fromEntries(Object.entries(rows).map(([key, list]) => [key, Array.isArray(list) ? list.length : 0]));
   const debug = {
     dateFrom: dateFromValue,
@@ -7871,6 +7879,8 @@ async function buildDatabaseQuickChipDataForUser({ user, filters = {}, searchMod
     sourceUniverseCount: Array.isArray(sourceUniverse) ? sourceUniverse.length : 0,
     universeCount: Array.isArray(universe) ? universe.length : 0,
     hasSharedFilters,
+    selectedChips: Array.from(selectedChipSet),
+    needsAssessmentEvents,
     rowsCount: summary
   };
   return {
@@ -18501,6 +18511,7 @@ const server = http.createServer(async (req, res) => {
       const filters = body?.filters && typeof body.filters === "object" ? body.filters : {};
       const searchMode = String(body?.searchMode || "all").trim().toLowerCase();
       const searchIds = Array.isArray(body?.searchIds) ? body.searchIds : [];
+      const selectedChips = Array.isArray(body?.selectedChips) ? body.selectedChips : [];
       const dateFrom = String(body?.dateFrom || filters?.dateFrom || "").trim();
       const dateTo = String(body?.dateTo || filters?.dateTo || "").trim();
       const quickChipData = await buildDatabaseQuickChipDataForUser({
@@ -18508,6 +18519,7 @@ const server = http.createServer(async (req, res) => {
         filters,
         searchMode,
         searchIds,
+        selectedChips,
         dateFrom,
         dateTo
       });
