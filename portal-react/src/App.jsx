@@ -11729,7 +11729,16 @@ function PortalApp({ token, onLogout }) {
     const safePage = Math.max(1, Number(page || 1));
     setDatabaseListLoading(true);
     try {
-      const envelope = await api(`/company/database-candidates?limit=${safeLimit}&page=${safePage}&includeMeta=1`, token);
+      const params = new URLSearchParams();
+      params.set("limit", String(safeLimit));
+      params.set("page", String(safePage));
+      params.set("includeMeta", "1");
+      if (candidateQuickFiltersApplied.dateFrom) params.set("dateFrom", String(candidateQuickFiltersApplied.dateFrom));
+      if (candidateQuickFiltersApplied.dateTo) params.set("dateTo", String(candidateQuickFiltersApplied.dateTo));
+      if (candidateQuickFiltersApplied.recruiter) params.set("recruiter", String(candidateQuickFiltersApplied.recruiter));
+      if (candidateQuickFiltersApplied.client) params.set("client", String(candidateQuickFiltersApplied.client));
+      if (candidateQuickFiltersApplied.jd) params.set("jd", String(candidateQuickFiltersApplied.jd));
+      const envelope = await api(`/company/database-candidates?${params.toString()}`, token);
       const payload = envelope?.result && typeof envelope.result === "object" ? envelope.result : envelope;
       const items = Array.isArray(payload?.items) ? payload.items : [];
       setDatabaseListItems(items);
@@ -13833,8 +13842,8 @@ function PortalApp({ token, onLogout }) {
   const databaseSearchResultsMode = !candidateHasSmartChipSelection && candidateSearchMode === "search";
   const databaseAllMode = candidateSearchMode === "all"
     && !candidateHasSmartChipSelection
-    && !databaseFiltersActive;
-  const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseAllMode;
+    && !candidateStructuredFiltersActive;
+  const databaseServerQueryMode = !candidateHasSmartChipSelection && (candidateSearchMode === "search" || candidateStructuredFiltersActive);
   const pagedCandidates = useMemo(() => {
     if (databaseServerQueryMode) return Array.isArray(databaseQueryItems) ? databaseQueryItems : [];
     if (databaseAllMode) return Array.isArray(databaseListItems) ? databaseListItems : [];

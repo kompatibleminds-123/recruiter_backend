@@ -3611,14 +3611,14 @@ function sanitizeApplicantCandidate(candidate = {}) {
     id: String(candidate?.id || "").trim(),
     candidateName: String(candidate?.name || "").trim(),
     name: String(candidate?.name || "").trim(),
-    role: String(candidate?.role || "").trim(),
-    currentCompany: String(candidate?.company || "").trim(),
-    company: String(candidate?.company || "").trim(),
-    totalExperience: String(candidate?.experience || "").trim(),
-    experience: String(candidate?.experience || "").trim(),
+    role: String(candidate?.role || candidate?.current_designation || candidate?.currentDesignation || "").trim(),
+    currentCompany: String(candidate?.company || candidate?.current_company || candidate?.currentCompany || "").trim(),
+    company: String(candidate?.company || candidate?.current_company || candidate?.currentCompany || "").trim(),
+    totalExperience: String(candidate?.experience || candidate?.total_experience || candidate?.totalExperience || "").trim(),
+    experience: String(candidate?.experience || candidate?.total_experience || candidate?.totalExperience || "").trim(),
     location: String(candidate?.location || "").trim(),
-    email: String(candidate?.email || "").trim(),
-    phone: String(candidate?.phone || "").trim(),
+    email: String(candidate?.email || candidate?.email_id || candidate?.emailId || "").trim(),
+    phone: String(candidate?.phone || candidate?.phone_number || candidate?.phoneNumber || "").trim(),
     clientName: String(candidate?.client_name || "").trim(),
     client_name: String(candidate?.client_name || "").trim(),
     jdTitle: String(candidate?.jd_title || candidate?.assigned_jd_title || "").trim(),
@@ -3678,6 +3678,14 @@ function sanitizeApplicantCandidate(candidate = {}) {
           : {},
     currentOrgTenure: normalizedCurrentOrgTenure,
     current_org_tenure: normalizedCurrentOrgTenure,
+    highestEducation: String(candidate?.highest_education || candidate?.highestEducation || "").trim(),
+    highest_education: String(candidate?.highest_education || candidate?.highestEducation || "").trim(),
+    currentCtc: String(candidate?.current_ctc || candidate?.currentCtc || "").trim(),
+    current_ctc: String(candidate?.current_ctc || candidate?.currentCtc || "").trim(),
+    expectedCtc: String(candidate?.expected_ctc || candidate?.expectedCtc || "").trim(),
+    expected_ctc: String(candidate?.expected_ctc || candidate?.expectedCtc || "").trim(),
+    noticePeriod: String(candidate?.notice_period || candidate?.noticePeriod || "").trim(),
+    notice_period: String(candidate?.notice_period || candidate?.noticePeriod || "").trim(),
     draft_payload: draftPayload,
     source: String(candidate?.source || meta.sourcePlatform || "").trim(),
     createdAt: String(candidate?.created_at || "").trim(),
@@ -8052,7 +8060,11 @@ async function buildDatabaseQueryRowsForUser({ user, filters = {}, searchMode = 
   const searchSet = new Set((Array.isArray(searchIds) ? searchIds : []).map((value) => String(value || "").trim()).filter(Boolean));
   if (normalizedSearchMode === "search" && !searchSet.size) return [];
   const candidates = await listAllDatabaseCandidatesForUser(user);
-  const rows = (Array.isArray(candidates) ? candidates : []).filter((item) => {
+  const normalizedCandidates = (Array.isArray(candidates) ? candidates : []).map((item) => ({
+    ...(item || {}),
+    ...sanitizeApplicantCandidate(item)
+  }));
+  const rows = normalizedCandidates.filter((item) => {
     if (normalizedSearchMode === "search" && searchSet.size) {
       const ids = [
         item?.id,
@@ -21224,6 +21236,13 @@ const server = http.createServer(async (req, res) => {
     try {
       const sessionUser = await requireSessionUser(getBearerToken(req));
       await requireSaasAccess(sessionUser, "database save and search");
+      const quickFilters = {
+        dateFrom: String(requestUrl.searchParams.get("dateFrom") || "").trim(),
+        dateTo: String(requestUrl.searchParams.get("dateTo") || "").trim(),
+        recruiter: String(requestUrl.searchParams.get("recruiter") || "").trim(),
+        client: String(requestUrl.searchParams.get("client") || "").trim(),
+        jd: String(requestUrl.searchParams.get("jd") || "").trim()
+      };
       const listOptions = {
         limit: Number(requestUrl.searchParams.get("limit") || 100),
         page: Number(requestUrl.searchParams.get("page") || 1),
@@ -21232,7 +21251,23 @@ const server = http.createServer(async (req, res) => {
         scope: String(requestUrl.searchParams.get("scope") || "company").trim(),
         includeMeta: ["1", "true", "yes"].includes(String(requestUrl.searchParams.get("includeMeta") || "").trim().toLowerCase())
       };
-        const result = await listDatabaseCandidatesForUser(sessionUser, listOptions);
+        const hasQuickFilters = Object.values(quickFilters).some((value) => Boolean(String(value || "").trim()));
+        const result = hasQuickFilters
+          ? await buildDatabaseQueryPageForUser({
+              user: sessionUser,
+              filters: {
+                dateFrom: quickFilters.dateFrom,
+                dateTo: quickFilters.dateTo,
+                recruiter: quickFilters.recruiter,
+                client: quickFilters.client,
+                jd: quickFilters.jd
+              },
+              searchMode: "all",
+              searchIds: [],
+              page: Math.max(1, Number(listOptions.page || 1)),
+              limit: Math.max(1, Math.min(50, Number(listOptions.limit || 10)))
+            })
+          : await listDatabaseCandidatesForUser(sessionUser, listOptions);
         const normalizedResult = Array.isArray(result)
           ? result.map((row) => ({
               ...(row || {}),
