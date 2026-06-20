@@ -11043,7 +11043,7 @@ function PortalApp({ token, onLogout }) {
       pathname === "/interview" ||
       forceCore ||
       forceAll);
-    const needsDatabaseCandidates = false;
+    const needsDatabaseCandidates = pathname === "/candidates" || forceAll;
     const needsAssessments =
       !isDashboardRoute && (
       pathname === "/dashboard" ||
@@ -11190,9 +11190,19 @@ function PortalApp({ token, onLogout }) {
       databaseCandidates: needsDatabaseCandidates
         ? mergeCandidatesByFreshness(
             current.databaseCandidates,
-            Array.isArray(databaseCandidatesResult)
-              ? databaseCandidatesResult
-              : (Array.isArray(databaseCandidatesResult?.items) ? databaseCandidatesResult.items : [])
+            Array.isArray((databaseCandidatesResult?.result && typeof databaseCandidatesResult.result === "object")
+              ? databaseCandidatesResult.result
+              : databaseCandidatesResult)
+              ? ((databaseCandidatesResult?.result && typeof databaseCandidatesResult.result === "object")
+                ? databaseCandidatesResult.result
+                : databaseCandidatesResult)
+              : (Array.isArray(((databaseCandidatesResult?.result && typeof databaseCandidatesResult.result === "object")
+                ? databaseCandidatesResult.result
+                : databaseCandidatesResult)?.items)
+                  ? (((databaseCandidatesResult?.result && typeof databaseCandidatesResult.result === "object")
+                    ? databaseCandidatesResult.result
+                    : databaseCandidatesResult).items)
+                  : [])
           )
         : current.databaseCandidates,
       assessments: needsAssessments
@@ -11203,15 +11213,18 @@ function PortalApp({ token, onLogout }) {
     if (seq !== workspaceLoadSeqRef.current) return;
     if (needsDatabaseCandidates) {
       databaseCandidatesHydratedRef.current = true;
-      const nextDatabaseItems = Array.isArray(databaseCandidatesResult)
-        ? databaseCandidatesResult
-        : (Array.isArray(databaseCandidatesResult?.items) ? databaseCandidatesResult.items : []);
+      const databasePayload = databaseCandidatesResult?.result && typeof databaseCandidatesResult.result === "object"
+        ? databaseCandidatesResult.result
+        : databaseCandidatesResult;
+      const nextDatabaseItems = Array.isArray(databasePayload)
+        ? databasePayload
+        : (Array.isArray(databasePayload?.items) ? databasePayload.items : []);
       setDatabaseListItems(nextDatabaseItems);
       setDatabaseListMeta({
-        total: Math.max(0, Number(databaseCandidatesResult?.total || nextDatabaseItems.length || 0)),
-        page: Math.max(1, Number(databaseCandidatesResult?.page || 1)),
-        limit: Math.max(1, Number(databaseCandidatesResult?.limit || databaseFetchLimit || 10)),
-        totalPages: Math.max(1, Number(databaseCandidatesResult?.totalPages || 1))
+        total: Math.max(0, Number(databasePayload?.total || nextDatabaseItems.length || 0)),
+        page: Math.max(1, Number(databasePayload?.page || 1)),
+        limit: Math.max(1, Number(databasePayload?.limit || databaseFetchLimit || 10)),
+        totalPages: Math.max(1, Number(databasePayload?.totalPages || 1))
       });
     }
     if (needsJobs) {
