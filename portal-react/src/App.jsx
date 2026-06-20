@@ -9028,7 +9028,7 @@ function PortalApp({ token, onLogout }) {
       client: String(candidateQuickFiltersDraft.client || "").trim(),
       jd: String(candidateQuickFiltersDraft.jd || "").trim()
     };
-    if (!candidateHasSmartChipSelection && candidateSearchMode !== "search" && candidateStructuredFiltersActive) {
+    if (!candidateHasSmartChipSelection && candidateSearchMode !== "search") {
       setDatabaseQueryLoading(true);
     }
     setCandidatePendingScrollTarget(candidateHasSmartChipSelection ? "chips" : "database");
@@ -9036,26 +9036,9 @@ function PortalApp({ token, onLogout }) {
     setCandidateSmartDateFrom(next.dateFrom);
     setCandidateSmartDateTo(next.dateTo);
     setCandidatePage(1);
-    setCapturedPage(1);
-    setCandidateFilters((current) => ({
-      ...current,
-      dateFrom: next.dateFrom,
-      dateTo: next.dateTo,
-      clients: next.client ? [next.client] : [],
-      jds: next.jd ? [next.jd] : [],
-      capturedBy: next.recruiter ? [next.recruiter] : []
-    }));
-    setCandidateFiltersApplied((current) => ({
-      ...current,
-      dateFrom: next.dateFrom,
-      dateTo: next.dateTo,
-      clients: next.client ? [next.client] : [],
-      jds: next.jd ? [next.jd] : [],
-      capturedBy: next.recruiter ? [next.recruiter] : []
-    }));
   };
   const resetCandidateQuickFilters = () => {
-    if (!candidateHasSmartChipSelection && candidateSearchMode !== "search" && candidateStructuredFiltersActive) {
+    if (!candidateHasSmartChipSelection && candidateSearchMode !== "search") {
       setDatabaseListLoading(true);
     }
     setCandidatePendingScrollTarget(candidateHasSmartChipSelection ? "chips" : "database");
@@ -9064,23 +9047,6 @@ function PortalApp({ token, onLogout }) {
     setCandidateSmartDateFrom("");
     setCandidateSmartDateTo("");
     setCandidatePage(1);
-    setCapturedPage(1);
-    setCandidateFilters((current) => ({
-      ...current,
-      dateFrom: "",
-      dateTo: "",
-      clients: [],
-      jds: [],
-      capturedBy: []
-    }));
-    setCandidateFiltersApplied((current) => ({
-      ...current,
-      dateFrom: "",
-      dateTo: "",
-      clients: [],
-      jds: [],
-      capturedBy: []
-    }));
   };
   const resetCandidateAdvancedFilters = () => {
     if (candidateSearchMode !== "search") {
@@ -13898,22 +13864,14 @@ function PortalApp({ token, onLogout }) {
   }, [candidateBaseUniverse, candidateStructuredFilters, candidateQuickFiltersApplied, state.assessments]);
   const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
   const databaseSearchResultsMode = !candidateHasSmartChipSelection && candidateSearchMode === "search";
-  const databaseQuickFilterMode = candidateSearchMode === "all"
-    && !candidateHasSmartChipSelection
-    && !candidateStructuredFiltersActive
-    && candidateQuickFiltersActive;
   const databaseAllMode = candidateSearchMode === "all"
     && !candidateHasSmartChipSelection
     && !candidateStructuredFiltersActive
     && !candidateQuickFiltersActive;
-  const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseSearchResultsMode && !databaseQuickFilterMode && !databaseAllMode;
+  const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseSearchResultsMode && !databaseAllMode;
   const pagedCandidates = useMemo(() => {
-    const safePageSize = Math.max(10, Number(candidatePageSize || 10));
+    const safePageSize = [10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10;
     if (databaseSearchResultsMode) {
-      const start = (candidatePage - 1) * safePageSize;
-      return candidateUniverse.slice(start, start + safePageSize);
-    }
-    if (databaseQuickFilterMode) {
       const start = (candidatePage - 1) * safePageSize;
       return candidateUniverse.slice(start, start + safePageSize);
     }
@@ -13925,16 +13883,14 @@ function PortalApp({ token, onLogout }) {
     }
     const start = (candidatePage - 1) * safePageSize;
     return candidateUniverse.slice(start, start + safePageSize);
-  }, [databaseSearchResultsMode, databaseQuickFilterMode, databaseAllMode, databaseServerQueryMode, databaseListItems, candidateUniverse, databaseQueryItems, candidatePage, candidatePageSize]);
+  }, [databaseSearchResultsMode, databaseAllMode, databaseServerQueryMode, databaseListItems, candidateUniverse, databaseQueryItems, candidatePage, candidatePageSize]);
   const totalCandidatePages = databaseSearchResultsMode
-    ? Math.max(1, Math.ceil((candidateUniverse.length || 0) / Math.max(10, Number(candidatePageSize || 10))))
-    : databaseQuickFilterMode
-    ? Math.max(1, Math.ceil((candidateUniverse.length || 0) / Math.max(10, Number(candidatePageSize || 10))))
+    ? Math.max(1, Math.ceil((candidateUniverse.length || 0) / ([10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10)))
     : databaseAllMode
     ? Math.max(1, Number(databaseListMeta?.totalPages || 1))
     : databaseServerQueryMode
       ? Math.max(1, Number(databaseQueryMeta?.totalPages || 1))
-      : Math.max(1, Math.ceil((candidateUniverse.length || 0) / Math.max(10, Number(candidatePageSize || 10))));
+      : Math.max(1, Math.ceil((candidateUniverse.length || 0) / ([10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10)));
   const renderDatabaseCandidateCard = (item) => {
     const stableItemKey = String(
       item?.id ||
@@ -14041,7 +13997,7 @@ function PortalApp({ token, onLogout }) {
     if (!databaseServerQueryMode) {
       setDatabaseQueryLoading(false);
       setDatabaseQueryItems([]);
-      setDatabaseQueryMeta({ total: 0, page: 1, limit: Math.max(10, Number(candidatePageSize || 10)), totalPages: 1 });
+      setDatabaseQueryMeta({ total: 0, page: 1, limit: [10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10, totalPages: 1 });
       return;
     }
     let cancelled = false;
@@ -14083,7 +14039,7 @@ function PortalApp({ token, onLogout }) {
       if (cancelled) return;
       console.error("database query failed", error);
       setDatabaseQueryItems([]);
-      setDatabaseQueryMeta({ total: 0, page: 1, limit: Math.max(10, Number(candidatePageSize || 10)), totalPages: 1 });
+      setDatabaseQueryMeta({ total: 0, page: 1, limit: [10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10, totalPages: 1 });
     }).finally(() => {
       if (cancelled) return;
       setDatabaseQueryLoading(false);
