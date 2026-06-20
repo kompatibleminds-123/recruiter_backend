@@ -13864,6 +13864,10 @@ function PortalApp({ token, onLogout }) {
   }, [candidateBaseUniverse, candidateStructuredFilters, candidateQuickFiltersApplied, state.assessments]);
   const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
   const databaseSearchResultsMode = !candidateHasSmartChipSelection && candidateSearchMode === "search";
+  const databaseQuickFilterOnlyMode = candidateSearchMode === "all"
+    && !candidateHasSmartChipSelection
+    && !candidateStructuredFiltersActive
+    && candidateQuickFiltersActive;
   const databaseAllMode = candidateSearchMode === "all"
     && !candidateHasSmartChipSelection
     && !candidateStructuredFiltersActive
@@ -13871,8 +13875,14 @@ function PortalApp({ token, onLogout }) {
   const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseSearchResultsMode && !databaseAllMode;
   const pagedCandidates = useMemo(() => {
     const safePageSize = [10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10;
+    const start = (candidatePage - 1) * safePageSize;
     if (databaseSearchResultsMode) {
-      const start = (candidatePage - 1) * safePageSize;
+      return candidateUniverse.slice(start, start + safePageSize);
+    }
+    if (databaseQuickFilterOnlyMode) {
+      if (Array.isArray(databaseQueryItems) && databaseQueryItems.length) {
+        return databaseQueryItems.slice(0, safePageSize);
+      }
       return candidateUniverse.slice(start, start + safePageSize);
     }
     if (databaseAllMode) {
@@ -13881,11 +13891,16 @@ function PortalApp({ token, onLogout }) {
     if (databaseServerQueryMode) {
       return (Array.isArray(databaseQueryItems) ? databaseQueryItems : []).slice(0, safePageSize);
     }
-    const start = (candidatePage - 1) * safePageSize;
     return candidateUniverse.slice(start, start + safePageSize);
-  }, [databaseSearchResultsMode, databaseAllMode, databaseServerQueryMode, databaseListItems, candidateUniverse, databaseQueryItems, candidatePage, candidatePageSize]);
+  }, [databaseSearchResultsMode, databaseQuickFilterOnlyMode, databaseAllMode, databaseServerQueryMode, databaseListItems, candidateUniverse, databaseQueryItems, candidatePage, candidatePageSize]);
   const totalCandidatePages = databaseSearchResultsMode
     ? Math.max(1, Math.ceil((candidateUniverse.length || 0) / ([10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10)))
+    : databaseQuickFilterOnlyMode
+    ? (
+        Number(databaseQueryMeta?.total || 0) > 0
+          ? Math.max(1, Number(databaseQueryMeta?.totalPages || 1))
+          : Math.max(1, Math.ceil((candidateUniverse.length || 0) / ([10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10)))
+      )
     : databaseAllMode
     ? Math.max(1, Number(databaseListMeta?.totalPages || 1))
     : databaseServerQueryMode
