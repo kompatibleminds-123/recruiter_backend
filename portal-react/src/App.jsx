@@ -13831,12 +13831,11 @@ function PortalApp({ token, onLogout }) {
   }, [candidateBaseUniverse, candidateStructuredFilters, candidateQuickFiltersApplied, state.assessments]);
   const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
   const databaseLocalReady = Boolean(databaseCandidatesHydratedRef.current) && Array.isArray(state.databaseCandidates) && state.databaseCandidates.length > 0;
-  const databaseLocalFilterMode = !candidateHasSmartChipSelection && databaseLocalReady;
   const databaseAllMode = candidateSearchMode === "all"
     && !candidateHasSmartChipSelection
     && !candidateStructuredFiltersActive
-    && !candidateQuickFiltersActive
-    && !databaseLocalReady;
+    && !candidateQuickFiltersActive;
+  const databaseLocalFilterMode = !candidateHasSmartChipSelection && databaseLocalReady && !databaseAllMode;
   const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseLocalFilterMode && !databaseAllMode;
   const pagedCandidates = useMemo(() => {
     const safePageSize = Math.max(10, Number(candidatePageSize || 10));
