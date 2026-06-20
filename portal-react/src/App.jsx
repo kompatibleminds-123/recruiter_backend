@@ -13659,7 +13659,10 @@ function PortalApp({ token, onLogout }) {
     candidateUniverseAll.forEach((item) => {
       const clientLabel = String(item?.client_name || item?.clientName || "").trim();
       const recruiterLabel = String(
-        item?.assigned_to_name
+        item?.ownerRecruiter
+        || item?.recruiterName
+        || item?.sourcedRecruiter
+        || item?.assigned_to_name
         || item?.assignedToName
         || item?.recruiter_name
         || item?.recruiterName
@@ -13705,7 +13708,10 @@ function PortalApp({ token, onLogout }) {
     const clients = new Set();
     candidateUniverseAll.forEach((item) => {
       const recruiter = String(
-        item.assigned_to_name
+        item.ownerRecruiter
+        || item.recruiterName
+        || item.sourcedRecruiter
+        || item.assigned_to_name
         || item.assignedToName
         || item.recruiter_name
         || item.recruiterName
@@ -13776,6 +13782,9 @@ function PortalApp({ token, onLogout }) {
       ].join(" ").toLowerCase();
       const clientValue = String(item.client_name || item.clientName || "").trim();
       const recruiterValues = [
+        item.ownerRecruiter || "",
+        item.recruiterName || "",
+        item.sourcedRecruiter || "",
         item.assigned_to_name || item.assignedToName || "",
         item.recruiter_name || item.recruiterName || "",
         item.applyAssignedToName || item.apply_assigned_to_name || "",

@@ -7143,6 +7143,9 @@ function databaseSmartChipRowMatchesFrontendFilters(item, filters = {}) {
   ].join(" ").toLowerCase();
   const clientValue = String(item?.client_name || item?.clientName || "").trim();
   const recruiterValues = [
+    item?.recruiterName || "",
+    item?.ownerRecruiter || "",
+    item?.sourcedRecruiter || "",
     item?.assigned_to_name || item?.assignedToName || "",
     item?.recruiter_name || item?.recruiterName || "",
     item?.applyAssignedToName || item?.apply_assigned_to_name || "",
@@ -7223,7 +7226,14 @@ function databaseSmartChipRowMatchesFrontendFilters(item, filters = {}) {
 function databaseQuickChipRowMatchesSharedFilters(item, filters = {}) {
   const normalizedFilters = filters && typeof filters === "object" ? filters : {};
   const clientValue = String(item?.client_name || item?.clientName || "").trim().toLowerCase();
-  const recruiterValue = String(item?.assigned_to_name || item?.assignedToName || item?.recruiterName || "").trim().toLowerCase();
+  const recruiterValue = String(
+    item?.ownerRecruiter
+    || item?.recruiterName
+    || item?.sourcedRecruiter
+    || item?.assigned_to_name
+    || item?.assignedToName
+    || ""
+  ).trim().toLowerCase();
   const roleHay = [
     item?.role || "",
     item?.position || "",
