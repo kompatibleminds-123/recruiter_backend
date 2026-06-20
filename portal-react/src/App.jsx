@@ -13976,7 +13976,7 @@ function PortalApp({ token, onLogout }) {
     if (String(location?.pathname || "").trim() !== "/candidates") return;
     if (!databaseAllMode) return;
     void reloadDatabaseListPage(candidatePage, candidatePageSize);
-  }, [token, location?.pathname, databaseAllMode, candidatePage, candidatePageSize]);
+  }, [token, location?.pathname, databaseAllMode, candidatePage, candidatePageSize, candidateQuickFiltersApplied]);
 
   useEffect(() => {
     if (!token) return;
