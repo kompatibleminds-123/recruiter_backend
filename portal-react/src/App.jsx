@@ -13831,16 +13831,21 @@ function PortalApp({ token, onLogout }) {
   const candidateHasSmartChipSelection = candidateQuickChipIds.length > 0;
   const databaseFiltersActive = !candidateHasSmartChipSelection && (candidateStructuredFiltersActive || candidateQuickFiltersActive);
   const databaseSearchResultsMode = !candidateHasSmartChipSelection && candidateSearchMode === "search";
-  const databaseAllMode = !candidateHasSmartChipSelection && candidateSearchMode === "all";
-  const databaseServerQueryMode = !candidateHasSmartChipSelection;
+  const databaseAllMode = candidateSearchMode === "all"
+    && !candidateHasSmartChipSelection
+    && !databaseFiltersActive;
+  const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseAllMode;
   const pagedCandidates = useMemo(() => {
     if (databaseServerQueryMode) return Array.isArray(databaseQueryItems) ? databaseQueryItems : [];
+    if (databaseAllMode) return Array.isArray(databaseListItems) ? databaseListItems : [];
     const safePageSize = [10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10;
     const start = (candidatePage - 1) * safePageSize;
     return candidateUniverse.slice(start, start + safePageSize);
-  }, [candidateUniverse, candidatePage, candidatePageSize, databaseServerQueryMode, databaseQueryItems]);
+  }, [candidateUniverse, candidatePage, candidatePageSize, databaseServerQueryMode, databaseQueryItems, databaseAllMode, databaseListItems]);
   const totalCandidatePages = databaseServerQueryMode
     ? Math.max(1, Number(databaseQueryMeta?.totalPages || 1))
+    : databaseAllMode
+      ? Math.max(1, Number(databaseListMeta?.totalPages || 1))
     : Math.max(1, Math.ceil((candidateUniverse.length || 0) / ([10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10)));
   const renderDatabaseCandidateCard = (item) => {
     const stableItemKey = String(
@@ -13956,6 +13961,13 @@ function PortalApp({ token, onLogout }) {
       return ids.some((id) => allowedIds.has(id));
     });
   }, [activeCandidateQuickChipId, candidateSmartChipRowsEffective, candidateUniverse]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (String(location?.pathname || "").trim() !== "/candidates") return;
+    if (!databaseAllMode) return;
+    void reloadDatabaseListPage(candidatePage, candidatePageSize);
+  }, [token, location?.pathname, databaseAllMode, candidatePage, candidatePageSize]);
 
   useEffect(() => {
     if (!token) return;
@@ -23990,7 +24002,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <button className="ghost-btn" onClick={() => downloadCandidatesExcel()}>Download results</button>
                       ) : null}
                       <div className="database-results-toolbar__spacer" />
-                      <div className="muted">{`${Number(databaseQueryMeta?.total || 0)} profiles`}</div>
+                      <div className="muted">{`${Number(databaseAllMode ? (databaseListMeta?.total || 0) : (databaseQueryMeta?.total || 0))} profiles`}</div>
                       {(databaseAllMode ? databaseListLoading : databaseQueryLoading) ? <div className="muted">Loading database...</div> : null}
                       <div className="button-row database-results-toolbar__pager">
                         <label className="copy-preset-control" style={{ margin: 0 }}>
