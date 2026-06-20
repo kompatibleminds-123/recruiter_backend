@@ -7914,7 +7914,8 @@ async function listAllDatabaseCandidatesForUser(user, { pageSize = 200 } = {}) {
   const firstPage = await listDatabaseCandidatesForUser(user, {
     limit: safePageSize,
     page: 1,
-    includeMeta: true
+    includeMeta: true,
+    scope: "company"
   });
   const firstItems = Array.isArray(firstPage?.items) ? firstPage.items : [];
   const totalPages = Math.max(1, Number(firstPage?.totalPages || 1));
@@ -7924,7 +7925,8 @@ async function listAllDatabaseCandidatesForUser(user, { pageSize = 200 } = {}) {
   const remainingResults = await Promise.all(
     remainingPages.map((page) => listDatabaseCandidatesForUser(user, {
       limit: safePageSize,
-      page
+      page,
+      scope: "company"
     }).catch(() => []))
   );
   return [

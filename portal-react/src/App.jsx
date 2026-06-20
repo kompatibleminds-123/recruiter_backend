@@ -8934,6 +8934,7 @@ function PortalApp({ token, onLogout }) {
   const candidateSmartChipRowsStableRef = useRef(null);
   const candidateSmartChipSummaryStableRef = useRef(null);
   const candidateSmartChipSummaryRequestRef = useRef(0);
+  const candidateSmartChipPrefetchRequestRef = useRef(0);
   const candidateSmartChipResultsRef = useRef(null);
   const candidateDatabaseResultsRef = useRef(null);
   const databaseCandidatesHydratedRef = useRef(false);
@@ -9082,13 +9083,17 @@ function PortalApp({ token, onLogout }) {
     }));
   };
   const resetCandidateAdvancedFilters = () => {
-    setDatabaseListLoading(true);
+    if (candidateSearchMode !== "search") {
+      setDatabaseListLoading(true);
+    }
     setCandidatePendingScrollTarget("database");
-    setCandidateQuickChipIds([]);
-    setCandidateSearchMode("all");
-    setCandidateSearchResults([]);
-    setCandidateSearchQueryUsed("");
-    setCandidateSearchingAs("");
+    if (candidateHasSmartChipSelection) {
+      setCandidateQuickChipIds([]);
+      setCandidateSearchMode("all");
+      setCandidateSearchResults([]);
+      setCandidateSearchQueryUsed("");
+      setCandidateSearchingAs("");
+    }
     setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
     setCandidateStructuredFiltersDraft(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
     setCandidatePage(1);
@@ -9223,13 +9228,17 @@ function PortalApp({ token, onLogout }) {
           className={candidateStructuredFiltersDirty ? "" : "ghost-btn"}
           disabled={!candidateStructuredFiltersDirty}
           onClick={() => {
-            setDatabaseQueryLoading(true);
+            if (candidateSearchMode !== "search" || candidateHasSmartChipSelection) {
+              setDatabaseQueryLoading(true);
+            }
             setCandidatePendingScrollTarget("database");
-            setCandidateQuickChipIds([]);
-            setCandidateSearchMode("all");
-            setCandidateSearchResults([]);
-            setCandidateSearchQueryUsed("");
-            setCandidateSearchingAs("");
+            if (candidateHasSmartChipSelection) {
+              setCandidateQuickChipIds([]);
+              setCandidateSearchMode("all");
+              setCandidateSearchResults([]);
+              setCandidateSearchQueryUsed("");
+              setCandidateSearchingAs("");
+            }
             setCandidateStructuredFilters(candidateStructuredFiltersDraft);
             setCandidatePage(1);
             setStatus("workspace", "Filters applied.", "ok");
@@ -10089,8 +10098,72 @@ function PortalApp({ token, onLogout }) {
     }
   }, [candidateSmartChipSummaryCacheKey]);
   useEffect(() => {
-    return;
-  }, []);
+    if (!token) return;
+    if (String(location?.pathname || "").trim() !== "/candidates") return;
+    const hasSelectedQuickChips = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
+    if (hasSelectedQuickChips) return;
+    let cancelled = false;
+    const requestId = Date.now();
+    candidateSmartChipPrefetchRequestRef.current = requestId;
+    api("/company/database/quick-chip-rows", token, "POST", {
+      selectedChips: [],
+      filters: candidateSmartChipScopedFilters,
+      searchMode: "all",
+      searchIds: [],
+      dateFrom: candidateSmartDateFrom,
+      dateTo: candidateSmartDateTo
+    }).then((result) => {
+      if (cancelled || candidateSmartChipPrefetchRequestRef.current !== requestId) return;
+      const rows = result?.rows && typeof result.rows === "object"
+        ? result.rows
+        : (result?.result?.rows && typeof result.result.rows === "object" ? result.result.rows : null);
+      if (rows && !isEmptySmartChipSnapshot(rows)) {
+        candidateSmartChipRowsStableRef.current = rows;
+        if (candidateSmartChipCacheKey && typeof window !== "undefined") {
+          try {
+            window.localStorage.setItem(candidateSmartChipCacheKey, JSON.stringify(rows));
+          } catch {}
+        }
+      }
+      const summary = result?.summary && typeof result.summary === "object"
+        ? result.summary
+        : (result?.result?.summary && typeof result.result.summary === "object" ? result.result.summary : null);
+      if (summary) {
+        const normalizedSummary = {
+          interview_history: Number(summary.interview_history || summary.interviewHistory || 0),
+          aligned_interviews: Number(summary.aligned_interviews || summary.alignedInterviews || 0),
+          feedback_awaited: Number(summary.feedback_awaited || summary.feedbackAwaited || 0),
+          quick_joiners: Number(summary.quick_joiners || summary.quickJoiners || 0),
+          shared_today: Number(summary.shared_today || summary.sharedToday || 0),
+          shared_this_week: Number(summary.shared_this_week || summary.sharedThisWeek || 0),
+          joined_candidates: Number(summary.joined_candidates || summary.joinedCandidates || 0),
+          cv_shared: Number(summary.cv_shared || summary.cvShared || 0)
+        };
+        candidateSmartChipSummaryStableRef.current = normalizedSummary;
+        if (candidateSmartChipSummaryCacheKey && typeof window !== "undefined") {
+          try {
+            window.localStorage.setItem(candidateSmartChipSummaryCacheKey, JSON.stringify(normalizedSummary));
+          } catch {}
+        }
+      }
+    }).catch((error) => {
+      if (cancelled || candidateSmartChipPrefetchRequestRef.current !== requestId) return;
+      console.error("candidateSmartChipRows prefetch failed", error);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    token,
+    location?.pathname,
+    candidateAiQueryMode,
+    candidateQuickChipIds,
+    candidateSmartChipScopedFilters,
+    candidateSmartDateFrom,
+    candidateSmartDateTo,
+    candidateSmartChipCacheKey,
+    candidateSmartChipSummaryCacheKey
+  ]);
   const isKompatibleCompany = currentCompanyId === KOMPATIBLE_MINDS_COMPANY_ID;
   const defaultJdEmailCc = isKompatibleCompany ? DEFAULT_JD_EMAIL_CC : "";
   const currentPlanCode = String(effectiveLicense?.plan || "trial").trim().toLowerCase();
@@ -13813,7 +13886,7 @@ function PortalApp({ token, onLogout }) {
         if (!selectedSources.includes(sourceValue)) return false;
       }
       const selectedRecruiters = parseMultiChipTokens(candidateStructuredFilters.recruiter).map((item) => item.toLowerCase());
-      if (selectedRecruiters.length && !selectedRecruiters.includes(normalizedRecruiterValue)) return false;
+      if (selectedRecruiters.length && !selectedRecruiters.some((item) => normalizedRecruiterValues.includes(item))) return false;
       const selectedGenders = parseMultiChipTokens(candidateStructuredFilters.gender).map((item) => item.toLowerCase());
       if (selectedGenders.length && !selectedGenders.includes(normalizedGenderValue)) return false;
       const selectedAssessmentStatuses = parseMultiChipTokens(candidateStructuredFilters.assessmentStatus).map((item) => item.toLowerCase());
