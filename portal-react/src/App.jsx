@@ -14005,7 +14005,7 @@ function PortalApp({ token, onLogout }) {
         dateTo: candidateQuickFiltersApplied.dateTo,
         client: candidateQuickFiltersApplied.client,
         recruiter: candidateQuickFiltersApplied.recruiter,
-        targetLabel: candidateQuickFiltersApplied.jd
+        jd: candidateQuickFiltersApplied.jd
       },
       searchMode: candidateSearchMode,
       searchIds,
@@ -18837,7 +18837,7 @@ function PortalApp({ token, onLogout }) {
         dateTo: candidateQuickFiltersApplied.dateTo,
         client: candidateQuickFiltersApplied.client,
         recruiter: candidateQuickFiltersApplied.recruiter,
-        targetLabel: candidateQuickFiltersApplied.jd
+        jd: candidateQuickFiltersApplied.jd
       },
       searchMode: candidateSearchMode,
       searchIds

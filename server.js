@@ -7078,7 +7078,8 @@ function normalizeDatabaseQuickChipFilters(raw = {}) {
     location: String(source.location || "").trim(),
     locations: Array.isArray(source.locations) ? source.locations.map((item) => String(item || "").trim()).filter(Boolean) : splitList(source.locationsText || source.locationList || source.location),
     client: String(source.client || source.clientName || "").trim(),
-    targetLabel: String(source.targetLabel || source.jd || source.job || "").trim(),
+    targetLabel: String(source.targetLabel || source.designation || source.currentDesignation || "").trim(),
+    jd: String(source.jd || source.job || source.jdTitle || "").trim(),
     minExperienceYears: toNumberOrNull(source.minExperience),
     maxExperienceYears: toNumberOrNull(source.maxExperience),
     minCurrentCtcLpa: toNumberOrNull(source.minCurrentCtc),
@@ -7229,15 +7230,14 @@ function databaseSmartChipRowMatchesFrontendFilters(item, filters = {}) {
       return false;
     }
   }
-  if (normalizedFilters.role || normalizedFilters.targetLabel) {
-    const requiredRoles = parseMultiChipTokens(normalizedFilters.role || normalizedFilters.targetLabel).map((entry) => entry.toLowerCase());
-    if (requiredRoles.length && !requiredRoles.includes(normalizedJdValue)) return false;
-  }
+  const selectedJds = parseMultiChipTokens(normalizedFilters.jd || normalizedFilters.role).map((entry) => entry.toLowerCase());
+  if (selectedJds.length && !selectedJds.includes(normalizedJdValue)) return false;
   if (normalizedFilters.keySkills) {
     const requiredSkills = splitSearchKeywords(normalizedFilters.keySkills);
     if (requiredSkills.length && !requiredSkills.every((term) => skillsHay.includes(term))) return false;
   }
   if (normalizedFilters.currentCompany && !companyHay.includes(String(normalizedFilters.currentCompany).trim().toLowerCase())) return false;
+  if (normalizedFilters.targetLabel && !roleHay.includes(String(normalizedFilters.targetLabel).trim().toLowerCase())) return false;
   const selectedClients = parseMultiChipTokens(normalizedFilters.client).map((entry) => entry.toLowerCase());
   if (selectedClients.length && !selectedClients.includes(normalizedClientValue)) return false;
   if (normalizedFilters.minCurrentCtcLpa != null && normalizedFilters.minCurrentCtcLpa !== "" && (currentCtc == null || currentCtc < Number(normalizedFilters.minCurrentCtcLpa))) return false;
@@ -7279,7 +7279,7 @@ function databaseQuickChipRowMatchesSharedFilters(item, filters = {}) {
   const selectedRecruiters = parseMultiChipTokens(normalizedFilters.recruiter || normalizedFilters.recruiterName).map((entry) => entry.toLowerCase());
   if (selectedRecruiters.length && !selectedRecruiters.includes(recruiterValue)) return false;
 
-  const requiredRoles = parseMultiChipTokens(normalizedFilters.targetLabel || normalizedFilters.role).map((entry) => entry.toLowerCase());
+  const requiredRoles = parseMultiChipTokens(normalizedFilters.jd || normalizedFilters.targetLabel || normalizedFilters.role).map((entry) => entry.toLowerCase());
   if (requiredRoles.length && !requiredRoles.includes(jdValue)) return false;
 
   return true;
@@ -7290,7 +7290,7 @@ function hasDatabaseQuickChipSharedFilters(filters = {}) {
   return Boolean(
     String(normalizedFilters.client || "").trim() ||
     String(normalizedFilters.recruiter || normalizedFilters.recruiterName || "").trim() ||
-    String(normalizedFilters.targetLabel || normalizedFilters.role || "").trim()
+    String(normalizedFilters.jd || normalizedFilters.targetLabel || normalizedFilters.role || "").trim()
   );
 }
 
