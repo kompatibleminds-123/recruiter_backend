@@ -9000,6 +9000,10 @@ function PortalApp({ token, onLogout }) {
       const next = current.includes(normalizedId) ? [] : [normalizedId];
       if (next.length > 0) {
         setCandidatePendingScrollTarget("chips");
+        setCandidateSearchMode("all");
+        setCandidateSearchResults([]);
+        setCandidateSearchQueryUsed("");
+        setCandidateSearchingAs("");
       } else {
         setCandidatePendingScrollTarget("database");
         setCandidateSearchMode("all");
@@ -9025,6 +9029,11 @@ function PortalApp({ token, onLogout }) {
     };
     setDatabaseQueryLoading(true);
     setCandidatePendingScrollTarget("database");
+    setCandidateQuickChipIds([]);
+    setCandidateSearchMode("all");
+    setCandidateSearchResults([]);
+    setCandidateSearchQueryUsed("");
+    setCandidateSearchingAs("");
     setCandidateQuickFiltersApplied(next);
     setCandidateSmartDateFrom(next.dateFrom);
     setCandidateSmartDateTo(next.dateTo);
@@ -9050,6 +9059,11 @@ function PortalApp({ token, onLogout }) {
   const resetCandidateQuickFilters = () => {
     setDatabaseListLoading(true);
     setCandidatePendingScrollTarget("database");
+    setCandidateQuickChipIds([]);
+    setCandidateSearchMode("all");
+    setCandidateSearchResults([]);
+    setCandidateSearchQueryUsed("");
+    setCandidateSearchingAs("");
     setCandidateQuickFiltersDraft(EMPTY_CANDIDATE_QUICK_FILTERS);
     setCandidateQuickFiltersApplied(EMPTY_CANDIDATE_QUICK_FILTERS);
     setCandidateSmartDateFrom("");
@@ -9076,6 +9090,11 @@ function PortalApp({ token, onLogout }) {
   const resetCandidateAdvancedFilters = () => {
     setDatabaseListLoading(true);
     setCandidatePendingScrollTarget("database");
+    setCandidateQuickChipIds([]);
+    setCandidateSearchMode("all");
+    setCandidateSearchResults([]);
+    setCandidateSearchQueryUsed("");
+    setCandidateSearchingAs("");
     setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
     setCandidateStructuredFiltersDraft(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
     setCandidatePage(1);
@@ -9212,6 +9231,11 @@ function PortalApp({ token, onLogout }) {
           onClick={() => {
             setDatabaseQueryLoading(true);
             setCandidatePendingScrollTarget("database");
+            setCandidateQuickChipIds([]);
+            setCandidateSearchMode("all");
+            setCandidateSearchResults([]);
+            setCandidateSearchQueryUsed("");
+            setCandidateSearchingAs("");
             setCandidateStructuredFilters(candidateStructuredFiltersDraft);
             setCandidatePage(1);
             setStatus("workspace", "Filters applied.", "ok");
@@ -13544,9 +13568,10 @@ function PortalApp({ token, onLogout }) {
     void loadCvLinks();
   }, [selectedAssessmentRows, token, clientShareCvLinkFingerprint]);
   const candidateUniverseAll = useMemo(() => {
-    const databaseRows = Array.isArray(state.databaseCandidates) && state.databaseCandidates.length
+    const rawDatabaseRows = Array.isArray(state.databaseCandidates) && state.databaseCandidates.length
       ? state.databaseCandidates
       : (Array.isArray(databaseListItems) && databaseListItems.length ? databaseListItems : (state.candidates || []));
+    const databaseRows = rawDatabaseRows.map((item) => normalizeApplicantVisibleRow(item));
     const linkedAssessmentIds = new Set(databaseRows.map((item) => String(item.assessment_id || "").trim()).filter(Boolean));
     const candidateNames = new Set(databaseRows.map((item) => String(item.name || "").trim().toLowerCase()).filter(Boolean));
     const assessmentOnlyItems = (state.assessments || [])
@@ -13588,7 +13613,7 @@ function PortalApp({ token, onLogout }) {
       const assignedUserId = String(item?.assigned_to_user_id || item?.assignedToUserId || "").trim();
       const ownerRecruiterId = String(item?.ownerRecruiterId || item?.recruiter_id || "").trim();
       const assignedToName = String(item?.assigned_to_name || item?.assignedToName || "").trim().toLowerCase();
-      const recruiterName = String(item?.assigned_to_name || item?.assignedToName || "").trim().toLowerCase();
+      const recruiterName = String(item?.recruiter_name || item?.recruiterName || item?.applyAssignedToName || item?.apply_assigned_to_name || "").trim().toLowerCase();
       if (currentUserId && (assignedUserId === currentUserId || ownerRecruiterId === currentUserId)) return true;
       if (currentUserName && (assignedToName === currentUserName || recruiterName === currentUserName)) return true;
       return false;
@@ -13688,7 +13713,18 @@ function PortalApp({ token, onLogout }) {
       const locationHay = String(item.location || "").toLowerCase();
       const companyHay = String(item.company || item.currentCompany || "").toLowerCase();
       const educationHay = String(item.highest_education || item.highestEducation || "").toLowerCase();
-      const roleHay = String(item.role || item.position || item.jdTitle || item.currentDesignation || "").toLowerCase();
+      const roleHay = [
+        item.role || "",
+        item.position || "",
+        item.jdTitle || "",
+        item.jd_title || "",
+        item.assignedJdTitle || "",
+        item.assigned_jd_title || "",
+        item.currentDesignation || "",
+        item.current_designation || "",
+        item.raw?.assessment?.jdTitle || "",
+        item.raw?.assessment?.jd_title || ""
+      ].join(" ").toLowerCase();
       const skillsHay = [
         item.name || "",
         item.candidateName || "",
@@ -18103,6 +18139,7 @@ function PortalApp({ token, onLogout }) {
     const semanticEnabled = copySettings.semanticSearchEnabled !== false;
     setCandidateSearchBusy(true);
     setCandidatePendingScrollTarget("database");
+    setCandidateQuickChipIds([]);
     setCandidateSearchDebug(null);
     setCandidateSearchingAs(hasKeywordBuilder ? keywordDrivenBoolean : "");
     setStatus("workspace", "Searching candidates...", "ok");
