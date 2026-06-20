@@ -9015,6 +9015,7 @@ function PortalApp({ token, onLogout }) {
       return next;
     });
   };
+  const activeCandidateQuickChipId = candidateQuickChipIds.length ? String(candidateQuickChipIds[0] || "").trim() : "";
   const candidateNoticeBucketSelectedLabels = useMemo(() => (
     parseMultiChipTokens(candidateStructuredFiltersDraft.noticeBucket)
       .map((value) => candidateNoticeBucketLabelByValue[value] || value)
@@ -9052,14 +9053,7 @@ function PortalApp({ token, onLogout }) {
     if (candidateSearchMode !== "search") {
       setDatabaseListLoading(true);
     }
-    setCandidatePendingScrollTarget("database");
-    if (candidateHasSmartChipSelection) {
-      setCandidateQuickChipIds([]);
-      setCandidateSearchMode("all");
-      setCandidateSearchResults([]);
-      setCandidateSearchQueryUsed("");
-      setCandidateSearchingAs("");
-    }
+    setCandidatePendingScrollTarget(candidateHasSmartChipSelection ? "chips" : "database");
     setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
     setCandidateStructuredFiltersDraft(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
     setCandidatePage(1);
@@ -9069,7 +9063,7 @@ function PortalApp({ token, onLogout }) {
       <div className="candidate-filter-head">
         <div>
           <h3>Quick Filters</h3>
-          <p className="muted">These filters work across both Captured Candidates and Database Search.</p>
+          <p className="muted">These filters work across Database results and Smart chip results.</p>
         </div>
       </div>
       <div className="candidate-common-filter-grid">
@@ -9197,14 +9191,7 @@ function PortalApp({ token, onLogout }) {
             if (candidateSearchMode !== "search" || candidateHasSmartChipSelection) {
               setDatabaseQueryLoading(true);
             }
-            setCandidatePendingScrollTarget("database");
-            if (candidateHasSmartChipSelection) {
-              setCandidateQuickChipIds([]);
-              setCandidateSearchMode("all");
-              setCandidateSearchResults([]);
-              setCandidateSearchQueryUsed("");
-              setCandidateSearchingAs("");
-            }
+            setCandidatePendingScrollTarget(candidateHasSmartChipSelection ? "chips" : "database");
             setCandidateStructuredFilters(candidateStructuredFiltersDraft);
             setCandidatePage(1);
             setStatus("workspace", "Filters applied.", "ok");
@@ -11057,7 +11044,7 @@ function PortalApp({ token, onLogout }) {
       pathname === "/interview" ||
       forceCore ||
       forceAll);
-    const needsDatabaseCandidates = !isDashboardRoute && pathname !== "/candidates" && (forceCore || forceAll);
+    const needsDatabaseCandidates = !isDashboardRoute && (pathname === "/candidates" || forceCore || forceAll);
     const needsAssessments =
       !isDashboardRoute && (
       pathname === "/dashboard" ||
@@ -13552,120 +13539,46 @@ function PortalApp({ token, onLogout }) {
     }
     void loadCvLinks();
   }, [selectedAssessmentRows, token, clientShareCvLinkFingerprint]);
-  useEffect(() => {
-    if (!token) return;
-    if (String(location?.pathname || "").trim() !== "/candidates") return;
-    if (databaseCandidatesHydratedRef.current && Array.isArray(state.databaseCandidates) && state.databaseCandidates.length) return;
-    let cancelled = false;
-    const safePageSize = [10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10;
-    setDatabaseListLoading(true);
-    api("/company/database-universe-lite", token)
-      .then((envelope) => {
-        if (cancelled) return;
-        const payload = envelope?.result && typeof envelope.result === "object" ? envelope.result : envelope;
-        const universe = Array.isArray(payload?.universe) ? payload.universe : [];
-        const rows = payload?.rows && typeof payload.rows === "object" ? payload.rows : null;
-        const summary = payload?.summary && typeof payload.summary === "object" ? payload.summary : null;
-        databaseCandidatesHydratedRef.current = true;
-        setState((current) => ({
-          ...current,
-          databaseCandidates: universe
-        }));
-        setDatabaseListItems(universe.slice(0, safePageSize));
-        setDatabaseListMeta({
-          total: Math.max(0, Number(payload?.total || universe.length || 0)),
-          page: 1,
-          limit: safePageSize,
-          totalPages: Math.max(1, Math.ceil((Number(payload?.total || universe.length || 0)) / safePageSize))
-        });
-        if (rows) {
-          candidateSmartChipRowsStableRef.current = rows;
-          setCandidateSmartChipRowsRemote(rows);
-          if (candidateSmartChipCacheKey && typeof window !== "undefined") {
-            try {
-              window.localStorage.setItem(candidateSmartChipCacheKey, JSON.stringify(rows));
-            } catch {}
-          }
-        }
-        if (summary) {
-          const normalizedSummary = {
-            interview_history: Number(summary.interview_history || summary.interviewHistory || 0),
-            aligned_interviews: Number(summary.aligned_interviews || summary.alignedInterviews || 0),
-            feedback_awaited: Number(summary.feedback_awaited || summary.feedbackAwaited || 0),
-            quick_joiners: Number(summary.quick_joiners || summary.quickJoiners || 0),
-            shared_today: Number(summary.shared_today || summary.sharedToday || 0),
-            shared_this_week: Number(summary.shared_this_week || summary.sharedThisWeek || 0),
-            joined_candidates: Number(summary.joined_candidates || summary.joinedCandidates || 0),
-            cv_shared: Number(summary.cv_shared || summary.cvShared || 0)
-          };
-          candidateSmartChipSummaryStableRef.current = normalizedSummary;
-          setCandidateSmartChipSummary(normalizedSummary);
-          if (candidateSmartChipSummaryCacheKey && typeof window !== "undefined") {
-            try {
-              window.localStorage.setItem(candidateSmartChipSummaryCacheKey, JSON.stringify(normalizedSummary));
-            } catch {}
-          }
-        }
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setStatus("workspace", `Database load failed: ${String(error?.message || error)}`, "error");
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setDatabaseListLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [token, location?.pathname, state.databaseCandidates, candidatePageSize, candidateSmartChipCacheKey, candidateSmartChipSummaryCacheKey]);
   const candidateUniverseAll = useMemo(() => {
     const rawDatabaseRows = Array.isArray(state.databaseCandidates) && state.databaseCandidates.length
       ? state.databaseCandidates
       : (Array.isArray(databaseListItems) && databaseListItems.length ? databaseListItems : (state.candidates || []));
-    const hasLightweightUniverse = rawDatabaseRows.some((item) => String(item?.sourceType || "").trim().length > 0);
-    const databaseRows = hasLightweightUniverse
-      ? rawDatabaseRows
-      : rawDatabaseRows.map((item) => normalizeApplicantVisibleRow(item));
+    const databaseRows = rawDatabaseRows.map((item) => normalizeApplicantVisibleRow(item));
+    const linkedAssessmentIds = new Set(databaseRows.map((item) => String(item.assessment_id || "").trim()).filter(Boolean));
+    const candidateNames = new Set(databaseRows.map((item) => String(item.name || "").trim().toLowerCase()).filter(Boolean));
+    const assessmentOnlyItems = (state.assessments || [])
+      .filter((item) => {
+        const assessmentId = String(item.id || "").trim();
+        if (assessmentId && linkedAssessmentIds.has(assessmentId)) return false;
+        const nameKey = String(item.candidateName || "").trim().toLowerCase();
+        return !nameKey || !candidateNames.has(nameKey);
+      })
+      .map((item) => ({
+        id: item.id,
+        assessmentId: item.id,
+        name: resolveCandidateDisplayName(item),
+        candidateName: resolveCandidateDisplayName(item),
+        role: item.currentDesignation || "",
+        company: item.currentCompany || "",
+        experience: item.totalExperience || "",
+        totalExperience: item.totalExperience || "",
+        current_ctc: item.currentCtc || "",
+        expected_ctc: item.expectedCtc || "",
+        notice_period: item.noticePeriod || "",
+        highest_education: item.highestEducation || "",
+        linkedin: item.linkedinUrl || "",
+        location: item.location || "",
+        client_name: item.clientName || "",
+        jd_title: item.jdTitle || "",
+        assigned_to_name: item.assigned_to_name || item.assignedToName || "",
+        recruiter_name: item.recruiter_name || item.recruiterName || "",
+        source: "assessment_only",
+        notes: item.callbackNotes || "",
+        recruiter_context_notes: item.recruiterNotes || "",
+        other_pointers: item.otherPointers || ""
+      }));
+    const combined = [...databaseRows, ...assessmentOnlyItems];
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
-    const combined = hasLightweightUniverse
-      ? databaseRows
-      : (() => {
-          const linkedAssessmentIds = new Set(databaseRows.map((item) => String(item.assessment_id || "").trim()).filter(Boolean));
-          const candidateNames = new Set(databaseRows.map((item) => String(item.name || "").trim().toLowerCase()).filter(Boolean));
-          const assessmentOnlyItems = (state.assessments || [])
-            .filter((item) => {
-              const assessmentId = String(item.id || "").trim();
-              if (assessmentId && linkedAssessmentIds.has(assessmentId)) return false;
-              const nameKey = String(item.candidateName || "").trim().toLowerCase();
-              return !nameKey || !candidateNames.has(nameKey);
-            })
-            .map((item) => ({
-              id: item.id,
-              assessmentId: item.id,
-              name: resolveCandidateDisplayName(item),
-              candidateName: resolveCandidateDisplayName(item),
-              role: item.currentDesignation || "",
-              company: item.currentCompany || "",
-              experience: item.totalExperience || "",
-              totalExperience: item.totalExperience || "",
-              current_ctc: item.currentCtc || "",
-              expected_ctc: item.expectedCtc || "",
-              notice_period: item.noticePeriod || "",
-              highest_education: item.highestEducation || "",
-              linkedin: item.linkedinUrl || "",
-              location: item.location || "",
-              client_name: item.clientName || "",
-              jd_title: item.jdTitle || "",
-              assigned_to_name: item.assigned_to_name || item.assignedToName || "",
-              recruiter_name: item.recruiter_name || item.recruiterName || "",
-              source: "assessment_only",
-              notes: item.callbackNotes || "",
-              recruiter_context_notes: item.recruiterNotes || "",
-              other_pointers: item.otherPointers || ""
-            }));
-          return [...databaseRows, ...assessmentOnlyItems];
-        })();
     if (isAdmin) return combined;
     const currentUserId = String(state.user?.id || "").trim();
     const currentUserName = String(state.user?.name || "").trim().toLowerCase();
@@ -13770,10 +13683,20 @@ function PortalApp({ token, onLogout }) {
       genders: Array.from(genders).sort()
     };
   }, [candidateUniverseAll, getDatabaseQuickFilterRecruiterLabel, getDatabaseQuickFilterClientLabel]);
+  const candidateSelectedChipSourceItems = useMemo(() => {
+    if (!activeCandidateQuickChipId) return [];
+    const remoteRows = candidateSmartChipRowsRemote && typeof candidateSmartChipRowsRemote === "object"
+      ? candidateSmartChipRowsRemote
+      : null;
+    const baseRows = remoteRows || candidateSmartChipRowsStableRef.current || {};
+    const rows = Array.isArray(baseRows?.[activeCandidateQuickChipId]) ? baseRows[activeCandidateQuickChipId] : [];
+    return rows.map((row) => row?.item).filter(Boolean);
+  }, [activeCandidateQuickChipId, candidateSmartChipRowsRemote]);
   const candidateBaseUniverse = useMemo(() => {
+    if (activeCandidateQuickChipId) return candidateSelectedChipSourceItems;
     if (candidateSearchMode === "all" || !String(candidateSearchQueryUsed || "").trim()) return candidateUniverseAll;
     return candidateSearchResults || [];
-  }, [candidateSearchMode, candidateSearchResults, candidateSearchQueryUsed, candidateUniverseAll]);
+  }, [activeCandidateQuickChipId, candidateSelectedChipSourceItems, candidateSearchMode, candidateSearchResults, candidateSearchQueryUsed, candidateUniverseAll]);
   const candidateUniverse = useMemo(() => {
     const assessmentById = new Map((state.assessments || []).map((item) => [String(item?.id || "").trim(), item]));
     return candidateBaseUniverse.filter((item) => {
@@ -14003,6 +13926,31 @@ function PortalApp({ token, onLogout }) {
     const baseRows = remoteRows || candidateSmartChipRowsStableRef.current || candidateSmartChipRows;
     return filterCandidateSmartChipRowsLocally(baseRows, candidateQuickFiltersApplied);
   }, [candidateSmartChipRowsRemote, candidateSmartChipRows, filterCandidateSmartChipRowsLocally, candidateQuickFiltersApplied]);
+  const candidateVisibleChipRows = useMemo(() => {
+    if (!activeCandidateQuickChipId) return [];
+    const rows = Array.isArray(candidateSmartChipRowsEffective?.[activeCandidateQuickChipId]) ? candidateSmartChipRowsEffective[activeCandidateQuickChipId] : [];
+    const allowedIds = new Set(
+      (Array.isArray(candidateUniverse) ? candidateUniverse : []).flatMap((item) => ([
+        item?.id,
+        item?.candidateId,
+        item?.assessmentId,
+        item?.assessment_id,
+        item?.raw?.candidate?.id,
+        item?.raw?.assessment?.id
+      ].map((value) => String(value || "").trim()).filter(Boolean)))
+    );
+    return rows.filter((row) => {
+      const ids = [
+        row?.item?.id,
+        row?.item?.candidateId,
+        row?.item?.assessmentId,
+        row?.item?.assessment_id,
+        row?.item?.raw?.candidate?.id,
+        row?.item?.raw?.assessment?.id
+      ].map((value) => String(value || "").trim()).filter(Boolean);
+      return ids.some((id) => allowedIds.has(id));
+    });
+  }, [activeCandidateQuickChipId, candidateSmartChipRowsEffective, candidateUniverse]);
 
   useEffect(() => {
     if (!token) return;
@@ -23660,27 +23608,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             <div className="page-grid">
               <Section kicker="Candidate Universe" title="Database">
                 <p className="muted">This view can surface captured, applied, and assessment-linked candidates together. Candidates without CV uploads still remain searchable through saved structured fields, recruiter notes, attempts, and assessment data. Hidden CV metadata is used only by search and not shown in the UI.</p>
-                {renderCandidateQuickFilters()}
-                <div className="item-card compact-card candidate-quick-chip-builder">
-                  <h3>Smart chips</h3>
-                  <p className="muted">One-click shortlist blocks. Smart chips stay aligned with your applied Quick Filters.</p>
-                  <div className="filter-block">
-                    <div className="chip-row">
-                      {SMART_SEARCH_QUICK_CHIPS.map((chip) => (
-                        <button
-                          key={chip.id}
-                          className={`chip chip-toggle${candidateQuickChipIds.includes(chip.id) ? " active" : ""}`}
-                          onClick={() => toggleCandidateQuickChip(chip.id)}
-                        >
-                          {chip.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  {candidateSmartChipLoading ? (
-                    <div className="muted" style={{ marginTop: 8 }}>Loading quick chips...</div>
-                  ) : null}
-                </div>
                 <div className="candidate-database-top-grid">
                   <div className="item-card compact-card">
                     <h3>Search mode</h3>
@@ -23770,6 +23697,27 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     Searching as: <code>{candidateSearchingAs}</code>
                   </div>
                 ) : null}
+                <div className="item-card compact-card candidate-quick-chip-builder">
+                  <h3>Smart chips</h3>
+                  <p className="muted">One-click shortlist blocks. Smart chips stay aligned with your applied Quick Filters and Advanced Filters.</p>
+                  <div className="filter-block">
+                    <div className="chip-row">
+                      {SMART_SEARCH_QUICK_CHIPS.map((chip) => (
+                        <button
+                          key={chip.id}
+                          className={`chip chip-toggle${candidateQuickChipIds.includes(chip.id) ? " active" : ""}`}
+                          onClick={() => toggleCandidateQuickChip(chip.id)}
+                        >
+                          {chip.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {candidateSmartChipLoading ? (
+                    <div className="muted" style={{ marginTop: 8 }}>Loading quick chips...</div>
+                  ) : null}
+                </div>
+                {renderCandidateQuickFilters()}
                 <div className="item-card compact-card candidate-advanced-toggle-card">
                   <button className="candidate-advanced-toggle" type="button" onClick={() => setCandidateFilterPanelOpen((current) => !current)}>
                     <span>{candidateFilterPanelOpen ? "Hide advanced database filters" : "Show advanced database filters"}</span>
@@ -23782,10 +23730,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     {SMART_SEARCH_QUICK_CHIPS
                       .filter((chip) => candidateQuickChipIds.includes(chip.id))
                       .map((chip) => {
-                        const liveRows = candidateSmartChipRowsEffective[chip.id] || [];
-                        const cachedRows = candidateSmartChipRowsStableRef.current?.[chip.id] || [];
-                        const rows = liveRows.length > 0 ? liveRows : cachedRows;
-                        const showChipLoading = candidateSmartChipLoading && liveRows.length === 0 && cachedRows.length === 0;
+                        const rows = chip.id === activeCandidateQuickChipId
+                          ? candidateVisibleChipRows
+                          : [];
+                        const showChipLoading = candidateSmartChipLoading && rows.length === 0;
                         const chipCount = showChipLoading ? null : rows.length;
                         return (
                           <article key={chip.id} className="item-card compact-card candidate-smart-section">
