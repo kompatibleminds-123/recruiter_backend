@@ -7070,7 +7070,7 @@ function normalizeDatabaseQuickChipFilters(raw = {}) {
     location: String(source.location || "").trim(),
     locations: Array.isArray(source.locations) ? source.locations.map((item) => String(item || "").trim()).filter(Boolean) : splitList(source.locationsText || source.locationList || source.location),
     client: String(source.client || source.clientName || "").trim(),
-    targetLabel: String(source.targetLabel || "").trim(),
+    targetLabel: String(source.targetLabel || source.jd || source.job || "").trim(),
     minExperienceYears: toNumberOrNull(source.minExperience),
     maxExperienceYears: toNumberOrNull(source.maxExperience),
     minCurrentCtcLpa: toNumberOrNull(source.minCurrentCtc),
@@ -7095,6 +7095,7 @@ function normalizeDatabaseQuickChipFilters(raw = {}) {
     upcomingJoinings: Boolean(source.upcomingJoinings),
     recruiterScope: String(source.recruiterScope || "").trim(),
     recruiterField: String(source.recruiterField || "").trim(),
+    recruiter: String(source.recruiter || source.recruiterName || "").trim(),
     recruiterName: String(source.recruiterName || source.recruiter || "").trim(),
     sources: Array.isArray(source.sources) ? source.sources.map((item) => String(item || "").trim()).filter(Boolean) : splitList(source.sources || source.sourceTypeFilter || ""),
     sourceTypeFilter: String(source.sourceTypeFilter || "").trim(),
@@ -7203,7 +7204,7 @@ function databaseSmartChipRowMatchesFrontendFilters(item, filters = {}) {
   } else if (normalizedFilters.maxNoticeDays != null && normalizedFilters.maxNoticeDays !== "" && (noticeDays == null || noticeDays > Number(normalizedFilters.maxNoticeDays))) {
     return false;
   }
-  const selectedRecruiters = parseMultiChipTokens(normalizedFilters.recruiter).map((entry) => entry.toLowerCase());
+  const selectedRecruiters = parseMultiChipTokens(normalizedFilters.recruiter || normalizedFilters.recruiterName).map((entry) => entry.toLowerCase());
   if (selectedRecruiters.length && !selectedRecruiters.some((entry) => normalizedRecruiterValues.includes(entry))) return false;
   const selectedGenders = parseMultiChipTokens(normalizedFilters.gender).map((entry) => entry.toLowerCase());
   if (selectedGenders.length && !selectedGenders.includes(normalizedGenderValue)) return false;
@@ -7235,7 +7236,7 @@ function databaseQuickChipRowMatchesSharedFilters(item, filters = {}) {
   const selectedClients = parseMultiChipTokens(normalizedFilters.client).map((entry) => entry.toLowerCase());
   if (selectedClients.length && !selectedClients.includes(clientValue)) return false;
 
-  const selectedRecruiters = parseMultiChipTokens(normalizedFilters.recruiter).map((entry) => entry.toLowerCase());
+  const selectedRecruiters = parseMultiChipTokens(normalizedFilters.recruiter || normalizedFilters.recruiterName).map((entry) => entry.toLowerCase());
   if (selectedRecruiters.length && !selectedRecruiters.includes(recruiterValue)) return false;
 
   const requiredRoles = parseMultiChipTokens(normalizedFilters.targetLabel || normalizedFilters.role).map((entry) => entry.toLowerCase());
@@ -7248,7 +7249,7 @@ function hasDatabaseQuickChipSharedFilters(filters = {}) {
   const normalizedFilters = filters && typeof filters === "object" ? filters : {};
   return Boolean(
     String(normalizedFilters.client || "").trim() ||
-    String(normalizedFilters.recruiter || "").trim() ||
+    String(normalizedFilters.recruiter || normalizedFilters.recruiterName || "").trim() ||
     String(normalizedFilters.targetLabel || normalizedFilters.role || "").trim()
   );
 }

@@ -9027,13 +9027,10 @@ function PortalApp({ token, onLogout }) {
       client: String(candidateQuickFiltersDraft.client || "").trim(),
       jd: String(candidateQuickFiltersDraft.jd || "").trim()
     };
-    setDatabaseQueryLoading(true);
-    setCandidatePendingScrollTarget("database");
-    setCandidateQuickChipIds([]);
-    setCandidateSearchMode("all");
-    setCandidateSearchResults([]);
-    setCandidateSearchQueryUsed("");
-    setCandidateSearchingAs("");
+    if (!candidateHasSmartChipSelection && candidateSearchMode !== "search") {
+      setDatabaseQueryLoading(true);
+    }
+    setCandidatePendingScrollTarget(candidateHasSmartChipSelection ? "chips" : "database");
     setCandidateQuickFiltersApplied(next);
     setCandidateSmartDateFrom(next.dateFrom);
     setCandidateSmartDateTo(next.dateTo);
@@ -9057,13 +9054,10 @@ function PortalApp({ token, onLogout }) {
     }));
   };
   const resetCandidateQuickFilters = () => {
-    setDatabaseListLoading(true);
-    setCandidatePendingScrollTarget("database");
-    setCandidateQuickChipIds([]);
-    setCandidateSearchMode("all");
-    setCandidateSearchResults([]);
-    setCandidateSearchQueryUsed("");
-    setCandidateSearchingAs("");
+    if (!candidateHasSmartChipSelection && candidateSearchMode !== "search") {
+      setDatabaseListLoading(true);
+    }
+    setCandidatePendingScrollTarget(candidateHasSmartChipSelection ? "chips" : "database");
     setCandidateQuickFiltersDraft(EMPTY_CANDIDATE_QUICK_FILTERS);
     setCandidateQuickFiltersApplied(EMPTY_CANDIDATE_QUICK_FILTERS);
     setCandidateSmartDateFrom("");
@@ -13916,13 +13910,37 @@ function PortalApp({ token, onLogout }) {
     joined_candidates: [],
     cv_shared: []
   }), []);
+  const filterCandidateSmartChipRowsLocally = useCallback((rowsByChip = {}, filters = {}) => {
+    const quickClientValue = String(filters?.client || "").trim().toLowerCase();
+    const quickRecruiterValue = String(filters?.recruiter || "").trim().toLowerCase();
+    const quickJdValue = String(filters?.jd || "").trim().toLowerCase();
+    const quickDateFrom = String(filters?.dateFrom || "").trim();
+    const quickDateTo = String(filters?.dateTo || "").trim();
+    const nextRows = {};
+    Object.entries(rowsByChip || {}).forEach(([chipId, rows]) => {
+      nextRows[chipId] = (Array.isArray(rows) ? rows : []).filter((row) => {
+        const clientValue = String(row?.client || "").trim().toLowerCase();
+        const recruiterValue = String(row?.recruiter || "").trim().toLowerCase();
+        const roleValue = String(row?.role || "").trim().toLowerCase();
+        const dateValue = String(row?.date || row?.dateOfJoining || "").trim();
+        const dateKey = dateValue ? dateValue.slice(0, 10) : "";
+        if (quickClientValue && clientValue !== quickClientValue) return false;
+        if (quickRecruiterValue && recruiterValue !== quickRecruiterValue) return false;
+        if (quickJdValue && !roleValue.includes(quickJdValue)) return false;
+        if (quickDateFrom && (!dateKey || dateKey < quickDateFrom)) return false;
+        if (quickDateTo && (!dateKey || dateKey > quickDateTo)) return false;
+        return true;
+      });
+    });
+    return nextRows;
+  }, []);
   const candidateSmartChipRowsEffective = useMemo(() => {
     const remoteRows = candidateSmartChipRowsRemote && typeof candidateSmartChipRowsRemote === "object"
       ? candidateSmartChipRowsRemote
       : null;
-    if (remoteRows) return remoteRows;
-    return candidateSmartChipRowsStableRef.current || candidateSmartChipRows;
-  }, [candidateSmartChipRowsRemote, candidateSmartChipRows]);
+    const baseRows = remoteRows || candidateSmartChipRowsStableRef.current || candidateSmartChipRows;
+    return filterCandidateSmartChipRowsLocally(baseRows, candidateQuickFiltersApplied);
+  }, [candidateSmartChipRowsRemote, candidateSmartChipRows, filterCandidateSmartChipRowsLocally, candidateQuickFiltersApplied]);
 
   useEffect(() => {
     if (!token) return;
