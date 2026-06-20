@@ -7819,21 +7819,13 @@ async function buildDatabaseQuickChipDataForUser({ user, filters = {}, searchMod
     || selectedChipSet.has("interview_history")
     || selectedChipSet.has("shared_today")
     || selectedChipSet.has("shared_this_week");
-  const assessments = await getAssessmentsUniverseForUser(user);
-  const candidateIds = Array.from(new Set((Array.isArray(assessments) ? assessments : []).map((assessment) => String(
-    assessment?.candidateId || assessment?.candidate_id || assessment?.payload?.candidateId || assessment?.payload?.candidate_id || ""
-  ).trim()).filter(Boolean)));
-  const [candidates, jobs, assessmentEvents] = await Promise.all([
-    fetchCandidatesByIdsForCompany(user.companyId, candidateIds),
+  const assessments = await listAssessments({ actorUserId: user.id, companyId: user.companyId }).catch(() => []);
+  const [jobs, assessmentEvents] = await Promise.all([
     listCompanyJobs(user.companyId, user.id),
     needsAssessmentEvents ? listAssessmentEvents({ companyId: user.companyId, limit: 10000 }) : Promise.resolve([])
   ]);
   const searchSet = new Set((Array.isArray(searchIds) ? searchIds : []).map((value) => String(value || "").trim()).filter(Boolean));
-  const baseUniverse = buildCandidateSearchUniverse(candidates, assessments, jobs);
-  const fallbackAssessmentUniverse = (!baseUniverse.length && Array.isArray(assessments) && assessments.length)
-    ? buildCandidateSearchUniverse([], assessments, jobs)
-    : [];
-  const sourceUniverse = baseUniverse.length ? baseUniverse : fallbackAssessmentUniverse;
+  const sourceUniverse = buildCandidateSearchUniverse([], assessments, jobs);
   const universe = sourceUniverse.filter((item) => {
     if (searchMode === "search" && searchSet.size) {
       const ids = [
@@ -7856,14 +7848,14 @@ async function buildDatabaseQuickChipDataForUser({ user, filters = {}, searchMod
   });
   if (shouldBuildAllChips || selectedChipSet.has("interview_history")) {
     rows.interview_history = buildDatabaseQuickChipInterviewHistoryRowsFromDashboardUniverse({
-      user,
-      universe,
-      assessments,
-      candidates,
-      assessmentEvents,
-      dateFrom: dateFromValue,
-      dateTo: dateToValue
-    });
+    user,
+    universe,
+    assessments,
+    candidates: [],
+    assessmentEvents,
+    dateFrom: dateFromValue,
+    dateTo: dateToValue
+  });
   }
   const summary = Object.fromEntries(Object.entries(rows).map(([key, list]) => [key, Array.isArray(list) ? list.length : 0]));
   const debug = {
@@ -7872,8 +7864,6 @@ async function buildDatabaseQuickChipDataForUser({ user, filters = {}, searchMod
     searchMode: String(searchMode || "").trim().toLowerCase() || "all",
     searchIdsCount: searchSet.size,
     assessmentsCount: Array.isArray(assessments) ? assessments.length : 0,
-    candidateIdsCount: candidateIds.length,
-    candidatesCount: Array.isArray(candidates) ? candidates.length : 0,
     jobsCount: Array.isArray(jobs) ? jobs.length : 0,
     assessmentEventsCount: Array.isArray(assessmentEvents) ? assessmentEvents.length : 0,
     sourceUniverseCount: Array.isArray(sourceUniverse) ? sourceUniverse.length : 0,
