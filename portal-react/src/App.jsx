@@ -10068,57 +10068,9 @@ function PortalApp({ token, onLogout }) {
     if (String(location?.pathname || "").trim() !== "/candidates") return;
     const hasSelectedQuickChips = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
     if (hasSelectedQuickChips) return;
-    let cancelled = false;
-    const requestId = Date.now();
-    candidateSmartChipPrefetchRequestRef.current = requestId;
-    api("/company/database/quick-chip-rows", token, "POST", {
-      selectedChips: [],
-      filters: candidateSmartChipScopedFilters,
-      searchMode: "all",
-      searchIds: [],
-      dateFrom: candidateSmartDateFrom,
-      dateTo: candidateSmartDateTo
-    }).then((result) => {
-      if (cancelled || candidateSmartChipPrefetchRequestRef.current !== requestId) return;
-      const rows = result?.rows && typeof result.rows === "object"
-        ? result.rows
-        : (result?.result?.rows && typeof result.result.rows === "object" ? result.result.rows : null);
-      if (rows && !isEmptySmartChipSnapshot(rows)) {
-        candidateSmartChipRowsStableRef.current = rows;
-        if (candidateSmartChipCacheKey && typeof window !== "undefined") {
-          try {
-            window.localStorage.setItem(candidateSmartChipCacheKey, JSON.stringify(rows));
-          } catch {}
-        }
-      }
-      const summary = result?.summary && typeof result.summary === "object"
-        ? result.summary
-        : (result?.result?.summary && typeof result.result.summary === "object" ? result.result.summary : null);
-      if (summary) {
-        const normalizedSummary = {
-          interview_history: Number(summary.interview_history || summary.interviewHistory || 0),
-          aligned_interviews: Number(summary.aligned_interviews || summary.alignedInterviews || 0),
-          feedback_awaited: Number(summary.feedback_awaited || summary.feedbackAwaited || 0),
-          quick_joiners: Number(summary.quick_joiners || summary.quickJoiners || 0),
-          shared_today: Number(summary.shared_today || summary.sharedToday || 0),
-          shared_this_week: Number(summary.shared_this_week || summary.sharedThisWeek || 0),
-          joined_candidates: Number(summary.joined_candidates || summary.joinedCandidates || 0),
-          cv_shared: Number(summary.cv_shared || summary.cvShared || 0)
-        };
-        candidateSmartChipSummaryStableRef.current = normalizedSummary;
-        if (candidateSmartChipSummaryCacheKey && typeof window !== "undefined") {
-          try {
-            window.localStorage.setItem(candidateSmartChipSummaryCacheKey, JSON.stringify(normalizedSummary));
-          } catch {}
-        }
-      }
-    }).catch((error) => {
-      if (cancelled || candidateSmartChipPrefetchRequestRef.current !== requestId) return;
-      console.error("candidateSmartChipRows prefetch failed", error);
-    });
-    return () => {
-      cancelled = true;
-    };
+    if (candidateSmartChipRowsStableRef.current && !isEmptySmartChipSnapshot(candidateSmartChipRowsStableRef.current)) {
+      setCandidateSmartChipRowsRemote(candidateSmartChipRowsStableRef.current);
+    }
   }, [
     token,
     location?.pathname,
@@ -11105,7 +11057,7 @@ function PortalApp({ token, onLogout }) {
       pathname === "/interview" ||
       forceCore ||
       forceAll);
-    const needsDatabaseCandidates = !isDashboardRoute && (pathname === "/candidates" || forceCore || forceAll);
+    const needsDatabaseCandidates = !isDashboardRoute && pathname !== "/candidates" && (forceCore || forceAll);
     const needsAssessments =
       !isDashboardRoute && (
       pathname === "/dashboard" ||
@@ -13600,46 +13552,120 @@ function PortalApp({ token, onLogout }) {
     }
     void loadCvLinks();
   }, [selectedAssessmentRows, token, clientShareCvLinkFingerprint]);
+  useEffect(() => {
+    if (!token) return;
+    if (String(location?.pathname || "").trim() !== "/candidates") return;
+    if (databaseCandidatesHydratedRef.current && Array.isArray(state.databaseCandidates) && state.databaseCandidates.length) return;
+    let cancelled = false;
+    const safePageSize = [10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10;
+    setDatabaseListLoading(true);
+    api("/company/database-universe-lite", token)
+      .then((envelope) => {
+        if (cancelled) return;
+        const payload = envelope?.result && typeof envelope.result === "object" ? envelope.result : envelope;
+        const universe = Array.isArray(payload?.universe) ? payload.universe : [];
+        const rows = payload?.rows && typeof payload.rows === "object" ? payload.rows : null;
+        const summary = payload?.summary && typeof payload.summary === "object" ? payload.summary : null;
+        databaseCandidatesHydratedRef.current = true;
+        setState((current) => ({
+          ...current,
+          databaseCandidates: universe
+        }));
+        setDatabaseListItems(universe.slice(0, safePageSize));
+        setDatabaseListMeta({
+          total: Math.max(0, Number(payload?.total || universe.length || 0)),
+          page: 1,
+          limit: safePageSize,
+          totalPages: Math.max(1, Math.ceil((Number(payload?.total || universe.length || 0)) / safePageSize))
+        });
+        if (rows) {
+          candidateSmartChipRowsStableRef.current = rows;
+          setCandidateSmartChipRowsRemote(rows);
+          if (candidateSmartChipCacheKey && typeof window !== "undefined") {
+            try {
+              window.localStorage.setItem(candidateSmartChipCacheKey, JSON.stringify(rows));
+            } catch {}
+          }
+        }
+        if (summary) {
+          const normalizedSummary = {
+            interview_history: Number(summary.interview_history || summary.interviewHistory || 0),
+            aligned_interviews: Number(summary.aligned_interviews || summary.alignedInterviews || 0),
+            feedback_awaited: Number(summary.feedback_awaited || summary.feedbackAwaited || 0),
+            quick_joiners: Number(summary.quick_joiners || summary.quickJoiners || 0),
+            shared_today: Number(summary.shared_today || summary.sharedToday || 0),
+            shared_this_week: Number(summary.shared_this_week || summary.sharedThisWeek || 0),
+            joined_candidates: Number(summary.joined_candidates || summary.joinedCandidates || 0),
+            cv_shared: Number(summary.cv_shared || summary.cvShared || 0)
+          };
+          candidateSmartChipSummaryStableRef.current = normalizedSummary;
+          setCandidateSmartChipSummary(normalizedSummary);
+          if (candidateSmartChipSummaryCacheKey && typeof window !== "undefined") {
+            try {
+              window.localStorage.setItem(candidateSmartChipSummaryCacheKey, JSON.stringify(normalizedSummary));
+            } catch {}
+          }
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setStatus("workspace", `Database load failed: ${String(error?.message || error)}`, "error");
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setDatabaseListLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, location?.pathname, state.databaseCandidates, candidatePageSize, candidateSmartChipCacheKey, candidateSmartChipSummaryCacheKey]);
   const candidateUniverseAll = useMemo(() => {
     const rawDatabaseRows = Array.isArray(state.databaseCandidates) && state.databaseCandidates.length
       ? state.databaseCandidates
       : (Array.isArray(databaseListItems) && databaseListItems.length ? databaseListItems : (state.candidates || []));
-    const databaseRows = rawDatabaseRows.map((item) => normalizeApplicantVisibleRow(item));
-    const linkedAssessmentIds = new Set(databaseRows.map((item) => String(item.assessment_id || "").trim()).filter(Boolean));
-    const candidateNames = new Set(databaseRows.map((item) => String(item.name || "").trim().toLowerCase()).filter(Boolean));
-    const assessmentOnlyItems = (state.assessments || [])
-      .filter((item) => {
-        const assessmentId = String(item.id || "").trim();
-        if (assessmentId && linkedAssessmentIds.has(assessmentId)) return false;
-        const nameKey = String(item.candidateName || "").trim().toLowerCase();
-        return !nameKey || !candidateNames.has(nameKey);
-      })
-      .map((item) => ({
-        id: item.id,
-        assessmentId: item.id,
-        name: resolveCandidateDisplayName(item),
-        candidateName: resolveCandidateDisplayName(item),
-        role: item.currentDesignation || "",
-        company: item.currentCompany || "",
-        experience: item.totalExperience || "",
-        totalExperience: item.totalExperience || "",
-        current_ctc: item.currentCtc || "",
-        expected_ctc: item.expectedCtc || "",
-        notice_period: item.noticePeriod || "",
-        highest_education: item.highestEducation || "",
-        linkedin: item.linkedinUrl || "",
-        location: item.location || "",
-        client_name: item.clientName || "",
-        jd_title: item.jdTitle || "",
-        assigned_to_name: item.assigned_to_name || item.assignedToName || "",
-        recruiter_name: item.recruiter_name || item.recruiterName || "",
-        source: "assessment_only",
-        notes: item.callbackNotes || "",
-        recruiter_context_notes: item.recruiterNotes || "",
-        other_pointers: item.otherPointers || ""
-      }));
-    const combined = [...databaseRows, ...assessmentOnlyItems];
+    const hasLightweightUniverse = rawDatabaseRows.some((item) => String(item?.sourceType || "").trim().length > 0);
+    const databaseRows = hasLightweightUniverse
+      ? rawDatabaseRows
+      : rawDatabaseRows.map((item) => normalizeApplicantVisibleRow(item));
     const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
+    const combined = hasLightweightUniverse
+      ? databaseRows
+      : (() => {
+          const linkedAssessmentIds = new Set(databaseRows.map((item) => String(item.assessment_id || "").trim()).filter(Boolean));
+          const candidateNames = new Set(databaseRows.map((item) => String(item.name || "").trim().toLowerCase()).filter(Boolean));
+          const assessmentOnlyItems = (state.assessments || [])
+            .filter((item) => {
+              const assessmentId = String(item.id || "").trim();
+              if (assessmentId && linkedAssessmentIds.has(assessmentId)) return false;
+              const nameKey = String(item.candidateName || "").trim().toLowerCase();
+              return !nameKey || !candidateNames.has(nameKey);
+            })
+            .map((item) => ({
+              id: item.id,
+              assessmentId: item.id,
+              name: resolveCandidateDisplayName(item),
+              candidateName: resolveCandidateDisplayName(item),
+              role: item.currentDesignation || "",
+              company: item.currentCompany || "",
+              experience: item.totalExperience || "",
+              totalExperience: item.totalExperience || "",
+              current_ctc: item.currentCtc || "",
+              expected_ctc: item.expectedCtc || "",
+              notice_period: item.noticePeriod || "",
+              highest_education: item.highestEducation || "",
+              linkedin: item.linkedinUrl || "",
+              location: item.location || "",
+              client_name: item.clientName || "",
+              jd_title: item.jdTitle || "",
+              assigned_to_name: item.assigned_to_name || item.assignedToName || "",
+              recruiter_name: item.recruiter_name || item.recruiterName || "",
+              source: "assessment_only",
+              notes: item.callbackNotes || "",
+              recruiter_context_notes: item.recruiterNotes || "",
+              other_pointers: item.otherPointers || ""
+            }));
+          return [...databaseRows, ...assessmentOnlyItems];
+        })();
     if (isAdmin) return combined;
     const currentUserId = String(state.user?.id || "").trim();
     const currentUserName = String(state.user?.name || "").trim().toLowerCase();
@@ -13876,49 +13902,18 @@ function PortalApp({ token, onLogout }) {
     });
   }, [candidateBaseUniverse, candidateStructuredFilters, candidateQuickFiltersApplied, state.assessments]);
   const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
-  const databaseSearchResultsMode = !candidateHasSmartChipSelection && candidateSearchMode === "search";
-  const databaseQuickFilterOnlyMode = candidateSearchMode === "all"
-    && !candidateHasSmartChipSelection
-    && !candidateStructuredFiltersActive
-    && candidateQuickFiltersActive;
+  const databaseFiltersActive = !candidateHasSmartChipSelection && (candidateStructuredFiltersActive || candidateQuickFiltersActive);
+  const databaseSearchResultsMode = !candidateHasSmartChipSelection && candidateSearchMode === "search" && !databaseFiltersActive;
   const databaseAllMode = candidateSearchMode === "all"
     && !candidateHasSmartChipSelection
-    && !candidateStructuredFiltersActive
-    && !candidateQuickFiltersActive;
-  const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseSearchResultsMode && !databaseAllMode;
+    && !databaseFiltersActive;
+  const databaseServerQueryMode = false;
   const pagedCandidates = useMemo(() => {
     const safePageSize = [10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10;
     const start = (candidatePage - 1) * safePageSize;
-    if (databaseSearchResultsMode) {
-      return candidateUniverse.slice(start, start + safePageSize);
-    }
-    if (databaseQuickFilterOnlyMode) {
-      if (Array.isArray(databaseQueryItems) && databaseQueryItems.length) {
-        return databaseQueryItems.slice(0, safePageSize);
-      }
-      return candidateUniverse.slice(start, start + safePageSize);
-    }
-    if (databaseAllMode) {
-      return (Array.isArray(databaseListItems) ? databaseListItems : []).slice(0, safePageSize);
-    }
-    if (databaseServerQueryMode) {
-      return (Array.isArray(databaseQueryItems) ? databaseQueryItems : []).slice(0, safePageSize);
-    }
     return candidateUniverse.slice(start, start + safePageSize);
-  }, [databaseSearchResultsMode, databaseQuickFilterOnlyMode, databaseAllMode, databaseServerQueryMode, databaseListItems, candidateUniverse, databaseQueryItems, candidatePage, candidatePageSize]);
-  const totalCandidatePages = databaseSearchResultsMode
-    ? Math.max(1, Math.ceil((candidateUniverse.length || 0) / ([10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10)))
-    : databaseQuickFilterOnlyMode
-    ? (
-        Number(databaseQueryMeta?.total || 0) > 0
-          ? Math.max(1, Number(databaseQueryMeta?.totalPages || 1))
-          : Math.max(1, Math.ceil((candidateUniverse.length || 0) / ([10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10)))
-      )
-    : databaseAllMode
-    ? Math.max(1, Number(databaseListMeta?.totalPages || 1))
-    : databaseServerQueryMode
-      ? Math.max(1, Number(databaseQueryMeta?.totalPages || 1))
-      : Math.max(1, Math.ceil((candidateUniverse.length || 0) / ([10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10)));
+  }, [candidateUniverse, candidatePage, candidatePageSize]);
+  const totalCandidatePages = Math.max(1, Math.ceil((candidateUniverse.length || 0) / ([10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10)));
   const renderDatabaseCandidateCard = (item) => {
     const stableItemKey = String(
       item?.id ||
@@ -14012,12 +14007,13 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     if (!token) return;
     if (String(location?.pathname || "").trim() !== "/candidates") return;
+    if (databaseCandidatesHydratedRef.current && Array.isArray(state.databaseCandidates) && state.databaseCandidates.length) return;
     if (candidateSearchMode !== "all") return;
     if (candidateHasSmartChipSelection) return;
     if (candidateStructuredFiltersActive) return;
     if (candidateQuickFiltersActive) return;
     void reloadDatabaseListPage(candidatePage, candidatePageSize);
-  }, [token, location?.pathname, candidateSearchMode, candidateHasSmartChipSelection, candidateStructuredFiltersActive, candidateQuickFiltersActive, candidatePage, candidatePageSize]);
+  }, [token, location?.pathname, state.databaseCandidates, candidateSearchMode, candidateHasSmartChipSelection, candidateStructuredFiltersActive, candidateQuickFiltersActive, candidatePage, candidatePageSize]);
 
   useEffect(() => {
     if (!token) return;
@@ -14114,79 +14110,16 @@ function PortalApp({ token, onLogout }) {
       setCandidateSmartChipRowsRemote(null);
       return;
     }
-    let cancelled = false;
-    const requestId = Date.now();
-    candidateSmartChipSummaryRequestRef.current = requestId;
     setCandidateSmartChipLoading(true);
-    api("/company/database/quick-chip-rows", token, "POST", {
-      selectedChips: candidateQuickChipIds,
-      filters: candidateSmartChipScopedFilters,
-      searchMode: "all",
-      searchIds: [],
-      dateFrom: candidateSmartDateFrom,
-      dateTo: candidateSmartDateTo
-    }).then((result) => {
-      if (cancelled || candidateSmartChipSummaryRequestRef.current !== requestId) return;
-      const rows = result?.rows && typeof result.rows === "object" ? result.rows : (result?.result?.rows && typeof result.result.rows === "object" ? result.result.rows : null);
-      if (!rows) {
-        if (candidateSmartChipRowsStableRef.current && !isEmptySmartChipSnapshot(candidateSmartChipRowsStableRef.current)) {
-          setCandidateSmartChipRowsRemote(candidateSmartChipRowsStableRef.current);
-        } else {
-          setCandidateSmartChipRowsRemote(null);
-        }
-        return;
+    if (candidateSmartChipRowsStableRef.current && !isEmptySmartChipSnapshot(candidateSmartChipRowsStableRef.current)) {
+      setCandidateSmartChipRowsRemote(candidateSmartChipRowsStableRef.current);
+      if (candidateSmartChipSummaryStableRef.current) {
+        setCandidateSmartChipSummary(candidateSmartChipSummaryStableRef.current);
       }
-      const incomingRowsAreEmpty = isEmptySmartChipSnapshot(rows);
-      setCandidateSmartChipRowsRemote(rows);
-      if (!incomingRowsAreEmpty) {
-        candidateSmartChipRowsStableRef.current = rows;
-        if (candidateSmartChipCacheKey && typeof window !== "undefined") {
-          try {
-            window.localStorage.setItem(candidateSmartChipCacheKey, JSON.stringify(rows));
-          } catch {}
-        }
-      }
-      const summary = result?.summary && typeof result.summary === "object" ? result.summary : (result?.result?.summary && typeof result.result.summary === "object" ? result.result.summary : null);
-      if (summary) {
-        const normalizedSummary = {
-          interview_history: Number(summary.interview_history || summary.interviewHistory || 0),
-          aligned_interviews: Number(summary.aligned_interviews || summary.alignedInterviews || 0),
-          feedback_awaited: Number(summary.feedback_awaited || summary.feedbackAwaited || 0),
-          quick_joiners: Number(summary.quick_joiners || summary.quickJoiners || 0),
-          shared_today: Number(summary.shared_today || summary.sharedToday || 0),
-          shared_this_week: Number(summary.shared_this_week || summary.sharedThisWeek || 0),
-          joined_candidates: Number(summary.joined_candidates || summary.joinedCandidates || 0),
-          cv_shared: Number(summary.cv_shared || summary.cvShared || 0)
-        };
-        const incomingSummaryIsEmpty = Object.values(normalizedSummary).every((value) => Number(value || 0) === 0);
-        setCandidateSmartChipSummary(normalizedSummary);
-        if (!incomingSummaryIsEmpty) {
-          candidateSmartChipSummaryStableRef.current = normalizedSummary;
-          if (candidateSmartChipSummaryCacheKey && typeof window !== "undefined") {
-            try {
-              window.localStorage.setItem(candidateSmartChipSummaryCacheKey, JSON.stringify(normalizedSummary));
-            } catch {}
-          }
-        }
-      }
-    }).catch((error) => {
-      if (cancelled || candidateSmartChipSummaryRequestRef.current !== requestId) return;
-      console.error("candidateSmartChipRows remote failed", error);
-      if (candidateSmartChipRowsStableRef.current && !isEmptySmartChipSnapshot(candidateSmartChipRowsStableRef.current)) {
-        setCandidateSmartChipRowsRemote(candidateSmartChipRowsStableRef.current);
-        if (candidateSmartChipSummaryStableRef.current) {
-          setCandidateSmartChipSummary(candidateSmartChipSummaryStableRef.current);
-        }
-      } else {
-        setCandidateSmartChipRowsRemote(null);
-      }
-    }).finally(() => {
-      if (cancelled || candidateSmartChipSummaryRequestRef.current !== requestId) return;
-      setCandidateSmartChipLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
+    } else {
+      setCandidateSmartChipRowsRemote(null);
+    }
+    setCandidateSmartChipLoading(false);
   }, [
     token,
     location?.pathname,
@@ -18217,9 +18150,9 @@ function PortalApp({ token, onLogout }) {
       setStatus("workspace", "Showing candidates using structured filters.", "ok");
       return;
     }
-    const mode = candidateAiQueryMode === "natural"
-      ? ((hasKeywordBuilder && !chipSuffix) ? "boolean" : "ai")
-      : "boolean";
+    const mode = hasKeywordBuilder
+      ? "boolean"
+      : (candidateAiQueryMode === "natural" ? "ai" : "boolean");
     const semanticEnabled = copySettings.semanticSearchEnabled !== false;
     setCandidateSearchBusy(true);
     setCandidatePendingScrollTarget("database");

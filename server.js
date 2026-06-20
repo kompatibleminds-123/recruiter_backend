@@ -7915,6 +7915,85 @@ async function buildDatabaseQuickChipDataForUser({ user, filters = {}, searchMod
   };
 }
 
+function createDatabaseUniverseLiteItem(item = {}) {
+  return {
+    id: String(item?.id || "").trim(),
+    candidateId: String(item?.raw?.candidate?.id || item?.candidateId || "").trim(),
+    assessmentId: String(item?.assessmentId || item?.raw?.assessment?.id || "").trim(),
+    candidateName: String(item?.candidateName || "").trim(),
+    name: String(item?.candidateName || "").trim(),
+    role: String(item?.role || "").trim(),
+    position: String(item?.position || "").trim(),
+    company: String(item?.company || "").trim(),
+    totalExperience: String(item?.totalExperience || "").trim(),
+    experience: String(item?.totalExperience || "").trim(),
+    location: String(item?.location || "").trim(),
+    currentCtc: String(item?.currentCtc || "").trim(),
+    current_ctc: String(item?.currentCtc || "").trim(),
+    expectedCtc: String(item?.expectedCtc || "").trim(),
+    expected_ctc: String(item?.expectedCtc || "").trim(),
+    noticePeriod: String(item?.noticePeriod || "").trim(),
+    notice_period: String(item?.noticePeriod || "").trim(),
+    currentOrgTenure: String(item?.currentOrgTenure || "").trim(),
+    highestEducation: String(item?.highestEducation || "").trim(),
+    highest_education: String(item?.highestEducation || "").trim(),
+    clientName: String(item?.clientName || "").trim(),
+    client_name: String(item?.clientName || "").trim(),
+    recruiterName: String(item?.recruiterName || "").trim(),
+    recruiter_name: String(item?.recruiterName || "").trim(),
+    ownerRecruiter: String(item?.ownerRecruiter || "").trim(),
+    assigned_to_name: String(item?.ownerRecruiter || item?.recruiterName || "").trim(),
+    jdTitle: String(item?.position || "").trim(),
+    jd_title: String(item?.position || "").trim(),
+    candidateStatus: String(item?.candidateStatus || "").trim(),
+    workflowStatus: String(item?.workflowStatus || "").trim(),
+    attemptStatus: String(item?.attemptStatus || "").trim(),
+    interviewAt: String(item?.interviewAt || "").trim(),
+    followUpAt: String(item?.followUpAt || "").trim(),
+    offerDoj: String(item?.offerDoj || "").trim(),
+    sharedAt: String(item?.sharedAt || "").trim(),
+    createdAt: String(item?.createdAt || "").trim(),
+    created_at: String(item?.createdAt || "").trim(),
+    sourceType: String(item?.sourceType || "").trim(),
+    source: String(item?.sourceType || "").trim(),
+    hidden_from_captured: Boolean(item?.raw?.candidate?.hidden_from_captured),
+    used_in_assessment: Boolean(item?.raw?.candidate?.used_in_assessment) || Boolean(String(item?.raw?.candidate?.assessment_id || "").trim())
+  };
+}
+
+async function buildDatabaseUniverseLiteForUser(user) {
+  const [candidates, assessments, jobs, assessmentEvents] = await Promise.all([
+    listAllDatabaseCandidatesForUser(user),
+    getAssessmentsUniverseForUser(user),
+    listCompanyJobs(user.companyId, user.id),
+    listAssessmentEvents({ companyId: user.companyId, limit: 10000 }).catch(() => [])
+  ]);
+  const universe = sortDatabaseUniverseForList(buildCandidateSearchUniverse(candidates, assessments, jobs));
+  const rows = buildDatabaseQuickChipRows({
+    universe,
+    assessmentEvents,
+    dateFrom: "",
+    dateTo: ""
+  });
+  rows.interview_history = buildDatabaseQuickChipInterviewHistoryRowsFromDashboardUniverse({
+    user,
+    universe,
+    assessments,
+    candidates,
+    assessmentEvents,
+    dateFrom: "",
+    dateTo: ""
+  });
+  const summary = Object.fromEntries(Object.entries(rows).map(([key, list]) => [key, Array.isArray(list) ? list.length : 0]));
+  return {
+    universe: universe.map((item) => createDatabaseUniverseLiteItem(item)),
+    rows,
+    summary,
+    generatedAt: new Date().toISOString(),
+    total: universe.length
+  };
+}
+
 function sortDatabaseUniverseForList(items = []) {
   return (Array.isArray(items) ? items : []).slice().sort((a, b) => {
     const aTime = parseDateLike(
@@ -18584,6 +18663,18 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         result: quickChipData
       });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/database-universe-lite") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(user, "database save and search");
+      const result = await buildDatabaseUniverseLiteForUser(user);
+      sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
