@@ -9028,7 +9028,7 @@ function PortalApp({ token, onLogout }) {
       client: String(candidateQuickFiltersDraft.client || "").trim(),
       jd: String(candidateQuickFiltersDraft.jd || "").trim()
     };
-    if (!candidateHasSmartChipSelection && candidateSearchMode !== "search") {
+    if (!candidateHasSmartChipSelection && candidateSearchMode !== "search" && candidateStructuredFiltersActive) {
       setDatabaseQueryLoading(true);
     }
     setCandidatePendingScrollTarget(candidateHasSmartChipSelection ? "chips" : "database");
@@ -9055,7 +9055,7 @@ function PortalApp({ token, onLogout }) {
     }));
   };
   const resetCandidateQuickFilters = () => {
-    if (!candidateHasSmartChipSelection && candidateSearchMode !== "search") {
+    if (!candidateHasSmartChipSelection && candidateSearchMode !== "search" && candidateStructuredFiltersActive) {
       setDatabaseListLoading(true);
     }
     setCandidatePendingScrollTarget(candidateHasSmartChipSelection ? "chips" : "database");
@@ -13898,14 +13898,22 @@ function PortalApp({ token, onLogout }) {
   }, [candidateBaseUniverse, candidateStructuredFilters, candidateQuickFiltersApplied, state.assessments]);
   const candidateHasSmartChipSelection = candidateAiQueryMode === "natural" && candidateQuickChipIds.length > 0;
   const databaseSearchResultsMode = !candidateHasSmartChipSelection && candidateSearchMode === "search";
+  const databaseQuickFilterMode = candidateSearchMode === "all"
+    && !candidateHasSmartChipSelection
+    && !candidateStructuredFiltersActive
+    && candidateQuickFiltersActive;
   const databaseAllMode = candidateSearchMode === "all"
     && !candidateHasSmartChipSelection
     && !candidateStructuredFiltersActive
     && !candidateQuickFiltersActive;
-  const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseSearchResultsMode && !databaseAllMode;
+  const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseSearchResultsMode && !databaseQuickFilterMode && !databaseAllMode;
   const pagedCandidates = useMemo(() => {
     const safePageSize = Math.max(10, Number(candidatePageSize || 10));
     if (databaseSearchResultsMode) {
+      const start = (candidatePage - 1) * safePageSize;
+      return candidateUniverse.slice(start, start + safePageSize);
+    }
+    if (databaseQuickFilterMode) {
       const start = (candidatePage - 1) * safePageSize;
       return candidateUniverse.slice(start, start + safePageSize);
     }
@@ -13917,8 +13925,10 @@ function PortalApp({ token, onLogout }) {
     }
     const start = (candidatePage - 1) * safePageSize;
     return candidateUniverse.slice(start, start + safePageSize);
-  }, [databaseSearchResultsMode, databaseAllMode, databaseServerQueryMode, databaseListItems, candidateUniverse, databaseQueryItems, candidatePage, candidatePageSize]);
+  }, [databaseSearchResultsMode, databaseQuickFilterMode, databaseAllMode, databaseServerQueryMode, databaseListItems, candidateUniverse, databaseQueryItems, candidatePage, candidatePageSize]);
   const totalCandidatePages = databaseSearchResultsMode
+    ? Math.max(1, Math.ceil((candidateUniverse.length || 0) / Math.max(10, Number(candidatePageSize || 10))))
+    : databaseQuickFilterMode
     ? Math.max(1, Math.ceil((candidateUniverse.length || 0) / Math.max(10, Number(candidatePageSize || 10))))
     : databaseAllMode
     ? Math.max(1, Number(databaseListMeta?.totalPages || 1))
