@@ -13887,18 +13887,20 @@ function PortalApp({ token, onLogout }) {
   const databaseSearchResultsMode = !candidateHasSmartChipSelection && candidateSearchMode === "search";
   const databaseAllMode = candidateSearchMode === "all" && !candidateHasSmartChipSelection && !candidateStructuredFiltersActive;
   const databaseServerQueryMode = !candidateHasSmartChipSelection && (candidateSearchMode === "search" || candidateStructuredFiltersActive);
-  const databaseDisplayLoading = !candidateHasSmartChipSelection && ((databaseAllMode ? databaseListLoading : databaseQueryLoading) || candidateSearchBusy);
+  const safeDatabasePageSize = [10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10;
+  const databaseRenderedTotal = Math.max(0, Array.isArray(candidateUniverse) ? candidateUniverse.length : 0);
+  const totalCandidatePages = Math.max(1, Math.ceil(databaseRenderedTotal / Math.max(1, safeDatabasePageSize)));
   const databaseRenderedItems = useMemo(() => {
-    if (databaseServerQueryMode) return Array.isArray(databaseQueryItems) ? databaseQueryItems : [];
-    if (databaseAllMode) return Array.isArray(databaseListItems) ? databaseListItems : [];
-    return [];
-  }, [databaseServerQueryMode, databaseQueryItems, databaseAllMode, databaseListItems]);
-  const databaseRenderedTotal = databaseServerQueryMode
-    ? Math.max(0, Number(databaseQueryMeta?.total || 0))
-    : Math.max(0, Number(databaseListMeta?.total || 0));
-  const totalCandidatePages = databaseServerQueryMode
-    ? Math.max(1, Number(databaseQueryMeta?.totalPages || 1))
-    : Math.max(1, Number(databaseListMeta?.totalPages || 1));
+    const rows = Array.isArray(candidateUniverse) ? candidateUniverse : [];
+    const safePage = Math.max(1, Number(candidatePage || 1));
+    const offset = (safePage - 1) * safeDatabasePageSize;
+    return rows.slice(offset, offset + safeDatabasePageSize);
+  }, [candidateUniverse, candidatePage, safeDatabasePageSize]);
+  const databaseDisplayLoading =
+    candidateSearchBusy
+    || candidateSmartChipLoading
+    || (!workspaceDataReady && !databaseCandidatesHydratedRef.current)
+    || (!candidateHasSmartChipSelection && databaseListLoading && databaseRenderedTotal === 0);
   const renderDatabaseCandidateCard = (item) => {
     const stableItemKey = String(
       item?.id ||
@@ -23883,7 +23885,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 ) : null}
                 {!candidateSearchBusy && candidateSearchMode === "search" && String(candidateSearchQueryUsed || "").trim() ? (
                   <div className="status ok" style={{ marginTop: 8 }}>
-                    {`${candidateAiQueryMode === "boolean" ? "Boolean" : "Smart"} search found ${databaseServerQueryMode ? Number(databaseQueryMeta?.total || 0) : candidateUniverse.length} profiles.`}
+                    {`${candidateAiQueryMode === "boolean" ? "Boolean" : "Smart"} search found ${databaseRenderedTotal} profiles.`}
                   </div>
                 ) : null}
                 {candidateAiQueryMode === "natural" && candidateSearchingAs ? (
@@ -24072,9 +24074,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             ))}
                           </select>
                         </label>
-                        <button className="ghost-btn" disabled={candidatePage <= 1 || (databaseAllMode ? databaseListLoading : databaseQueryLoading)} onClick={() => setCandidatePage((page) => Math.max(1, page - 1))}>Previous</button>
+                        <button className="ghost-btn" disabled={candidatePage <= 1 || databaseDisplayLoading} onClick={() => setCandidatePage((page) => Math.max(1, page - 1))}>Previous</button>
                         <div className="muted">Page {candidatePage} of {totalCandidatePages}</div>
-                        <button className="ghost-btn" disabled={candidatePage >= totalCandidatePages || (databaseAllMode ? databaseListLoading : databaseQueryLoading)} onClick={() => setCandidatePage((page) => Math.min(totalCandidatePages, page + 1))}>Next</button>
+                        <button className="ghost-btn" disabled={candidatePage >= totalCandidatePages || databaseDisplayLoading} onClick={() => setCandidatePage((page) => Math.min(totalCandidatePages, page + 1))}>Next</button>
                       </div>
                     </div>
                     <div className="stack-list">
