@@ -13882,12 +13882,6 @@ function PortalApp({ token, onLogout }) {
       return true;
     });
   }, [candidateBaseUniverse, candidateStructuredFilters, candidateQuickFiltersApplied, state.assessments]);
-  const candidateHasSmartChipSelection = candidateQuickChipIds.length > 0;
-  const databaseFiltersActive = !candidateHasSmartChipSelection && (candidateStructuredFiltersActive || candidateQuickFiltersActive);
-  const databaseSearchResultsMode = !candidateHasSmartChipSelection && candidateSearchMode === "search";
-  const databaseAllMode = !candidateHasSmartChipSelection && candidateSearchMode === "all" && !candidateStructuredFiltersActive && !candidateQuickFiltersActive;
-  const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseAllMode;
-  const safeDatabasePageSize = [10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10;
   const renderDatabaseCandidateCard = (item) => {
     const stableItemKey = String(
       item?.id ||
@@ -14002,6 +13996,12 @@ function PortalApp({ token, onLogout }) {
       return ids.some((id) => allowedIds.has(id));
     });
   }, [activeCandidateQuickChipId, candidateSmartChipRowsEffective, candidateUniverse]);
+  const candidateHasSmartChipSelection = candidateQuickChipIds.length > 0;
+  const databaseFiltersActive = !candidateHasSmartChipSelection && (candidateStructuredFiltersActive || candidateQuickFiltersActive);
+  const databaseSearchResultsMode = !candidateHasSmartChipSelection && candidateSearchMode === "search";
+  const databaseAllMode = !candidateHasSmartChipSelection && candidateSearchMode === "all" && !candidateStructuredFiltersActive && !candidateQuickFiltersActive;
+  const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseAllMode;
+  const safeDatabasePageSize = [10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10;
   const databaseChipItems = useMemo(() => (
     Array.isArray(candidateVisibleChipRows)
       ? candidateVisibleChipRows.map((row) => row?.item).filter(Boolean)
