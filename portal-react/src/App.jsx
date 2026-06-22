@@ -11067,7 +11067,7 @@ function PortalApp({ token, onLogout }) {
     const candidateFetchLimit = useLightCandidateFetch ? 50 : 5000;
     const candidateFetchPage = 1;
     const candidateFetchMetaSuffix = useLightCandidateFetch ? "&includeMeta=1" : "";
-    const databaseFetchLimit = pathname === "/candidates" ? 5000 : 10;
+    const databaseFetchLimit = pathname === "/candidates" ? 10 : 10;
     // Billing/access flags are used in sidebar gating across the app,
     // so fetch billing overview on all recruiter routes (plans list only needed on /plan).
     const needsBilling = true;
@@ -13885,22 +13885,37 @@ function PortalApp({ token, onLogout }) {
   const candidateHasSmartChipSelection = candidateQuickChipIds.length > 0;
   const databaseFiltersActive = !candidateHasSmartChipSelection && (candidateStructuredFiltersActive || candidateQuickFiltersActive);
   const databaseSearchResultsMode = !candidateHasSmartChipSelection && candidateSearchMode === "search";
-  const databaseAllMode = candidateSearchMode === "all" && !candidateHasSmartChipSelection && !candidateStructuredFiltersActive;
-  const databaseServerQueryMode = !candidateHasSmartChipSelection && (candidateSearchMode === "search" || candidateStructuredFiltersActive);
+  const databaseAllMode = !candidateHasSmartChipSelection && candidateSearchMode === "all" && !candidateStructuredFiltersActive && !candidateQuickFiltersActive;
+  const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseAllMode;
   const safeDatabasePageSize = [10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10;
-  const databaseRenderedTotal = Math.max(0, Array.isArray(candidateUniverse) ? candidateUniverse.length : 0);
-  const totalCandidatePages = Math.max(1, Math.ceil(databaseRenderedTotal / Math.max(1, safeDatabasePageSize)));
+  const databaseChipItems = useMemo(() => (
+    Array.isArray(candidateVisibleChipRows)
+      ? candidateVisibleChipRows.map((row) => row?.item).filter(Boolean)
+      : []
+  ), [candidateVisibleChipRows]);
+  const databaseRenderedTotal = candidateHasSmartChipSelection
+    ? databaseChipItems.length
+    : databaseServerQueryMode
+      ? Math.max(0, Number(databaseQueryMeta?.total || 0))
+      : Math.max(0, Number(databaseListMeta?.total || 0));
+  const totalCandidatePages = candidateHasSmartChipSelection
+    ? Math.max(1, Math.ceil(databaseRenderedTotal / Math.max(1, safeDatabasePageSize)))
+    : databaseServerQueryMode
+      ? Math.max(1, Number(databaseQueryMeta?.totalPages || 1))
+      : Math.max(1, Number(databaseListMeta?.totalPages || 1));
   const databaseRenderedItems = useMemo(() => {
-    const rows = Array.isArray(candidateUniverse) ? candidateUniverse : [];
+    const rows = candidateHasSmartChipSelection
+      ? databaseChipItems
+      : (databaseServerQueryMode
+        ? (Array.isArray(databaseQueryItems) ? databaseQueryItems : [])
+        : (Array.isArray(databaseListItems) ? databaseListItems : []));
     const safePage = Math.max(1, Number(candidatePage || 1));
     const offset = (safePage - 1) * safeDatabasePageSize;
     return rows.slice(offset, offset + safeDatabasePageSize);
-  }, [candidateUniverse, candidatePage, safeDatabasePageSize]);
-  const databaseDisplayLoading =
-    candidateSearchBusy
-    || candidateSmartChipLoading
-    || (!workspaceDataReady && !databaseCandidatesHydratedRef.current)
-    || (!candidateHasSmartChipSelection && databaseListLoading && databaseRenderedTotal === 0);
+  }, [candidateHasSmartChipSelection, databaseChipItems, databaseServerQueryMode, databaseQueryItems, databaseListItems, candidatePage, safeDatabasePageSize]);
+  const databaseDisplayLoading = candidateHasSmartChipSelection
+    ? candidateSmartChipLoading
+    : ((databaseServerQueryMode ? databaseQueryLoading : databaseListLoading) || candidateSearchBusy);
   const renderDatabaseCandidateCard = (item) => {
     const stableItemKey = String(
       item?.id ||
