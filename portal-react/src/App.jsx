@@ -13888,34 +13888,6 @@ function PortalApp({ token, onLogout }) {
   const databaseAllMode = !candidateHasSmartChipSelection && candidateSearchMode === "all" && !candidateStructuredFiltersActive && !candidateQuickFiltersActive;
   const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseAllMode;
   const safeDatabasePageSize = [10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10;
-  const databaseChipItems = useMemo(() => (
-    Array.isArray(candidateVisibleChipRows)
-      ? candidateVisibleChipRows.map((row) => row?.item).filter(Boolean)
-      : []
-  ), [candidateVisibleChipRows]);
-  const databaseRenderedTotal = candidateHasSmartChipSelection
-    ? databaseChipItems.length
-    : databaseServerQueryMode
-      ? Math.max(0, Number(databaseQueryMeta?.total || 0))
-      : Math.max(0, Number(databaseListMeta?.total || 0));
-  const totalCandidatePages = candidateHasSmartChipSelection
-    ? Math.max(1, Math.ceil(databaseRenderedTotal / Math.max(1, safeDatabasePageSize)))
-    : databaseServerQueryMode
-      ? Math.max(1, Number(databaseQueryMeta?.totalPages || 1))
-      : Math.max(1, Number(databaseListMeta?.totalPages || 1));
-  const databaseRenderedItems = useMemo(() => {
-    const rows = candidateHasSmartChipSelection
-      ? databaseChipItems
-      : (databaseServerQueryMode
-        ? (Array.isArray(databaseQueryItems) ? databaseQueryItems : [])
-        : (Array.isArray(databaseListItems) ? databaseListItems : []));
-    const safePage = Math.max(1, Number(candidatePage || 1));
-    const offset = (safePage - 1) * safeDatabasePageSize;
-    return rows.slice(offset, offset + safeDatabasePageSize);
-  }, [candidateHasSmartChipSelection, databaseChipItems, databaseServerQueryMode, databaseQueryItems, databaseListItems, candidatePage, safeDatabasePageSize]);
-  const databaseDisplayLoading = candidateHasSmartChipSelection
-    ? candidateSmartChipLoading
-    : ((databaseServerQueryMode ? databaseQueryLoading : databaseListLoading) || candidateSearchBusy);
   const renderDatabaseCandidateCard = (item) => {
     const stableItemKey = String(
       item?.id ||
@@ -14030,6 +14002,34 @@ function PortalApp({ token, onLogout }) {
       return ids.some((id) => allowedIds.has(id));
     });
   }, [activeCandidateQuickChipId, candidateSmartChipRowsEffective, candidateUniverse]);
+  const databaseChipItems = useMemo(() => (
+    Array.isArray(candidateVisibleChipRows)
+      ? candidateVisibleChipRows.map((row) => row?.item).filter(Boolean)
+      : []
+  ), [candidateVisibleChipRows]);
+  const databaseRenderedTotal = candidateHasSmartChipSelection
+    ? databaseChipItems.length
+    : databaseServerQueryMode
+      ? Math.max(0, Number(databaseQueryMeta?.total || 0))
+      : Math.max(0, Number(databaseListMeta?.total || 0));
+  const totalCandidatePages = candidateHasSmartChipSelection
+    ? Math.max(1, Math.ceil(databaseRenderedTotal / Math.max(1, safeDatabasePageSize)))
+    : databaseServerQueryMode
+      ? Math.max(1, Number(databaseQueryMeta?.totalPages || 1))
+      : Math.max(1, Number(databaseListMeta?.totalPages || 1));
+  const databaseRenderedItems = useMemo(() => {
+    const rows = candidateHasSmartChipSelection
+      ? databaseChipItems
+      : (databaseServerQueryMode
+        ? (Array.isArray(databaseQueryItems) ? databaseQueryItems : [])
+        : (Array.isArray(databaseListItems) ? databaseListItems : []));
+    const safePage = Math.max(1, Number(candidatePage || 1));
+    const offset = (safePage - 1) * safeDatabasePageSize;
+    return rows.slice(offset, offset + safeDatabasePageSize);
+  }, [candidateHasSmartChipSelection, databaseChipItems, databaseServerQueryMode, databaseQueryItems, databaseListItems, candidatePage, safeDatabasePageSize]);
+  const databaseDisplayLoading = candidateHasSmartChipSelection
+    ? candidateSmartChipLoading
+    : ((databaseServerQueryMode ? databaseQueryLoading : databaseListLoading) || candidateSearchBusy);
 
   useEffect(() => {
     if (!token) return;
