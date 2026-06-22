@@ -8961,6 +8961,7 @@ function PortalApp({ token, onLogout }) {
   const [candidateSearchingAs, setCandidateSearchingAs] = useState("");
   const [candidateSearchDebug, setCandidateSearchDebug] = useState(null);
   const [candidateParseFeedbackBusy, setCandidateParseFeedbackBusy] = useState(false);
+  const candidateHasSmartChipSelection = candidateQuickChipIds.length > 0;
   const candidateKeywordPreview = useMemo(() => (
     buildBooleanFromKeywordBars({
       must: candidateKeywordMust,
@@ -13926,9 +13927,6 @@ function PortalApp({ token, onLogout }) {
       </article>
     );
   };
-  useEffect(() => {
-    setCandidatePage((current) => Math.min(Math.max(1, current), totalCandidatePages));
-  }, [totalCandidatePages]);
   const candidateSmartChipDataReady = Boolean(workspaceDataReady) && Boolean(databaseCandidatesHydratedRef.current) && !candidateSearchBusy;
   const candidateSmartChipRows = useMemo(() => ({
     interview_history: [],
@@ -13996,7 +13994,6 @@ function PortalApp({ token, onLogout }) {
       return ids.some((id) => allowedIds.has(id));
     });
   }, [activeCandidateQuickChipId, candidateSmartChipRowsEffective, candidateUniverse]);
-  const candidateHasSmartChipSelection = candidateQuickChipIds.length > 0;
   const databaseFiltersActive = !candidateHasSmartChipSelection && (candidateStructuredFiltersActive || candidateQuickFiltersActive);
   const databaseSearchResultsMode = !candidateHasSmartChipSelection && candidateSearchMode === "search";
   const databaseAllMode = !candidateHasSmartChipSelection && candidateSearchMode === "all" && !candidateStructuredFiltersActive && !candidateQuickFiltersActive;
@@ -14030,6 +14027,9 @@ function PortalApp({ token, onLogout }) {
   const databaseDisplayLoading = candidateHasSmartChipSelection
     ? candidateSmartChipLoading
     : ((databaseServerQueryMode ? databaseQueryLoading : databaseListLoading) || candidateSearchBusy);
+  useEffect(() => {
+    setCandidatePage((current) => Math.min(Math.max(1, current), totalCandidatePages));
+  }, [totalCandidatePages]);
 
   useEffect(() => {
     if (!token) return;
