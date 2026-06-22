@@ -8059,17 +8059,23 @@ async function buildDatabaseQueryRowsForUser({ user, filters = {}, searchMode = 
   const normalizedSearchMode = String(searchMode || "all").trim().toLowerCase();
   const searchSet = new Set((Array.isArray(searchIds) ? searchIds : []).map((value) => String(value || "").trim()).filter(Boolean));
   if (normalizedSearchMode === "search" && !searchSet.size) return [];
-  const candidates = await listAllDatabaseCandidatesForUser(user);
-  const normalizedCandidates = (Array.isArray(candidates) ? candidates : []).map((item) => ({
-    ...(item || {}),
-    ...sanitizeApplicantCandidate(item)
-  }));
-  const rows = normalizedCandidates.filter((item) => {
+  const [candidates, assessments, jobs] = await Promise.all([
+    listAllDatabaseCandidatesForUser(user),
+    getAssessmentsUniverseForUser(user),
+    listCompanyJobs(user.companyId, user.id)
+  ]);
+  const universe = buildCandidateSearchUniverse(candidates, assessments, jobs)
+    .filter((item) => item?.sourceType !== "assessment_only");
+  const rows = universe.filter((item) => {
     if (normalizedSearchMode === "search" && searchSet.size) {
       const ids = [
         item?.id,
+        item?.assessmentId,
+        item?.assessment_id,
         item?.candidate_id,
-        item?.candidateId
+        item?.candidateId,
+        item?.raw?.candidate?.id,
+        item?.raw?.assessment?.id
       ].map((value) => String(value || "").trim()).filter(Boolean);
       if (!ids.some((id) => searchSet.has(id))) return false;
     }

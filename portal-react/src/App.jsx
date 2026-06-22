@@ -14015,14 +14015,16 @@ function PortalApp({ token, onLogout }) {
       ? Math.max(1, Number(databaseQueryMeta?.totalPages || 1))
       : Math.max(1, Number(databaseListMeta?.totalPages || 1));
   const databaseRenderedItems = useMemo(() => {
-    const rows = candidateHasSmartChipSelection
-      ? databaseChipItems
-      : (databaseServerQueryMode
-        ? (Array.isArray(databaseQueryItems) ? databaseQueryItems : [])
-        : (Array.isArray(databaseListItems) ? databaseListItems : []));
-    const safePage = Math.max(1, Number(candidatePage || 1));
-    const offset = (safePage - 1) * safeDatabasePageSize;
-    return rows.slice(offset, offset + safeDatabasePageSize);
+    if (candidateHasSmartChipSelection) {
+      const rows = Array.isArray(databaseChipItems) ? databaseChipItems : [];
+      const safePage = Math.max(1, Number(candidatePage || 1));
+      const offset = (safePage - 1) * safeDatabasePageSize;
+      return rows.slice(offset, offset + safeDatabasePageSize);
+    }
+    if (databaseServerQueryMode) {
+      return Array.isArray(databaseQueryItems) ? databaseQueryItems : [];
+    }
+    return Array.isArray(databaseListItems) ? databaseListItems : [];
   }, [candidateHasSmartChipSelection, databaseChipItems, databaseServerQueryMode, databaseQueryItems, databaseListItems, candidatePage, safeDatabasePageSize]);
   const databaseDisplayLoading = candidateHasSmartChipSelection
     ? candidateSmartChipLoading
