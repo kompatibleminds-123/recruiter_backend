@@ -11119,7 +11119,7 @@ function PortalApp({ token, onLogout }) {
         ? api("/company/employees", token).catch(() => ({ employees: [] }))
         : Promise.resolve(null),
       needsCandidates ? api(`/candidates?limit=${candidateFetchLimit}&page=${candidateFetchPage}${candidateFetchMetaSuffix}`, token).catch(() => []) : Promise.resolve(null),
-      needsDatabaseCandidates ? api(`/company/database-candidates?limit=${databaseFetchLimit}&page=1&includeMeta=1`, token).catch(() => ({ items: [], total: 0, page: 1, limit: databaseFetchLimit, totalPages: 1 })) : Promise.resolve(null),
+      needsDatabaseCandidates ? api("/company/database-universe-lite", token).catch(() => ({ result: { universe: [], total: 0 } })) : Promise.resolve(null),
       needsAssessments ? api("/company/assessments", token).catch(() => ({ assessments: [] })) : Promise.resolve(null),
       needsAssessmentEvents
         ? api("/company/assessment-events?limit=10000", token).catch(() => ({ result: { rows: [] } }))
@@ -11191,19 +11191,25 @@ function PortalApp({ token, onLogout }) {
       databaseCandidates: needsDatabaseCandidates
         ? mergeCandidatesByFreshness(
             current.databaseCandidates,
-            Array.isArray((databaseCandidatesResult?.result && typeof databaseCandidatesResult.result === "object")
+            Array.isArray((((databaseCandidatesResult?.result && typeof databaseCandidatesResult.result === "object")
               ? databaseCandidatesResult.result
-              : databaseCandidatesResult)
-              ? ((databaseCandidatesResult?.result && typeof databaseCandidatesResult.result === "object")
+              : databaseCandidatesResult)?.universe))
+              ? ((((databaseCandidatesResult?.result && typeof databaseCandidatesResult.result === "object")
+                ? databaseCandidatesResult.result
+                : databaseCandidatesResult).universe))
+              : (Array.isArray((databaseCandidatesResult?.result && typeof databaseCandidatesResult.result === "object")
                 ? databaseCandidatesResult.result
                 : databaseCandidatesResult)
-              : (Array.isArray(((databaseCandidatesResult?.result && typeof databaseCandidatesResult.result === "object")
-                ? databaseCandidatesResult.result
-                : databaseCandidatesResult)?.items)
-                  ? (((databaseCandidatesResult?.result && typeof databaseCandidatesResult.result === "object")
+                  ? ((databaseCandidatesResult?.result && typeof databaseCandidatesResult.result === "object")
                     ? databaseCandidatesResult.result
-                    : databaseCandidatesResult).items)
-                  : [])
+                    : databaseCandidatesResult)
+                  : (Array.isArray((((databaseCandidatesResult?.result && typeof databaseCandidatesResult.result === "object")
+                    ? databaseCandidatesResult.result
+                    : databaseCandidatesResult)?.items))
+                      ? ((((databaseCandidatesResult?.result && typeof databaseCandidatesResult.result === "object")
+                        ? databaseCandidatesResult.result
+                        : databaseCandidatesResult).items))
+                      : []))
           )
         : current.databaseCandidates,
       assessments: needsAssessments
@@ -11217,15 +11223,17 @@ function PortalApp({ token, onLogout }) {
       const databasePayload = databaseCandidatesResult?.result && typeof databaseCandidatesResult.result === "object"
         ? databaseCandidatesResult.result
         : databaseCandidatesResult;
-      const nextDatabaseItems = Array.isArray(databasePayload)
-        ? databasePayload
-        : (Array.isArray(databasePayload?.items) ? databasePayload.items : []);
+      const nextDatabaseItems = Array.isArray(databasePayload?.universe)
+        ? databasePayload.universe
+        : (Array.isArray(databasePayload)
+          ? databasePayload
+          : (Array.isArray(databasePayload?.items) ? databasePayload.items : []));
       setDatabaseListItems(nextDatabaseItems);
       setDatabaseListMeta({
         total: Math.max(0, Number(databasePayload?.total || nextDatabaseItems.length || 0)),
         page: Math.max(1, Number(databasePayload?.page || 1)),
         limit: Math.max(1, Number(databasePayload?.limit || databaseFetchLimit || 10)),
-        totalPages: Math.max(1, Number(databasePayload?.totalPages || 1))
+        totalPages: Math.max(1, Number(databasePayload?.totalPages || Math.ceil(Math.max(0, Number(databasePayload?.total || nextDatabaseItems.length || 0)) / Math.max(1, Number(databasePayload?.limit || databaseFetchLimit || 10))) || 1))
       });
     }
     if (needsJobs) {
@@ -11716,7 +11724,7 @@ function PortalApp({ token, onLogout }) {
     const metaSuffix = includeMeta ? "&includeMeta=1" : "";
     const [candidatesResult, databaseCandidatesResult] = await Promise.all([
       api(`/candidates?limit=${safeLimit}&page=${safePage}${metaSuffix}`, token).catch(() => []),
-      includeDatabase ? api(`/company/database-candidates?limit=${safeLimit}&page=${safePage}${metaSuffix}`, token).catch(() => []) : Promise.resolve(null)
+      includeDatabase ? api("/company/database-universe-lite", token).catch(() => ({ result: { universe: [], total: 0 } })) : Promise.resolve(null)
     ]);
     if (seq !== candidatesSliceLoadSeqRef.current) return;
     const candidatePayload = candidatesResult?.result && typeof candidatesResult.result === "object"
@@ -11728,11 +11736,20 @@ function PortalApp({ token, onLogout }) {
     const candidateRows = Array.isArray(candidatePayload)
       ? candidatePayload
       : (Array.isArray(candidatePayload?.items) ? candidatePayload.items : []);
-    const databaseRows = Array.isArray(databasePayload)
-      ? databasePayload
-      : (Array.isArray(databasePayload?.items) ? databasePayload.items : []);
+    const databaseRows = Array.isArray(databasePayload?.universe)
+      ? databasePayload.universe
+      : (Array.isArray(databasePayload)
+        ? databasePayload
+        : (Array.isArray(databasePayload?.items) ? databasePayload.items : []));
     if (includeDatabase) {
       databaseCandidatesHydratedRef.current = true;
+      setDatabaseListItems(databaseRows);
+      setDatabaseListMeta({
+        total: Math.max(0, Number(databasePayload?.total || databaseRows.length || 0)),
+        page: 1,
+        limit: Math.max(1, databaseRows.length || 10),
+        totalPages: Math.max(1, Math.ceil(Math.max(0, Number(databasePayload?.total || databaseRows.length || 0)) / Math.max(1, Number(candidatePageSize || 10))))
+      });
     }
     setState((current) => ({
       ...current,
@@ -13996,8 +14013,8 @@ function PortalApp({ token, onLogout }) {
   }, [activeCandidateQuickChipId, candidateSmartChipRowsEffective, candidateUniverse]);
   const databaseFiltersActive = !candidateHasSmartChipSelection && (candidateStructuredFiltersActive || candidateQuickFiltersActive);
   const databaseSearchResultsMode = !candidateHasSmartChipSelection && candidateSearchMode === "search";
-  const databaseAllMode = !candidateHasSmartChipSelection && candidateSearchMode === "all" && !candidateStructuredFiltersActive && !candidateQuickFiltersActive;
-  const databaseServerQueryMode = !candidateHasSmartChipSelection && !databaseAllMode;
+  const databaseAllMode = !candidateHasSmartChipSelection;
+  const databaseServerQueryMode = false;
   const safeDatabasePageSize = [10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10;
   const databaseChipItems = useMemo(() => (
     Array.isArray(candidateVisibleChipRows)
@@ -14006,14 +14023,8 @@ function PortalApp({ token, onLogout }) {
   ), [candidateVisibleChipRows]);
   const databaseRenderedTotal = candidateHasSmartChipSelection
     ? databaseChipItems.length
-    : databaseServerQueryMode
-      ? Math.max(0, Number(databaseQueryMeta?.total || 0))
-      : Math.max(0, Number(databaseListMeta?.total || 0));
-  const totalCandidatePages = candidateHasSmartChipSelection
-    ? Math.max(1, Math.ceil(databaseRenderedTotal / Math.max(1, safeDatabasePageSize)))
-    : databaseServerQueryMode
-      ? Math.max(1, Number(databaseQueryMeta?.totalPages || 1))
-      : Math.max(1, Number(databaseListMeta?.totalPages || 1));
+    : Math.max(0, Array.isArray(candidateUniverse) ? candidateUniverse.length : 0);
+  const totalCandidatePages = Math.max(1, Math.ceil(databaseRenderedTotal / Math.max(1, safeDatabasePageSize)));
   const databaseRenderedItems = useMemo(() => {
     if (candidateHasSmartChipSelection) {
       const rows = Array.isArray(databaseChipItems) ? databaseChipItems : [];
@@ -14021,14 +14032,19 @@ function PortalApp({ token, onLogout }) {
       const offset = (safePage - 1) * safeDatabasePageSize;
       return rows.slice(offset, offset + safeDatabasePageSize);
     }
-    if (databaseServerQueryMode) {
-      return Array.isArray(databaseQueryItems) ? databaseQueryItems : [];
-    }
-    return Array.isArray(databaseListItems) ? databaseListItems : [];
-  }, [candidateHasSmartChipSelection, databaseChipItems, databaseServerQueryMode, databaseQueryItems, databaseListItems, candidatePage, safeDatabasePageSize]);
+    const rows = Array.isArray(candidateUniverse) ? candidateUniverse : [];
+    const safePage = Math.max(1, Number(candidatePage || 1));
+    const offset = (safePage - 1) * safeDatabasePageSize;
+    return rows.slice(offset, offset + safeDatabasePageSize);
+  }, [candidateHasSmartChipSelection, databaseChipItems, candidateUniverse, candidatePage, safeDatabasePageSize]);
+  const databaseExportSourceItems = useMemo(() => (
+    candidateHasSmartChipSelection
+      ? databaseChipItems
+      : (Array.isArray(candidateUniverse) ? candidateUniverse : [])
+  ), [candidateHasSmartChipSelection, databaseChipItems, candidateUniverse]);
   const databaseDisplayLoading = candidateHasSmartChipSelection
     ? candidateSmartChipLoading
-    : ((databaseServerQueryMode ? databaseQueryLoading : databaseListLoading) || candidateSearchBusy);
+    : (candidateSearchBusy || (!workspaceDataReady && !databaseCandidatesHydratedRef.current));
   useEffect(() => {
     setCandidatePage((current) => Math.min(Math.max(1, current), totalCandidatePages));
   }, [totalCandidatePages]);
@@ -18883,29 +18899,7 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function fetchFilteredDatabaseExportRows() {
-    const searchIds = Array.isArray(candidateSearchResults)
-      ? candidateSearchResults.flatMap((item) => [
-          item?.id,
-          item?.candidate_id,
-          item?.candidateId,
-          item?.assessment_id,
-          item?.assessmentId
-        ]).map((value) => String(value || "").trim()).filter(Boolean)
-      : [];
-    const result = await api("/company/database/export", token, "POST", {
-      filters: {
-        ...candidateStructuredFilters,
-        dateFrom: candidateQuickFiltersApplied.dateFrom,
-        dateTo: candidateQuickFiltersApplied.dateTo,
-        client: candidateQuickFiltersApplied.client,
-        recruiter: candidateQuickFiltersApplied.recruiter,
-        jd: candidateQuickFiltersApplied.jd
-      },
-      searchMode: candidateSearchMode,
-      searchIds
-    });
-    const payload = result?.result && typeof result.result === "object" ? result.result : result;
-    const items = Array.isArray(payload?.items) ? payload.items : [];
+    const items = Array.isArray(databaseExportSourceItems) ? databaseExportSourceItems : [];
     return items.map((item, index) => {
       const ctx = resolveCandidateContext(item);
       const baseCandidate = ctx.candidate || {};
