@@ -1196,41 +1196,56 @@ textarea { min-height: 92px; resize: vertical; }
   line-height: 1;
 }
 @media (min-width: 901px) and (max-width: 1280px) {
-  .dashboard-funnel-shell {
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    padding-bottom: 6px;
-  }
-  .dashboard-funnel-shell::-webkit-scrollbar {
-    display: none;
-  }
   .dashboard-snake-funnel {
     grid-template-columns:
-      minmax(210px, 210px) 72px
-      minmax(210px, 210px) 72px
-      minmax(210px, 210px) 72px
-      minmax(210px, 210px) 72px
-      minmax(210px, 210px) 72px
-      minmax(210px, 210px);
-    gap: 14px;
-    overflow: visible;
-    padding-bottom: 4px;
-    justify-content: start;
+      minmax(0, 1fr) 52px
+      minmax(0, 1fr) 52px
+      minmax(0, 1fr) 52px
+      minmax(0, 1fr) 52px
+      minmax(0, 1fr) 52px
+      minmax(0, 1fr);
+    gap: 8px;
     align-items: stretch;
-    scroll-snap-type: x mandatory;
   }
   .dashboard-snake-step {
-    min-width: 210px;
-    scroll-snap-align: start;
-    scroll-snap-stop: always;
+    min-width: 0;
   }
   .dashboard-snake-connector-cell {
-    min-width: 72px;
+    min-width: 0;
   }
   .dashboard-snake-card {
-    min-height: 106px;
+    min-height: 94px;
+    padding: 0.78rem 0.72rem;
+  }
+  .dashboard-snake-card__header {
+    gap: 0.42rem;
+  }
+  .dashboard-snake-card__label {
+    font-size: 0.56rem;
+    letter-spacing: 0.03em;
+  }
+  .dashboard-snake-card__value,
+  .dashboard-funnel-step__value {
+    font-size: 1.12rem;
+  }
+  .dashboard-funnel-step__icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 9px;
+    font-size: 0.72rem;
+  }
+  .dashboard-snake-connector {
+    padding: 6px 0;
+  }
+  .dashboard-snake-connector__line {
+    margin-top: 6px;
+  }
+  .dashboard-snake-connector__label {
+    font-size: 0.48rem;
+    max-width: 52px;
+  }
+  .dashboard-snake-connector__value {
+    font-size: 12px;
   }
 }
 @media (max-width: 900px) {
@@ -4588,5 +4603,187 @@ button:focus-visible {
   font-weight: 800;
   line-height: 1;
   font-family: Arial, sans-serif;
+}
+
+/* ---------- Tablet stabilization pass ---------- */
+@media (min-width: 769px) and (max-width: 1280px) {
+  .content {
+    padding: 1.05rem;
+    gap: 0.95rem;
+  }
+
+  .panel,
+  .overlay-card,
+  .item-card,
+  .settings-subsection {
+    border-radius: 18px;
+  }
+
+  .panel {
+    padding: 0.92rem;
+  }
+
+  .overlay {
+    padding: 1rem;
+  }
+
+  .overlay-card {
+    max-height: calc(100vh - 2rem);
+  }
+
+  .overlay-card--wide {
+    width: min(1120px, calc(100vw - 2rem));
+  }
+
+  .button-row,
+  .toolbar,
+  .chip-row,
+  .captured-copy-row,
+  .database-results-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .button-row > button,
+  .toolbar > button {
+    flex: 0 0 auto;
+  }
+
+  .form-grid.three-col {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .candidate-common-filter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .candidate-filter-layout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .candidate-filter-column:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .candidate-search-content {
+    grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  }
+
+  .candidate-search-filters {
+    top: 0.5rem;
+  }
+
+  .candidate-filter-head--inline {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.8rem;
+  }
+
+  .candidate-quick-filter-actions {
+    justify-content: flex-start;
+  }
+
+  .database-result-row__main {
+    grid-template-columns: minmax(0, 1.4fr) minmax(220px, 1fr);
+    align-items: start;
+  }
+
+  .database-result-row__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+  }
+
+  .database-result-row__actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    padding-top: 0.2rem;
+  }
+
+  .database-detail-pane__head,
+  .database-detail-pane__grid {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .database-detail-pane__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .database-detail-pane__kv {
+    gap: 0.6rem;
+  }
+
+  .captured-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .captured-note-main {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .captured-note-col--education,
+  .captured-note-col--meta,
+  .captured-note-col--ownership {
+    grid-column: 1 / -1;
+  }
+
+  .database-results-toolbar__spacer {
+    display: none;
+  }
+
+  .database-results-toolbar__pager {
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
+  .captured-copy-row .copy-preset-control {
+    min-width: min(320px, 100%);
+    flex: 1 1 320px;
+  }
+
+  .dashboard-funnel-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-agenda-cards,
+  .dashboard-agenda-cards--four,
+  .dashboard-agenda-cards--five {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .assessment-placard__main {
+    grid-template-columns: 1fr;
+  }
+
+  .assessment-placard__times {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .candidate-sheet__head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .candidate-sheet__head-meta {
+    justify-content: flex-start;
+  }
+
+  .candidate-sheet__kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .candidate-sheet__rows {
+    grid-template-columns: 1fr;
+  }
+
+  .table-wrap,
+  .candidate-smart-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .dashboard-table {
+    min-width: 920px;
+  }
 }
 
