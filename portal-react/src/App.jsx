@@ -8937,6 +8937,9 @@ function PortalApp({ token, onLogout }) {
   const candidateSmartChipPrefetchRequestRef = useRef(0);
   const candidateSmartChipResultsRef = useRef(null);
   const candidateDatabaseResultsRef = useRef(null);
+  const dashboardLiveRefreshTimerRef = useRef(null);
+  const dashboardLiveRefreshInFlightRef = useRef(false);
+  const dashboardLiveRefreshQueuedRef = useRef(false);
   const databaseCandidatesHydratedRef = useRef(false);
   const [candidateFilterPanelOpen, setCandidateFilterPanelOpen] = useState(true);
   const [candidateFilterDrawerOpen, setCandidateFilterDrawerOpen] = useState(false);
@@ -12016,6 +12019,7 @@ function PortalApp({ token, onLogout }) {
           source: "SSE",
           refreshStats: true
         });
+        scheduleDashboardLiveRefresh("assessment_deleted");
         return;
       }
       if (assessment && assessmentId) {
@@ -12027,6 +12031,7 @@ function PortalApp({ token, onLogout }) {
           assessment: hydratedAssessment,
           source: "SSE"
         });
+        scheduleDashboardLiveRefresh("assessment_saved");
       }
       if (eventType === "assessment_deleted" || eventType === "assessment_restored") {
         void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
@@ -12038,7 +12043,7 @@ function PortalApp({ token, onLogout }) {
       try { source.removeEventListener("assessment", onAssessment); } catch {}
       try { source.close(); } catch {}
     };
-  }, [token, location?.pathname, assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane, shouldAcceptAssessmentStreamEvent]);
+  }, [token, location?.pathname, assessmentPage, safeAssessmentApiPageSize, assessmentFiltersApplied, assessmentLane, shouldAcceptAssessmentStreamEvent, scheduleDashboardLiveRefresh, state.candidates]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -12071,6 +12076,7 @@ function PortalApp({ token, onLogout }) {
           refreshStats: true
         });
         void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
+        scheduleDashboardLiveRefresh("assessment_deleted");
         return;
       }
       if (assessment && assessmentId) {
@@ -12082,10 +12088,12 @@ function PortalApp({ token, onLogout }) {
           assessment: hydratedAssessment,
           source: "SSE"
         });
+        scheduleDashboardLiveRefresh("assessment_saved");
         return;
       }
       if (eventType === "assessment_restored" && assessmentId) {
         void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
+        scheduleDashboardLiveRefresh("assessment_restored");
       }
     };
     source.addEventListener("assessment", onAssessment);
@@ -12094,7 +12102,7 @@ function PortalApp({ token, onLogout }) {
       try { source.removeEventListener("assessment", onAssessment); } catch {}
       try { source.close(); } catch {}
     };
-  }, [token, location?.pathname, assessmentFiltersApplied, shouldAcceptAssessmentStreamEvent]);
+  }, [token, location?.pathname, assessmentFiltersApplied, shouldAcceptAssessmentStreamEvent, scheduleDashboardLiveRefresh, state.candidates]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -12239,6 +12247,7 @@ function PortalApp({ token, onLogout }) {
       };
       if (eventType === "candidate_created" || eventType === "candidate_deleted" || !candidateId) {
         void refreshCapturedWorkspace().catch(() => {});
+        scheduleDashboardLiveRefresh(`captured:${eventType || "unknown"}`);
         return;
       }
       if (capturedLiveSyncInFlightRef.current || isCapturedUserEditing) {
@@ -12249,6 +12258,7 @@ function PortalApp({ token, onLogout }) {
       void applyCandidateLiveRowEvent({ eventType, candidateId, payloadCandidate })
         .catch(() => {})
         .finally(() => {
+          scheduleDashboardLiveRefresh(`captured:${eventType || "changed"}`);
           capturedLiveSyncInFlightRef.current = false;
           if (capturedLiveSyncPendingRef.current && !isCapturedUserEditing && !cancelled) {
             capturedLiveSyncPendingRef.current = false;
@@ -12274,7 +12284,7 @@ function PortalApp({ token, onLogout }) {
       try { source.removeEventListener("captured", onCaptured); } catch {}
       try { source.close(); } catch {}
     };
-  }, [token, location?.pathname, isCapturedUserEditing, capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy]);
+  }, [token, location?.pathname, isCapturedUserEditing, capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy, scheduleDashboardLiveRefresh]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -12310,12 +12320,17 @@ function PortalApp({ token, onLogout }) {
           reloadCapturedSlice(capturedPage, safeCapturedApiPageSize, candidateFiltersApplied, capturedSortBy),
           reloadCapturedStats(candidateFiltersApplied)
         ]).catch(() => {});
+        scheduleDashboardLiveRefresh(`captured:${eventType || "unknown"}`);
         return;
       }
       if (eventType !== "candidate_changed" && eventType !== "candidate_attempt" && eventType !== "candidate_assigned") {
         return;
       }
-      void applyCandidateLiveRowEvent({ eventType, candidateId, payloadCandidate }).catch(() => {});
+      void applyCandidateLiveRowEvent({ eventType, candidateId, payloadCandidate })
+        .catch(() => {})
+        .finally(() => {
+          scheduleDashboardLiveRefresh(`captured:${eventType || "changed"}`);
+        });
     };
     source.addEventListener("captured", onCaptured);
     return () => {
@@ -12323,7 +12338,7 @@ function PortalApp({ token, onLogout }) {
       try { source.removeEventListener("captured", onCaptured); } catch {}
       try { source.close(); } catch {}
     };
-  }, [token, location?.pathname]);
+  }, [token, location?.pathname, scheduleDashboardLiveRefresh]);
 
   useEffect(() => {
     if (!token) return;
@@ -12436,7 +12451,9 @@ function PortalApp({ token, onLogout }) {
           eventType,
           candidateId,
           payloadCandidate: payload?.candidate && typeof payload.candidate === "object" ? payload.candidate : null
-        }).catch(() => {});
+        }).catch(() => {}).finally(() => {
+          scheduleDashboardLiveRefresh(`applicants:${eventType || "changed"}`);
+        });
         return;
       }
       if (eventType === "candidate_created" || eventType === "candidate_deleted" || !candidateId) {
@@ -12444,6 +12461,7 @@ function PortalApp({ token, onLogout }) {
           reloadApplicantsSlice(safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied, applicantSortBy),
           reloadApplicantStats(applicantFiltersApplied)
         ]).catch(() => {});
+        scheduleDashboardLiveRefresh(`applicants:${eventType || "unknown"}`);
       }
     };
     source.addEventListener("applicants", onApplicants);
@@ -12452,7 +12470,7 @@ function PortalApp({ token, onLogout }) {
       try { source.removeEventListener("applicants", onApplicants); } catch {}
       try { source.close(); } catch {}
     };
-  }, [token, location?.pathname, safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied, applicantSortBy]);
+  }, [token, location?.pathname, safeApplicantApiPage, safeApplicantApiPageSize, applicantFiltersApplied, applicantSortBy, scheduleDashboardLiveRefresh]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -12475,6 +12493,7 @@ function PortalApp({ token, onLogout }) {
       if (eventType === "candidate_created" || eventType === "candidate_deleted" || !candidateId) {
         applicantLiveSyncPendingRef.current = true;
         applicantLiveSyncPendingEventRef.current = { candidateId, eventType };
+        scheduleDashboardLiveRefresh(`applicants:${eventType || "unknown"}`);
         return;
       }
       if (eventType === "candidate_changed" || eventType === "candidate_attempt" || eventType === "candidate_assigned") {
@@ -12482,7 +12501,9 @@ function PortalApp({ token, onLogout }) {
           eventType,
           candidateId,
           payloadCandidate: payload?.candidate && typeof payload.candidate === "object" ? payload.candidate : null
-        }).catch(() => {});
+        }).catch(() => {}).finally(() => {
+          scheduleDashboardLiveRefresh(`applicants:${eventType || "changed"}`);
+        });
       }
     };
     source.addEventListener("applicants", onApplicants);
@@ -12491,7 +12512,7 @@ function PortalApp({ token, onLogout }) {
       try { source.removeEventListener("applicants", onApplicants); } catch {}
       try { source.close(); } catch {}
     };
-  }, [token, location?.pathname]);
+  }, [token, location?.pathname, scheduleDashboardLiveRefresh]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -18051,6 +18072,30 @@ function PortalApp({ token, onLogout }) {
     setStatus("workspace", "Dashboard refreshed.", "ok");
   }
 
+  const scheduleDashboardLiveRefresh = useCallback((reason = "sse") => {
+    if (String(location?.pathname || "").trim() !== "/dashboard") return;
+    if (dashboardLiveRefreshTimerRef.current) {
+      try { clearTimeout(dashboardLiveRefreshTimerRef.current); } catch {}
+    }
+    dashboardLiveRefreshTimerRef.current = setTimeout(() => {
+      dashboardLiveRefreshTimerRef.current = null;
+      if (dashboardLiveRefreshInFlightRef.current) {
+        dashboardLiveRefreshQueuedRef.current = true;
+        return;
+      }
+      dashboardLiveRefreshInFlightRef.current = true;
+      void refreshDashboardAfterAssessmentChange()
+        .catch(() => {})
+        .finally(() => {
+          dashboardLiveRefreshInFlightRef.current = false;
+          if (dashboardLiveRefreshQueuedRef.current) {
+            dashboardLiveRefreshQueuedRef.current = false;
+            scheduleDashboardLiveRefresh(`${reason}:queued`);
+          }
+        });
+    }, 350);
+  }, [location?.pathname, refreshDashboardAfterAssessmentChange]);
+
   async function openDashboardDrilldown({ title, metric, groupType, params = {} }) {
     const effectiveClientFilter = groupType === "client" || groupType === "clientPosition" || groupType === "position" || groupType === "clientPositionOwner" || groupType === "recruiter_position"
       ? (params.clientLabel || "")
@@ -22416,7 +22461,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       await openDashboardDrilldown(drilldownState.request);
     }
   }
-
   function openAgendaAssessmentStatus(item) {
     const assessmentId = String(item?.assessmentId || item?.raw?.id || item?.id || "").trim();
     if (!assessmentId) return;
