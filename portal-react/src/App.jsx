@@ -14030,6 +14030,104 @@ function PortalApp({ token, onLogout }) {
     const baseRows = remoteRows || candidateSmartChipRowsStableRef.current || candidateSmartChipRows;
     return filterCandidateSmartChipRowsLocally(baseRows, candidateQuickFiltersApplied);
   }, [candidateSmartChipRowsRemote, candidateSmartChipRows, filterCandidateSmartChipRowsLocally, candidateQuickFiltersApplied]);
+  const buildCandidateSmartChipRoundStatusText = useCallback((assessment = {}) => {
+    const statusHistory = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
+    const historyLines = statusHistory
+      .map((item) => {
+        const statusValue = String(item?.status || "").trim();
+        if (!statusValue) return "";
+        const atValue = String(item?.statusAt || item?.atValue || item?.at || "").trim();
+        const offerAmount = String(item?.offerAmount || assessment?.offerAmount || "").trim();
+        return buildAssessmentStatusNoteLine(statusValue, atValue, { offerAmount }).replace(/\.$/, "").trim();
+      })
+      .filter(Boolean);
+    const currentStatus = normalizeAssessmentStatusLabel(
+      String(
+        statusHistory.length
+          ? (statusHistory[statusHistory.length - 1]?.status || "")
+          : (assessment?.candidateStatus || assessment?.status || "")
+      ).trim()
+    );
+    if (currentStatus) {
+      historyLines.push(`Current: ${currentStatus}`);
+    }
+    return historyLines.join(" | ");
+  }, []);
+  const patchCandidateSmartChipRowsForAssessment = useCallback((assessment = {}) => {
+    if (String(location?.pathname || "").trim() !== "/candidates") return;
+    const assessmentId = String(assessment?.id || "").trim();
+    const candidateId = String(assessment?.candidateId || assessment?.candidate_id || "").trim();
+    if (!assessmentId && !candidateId) return;
+    const currentRows = candidateSmartChipRowsStableRef.current && typeof candidateSmartChipRowsStableRef.current === "object"
+      ? candidateSmartChipRowsStableRef.current
+      : null;
+    if (!currentRows) return;
+    let changed = false;
+    const nextRoundStatus = buildCandidateSmartChipRoundStatusText(assessment);
+    const latestPreview = getLatestAssessmentStatusPreview(assessment);
+    const nextRows = Object.fromEntries(
+      Object.entries(currentRows).map(([chipId, rows]) => {
+        const nextChipRows = (Array.isArray(rows) ? rows : []).map((row) => {
+          const rowAssessmentId = String(
+            row?.item?.assessment_id
+            || row?.item?.assessmentId
+            || row?.item?.raw?.assessment?.id
+            || row?.item?.assessment?.id
+            || ""
+          ).trim();
+          const rowCandidateId = String(
+            row?.item?.candidate_id
+            || row?.item?.candidateId
+            || row?.item?.id
+            || row?.item?.raw?.candidate?.id
+            || ""
+          ).trim();
+          const matches = (assessmentId && rowAssessmentId === assessmentId) || (candidateId && rowCandidateId === candidateId);
+          if (!matches) return row;
+          changed = true;
+          const nextDate = chipId === "joined_candidates"
+            ? String(assessment?.dateOfJoining || latestPreview?.at || row?.date || "").trim()
+            : String(latestPreview?.at || assessment?.interviewAt || row?.date || "").trim();
+          return {
+            ...row,
+            round: nextRoundStatus || row?.round || row?.status || "",
+            status: normalizeAssessmentStatusLabel(latestPreview?.status || assessment?.candidateStatus || row?.status || ""),
+            date: nextDate,
+            client: String(assessment?.clientName || row?.client || "").trim(),
+            role: String(assessment?.jdTitle || row?.role || "").trim(),
+            recruiter: String(assessment?.recruiterName || row?.recruiter || "").trim(),
+            currentCtc: String(assessment?.currentCtc || row?.currentCtc || row?.current_ctc || "").trim(),
+            expectedCtc: String(assessment?.expectedCtc || row?.expectedCtc || row?.expected_ctc || "").trim(),
+            notice: String(assessment?.noticePeriod || row?.notice || row?.notice_period || "").trim(),
+            offerAmount: String(assessment?.offerAmount || row?.offerAmount || row?.offerInHand || "").trim(),
+            offerInHand: String(assessment?.offerAmount || row?.offerInHand || row?.offerAmount || "").trim(),
+            item: row?.item && typeof row.item === "object"
+              ? {
+                  ...row.item,
+                  assessment_id: assessmentId || row.item.assessment_id || row.item.assessmentId || "",
+                  assessmentId: assessmentId || row.item.assessmentId || row.item.assessment_id || "",
+                  assessment: row.item.assessment && typeof row.item.assessment === "object"
+                    ? { ...row.item.assessment, ...assessment }
+                    : assessment,
+                  raw: row.item.raw && typeof row.item.raw === "object"
+                    ? {
+                        ...row.item.raw,
+                        assessment: row.item.raw.assessment && typeof row.item.raw.assessment === "object"
+                          ? { ...row.item.raw.assessment, ...assessment }
+                          : assessment
+                      }
+                    : row.item.raw
+                }
+              : row?.item
+          };
+        });
+        return [chipId, nextChipRows];
+      })
+    );
+    if (!changed) return;
+    candidateSmartChipRowsStableRef.current = nextRows;
+    setCandidateSmartChipRowsRemote(nextRows);
+  }, [location?.pathname, buildCandidateSmartChipRoundStatusText]);
   const refreshCandidateSmartChipRows = useCallback(async ({ clearVisibleRows = false } = {}) => {
     if (!token) return;
     if (String(location?.pathname || "").trim() !== "/candidates") return;
@@ -17269,7 +17367,7 @@ function PortalApp({ token, onLogout }) {
         const existingCandidate = (state.candidates || []).find((item) => String(item.id) === String(interviewMeta.candidateId));
         const existingMeta = decodePortalApplicantMetadata(existingCandidate || {});
         const nextMeta = mergeStoredCvIntoApplicantMeta(existingMeta, form.cvAnalysis || null);
-        await patchCandidateQuiet(interviewMeta.candidateId, {
+        const candidatePatchPayload = {
           name: form.candidateName,
           phone: form.phoneNumber,
           email: form.emailId,
@@ -17300,10 +17398,13 @@ function PortalApp({ token, onLogout }) {
             ...nextMeta,
             jdScreeningAnswers: form.jdScreeningAnswers || {}
           })
-        });
+        };
         setStatus("interview", "Assessment saved and candidate details updated.", "ok");
         void syncPostAssessmentMutation({ candidateId: interviewMeta.candidateId }).catch(() => {});
         void refreshDashboardAfterAssessmentChange().catch(() => {});
+        void patchCandidateQuiet(interviewMeta.candidateId, candidatePatchPayload).catch((error) => {
+          setStatus("interview", `Assessment saved, but candidate sync is still pending: ${String(error?.message || error)}`, "error");
+        });
       } else {
         void refreshDashboardAfterAssessmentChange().catch(() => {});
         setStatus("interview", "Assessment saved.", "ok");
@@ -21651,6 +21752,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       assessment: nextAssessment,
       source: "LOCAL_PATCH"
     });
+    patchCandidateSmartChipRowsForAssessment(nextAssessment);
     if (candidatePatch && linkedCandidateId) {
       const optimisticUpdatedAt = new Date().toISOString();
       setState((current) => {

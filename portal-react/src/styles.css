@@ -1195,6 +1195,36 @@ textarea { min-height: 92px; resize: vertical; }
   font-weight: 800;
   line-height: 1;
 }
+@media (max-width: 1280px) {
+  .dashboard-funnel-shell {
+    overflow: hidden;
+  }
+  .dashboard-snake-funnel {
+    grid-template-columns:
+      minmax(168px, 168px) 64px
+      minmax(168px, 168px) 64px
+      minmax(168px, 168px) 64px
+      minmax(168px, 168px) 64px
+      minmax(168px, 168px) 64px
+      minmax(168px, 168px);
+    gap: 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 6px;
+    justify-content: start;
+    align-items: stretch;
+    -webkit-overflow-scrolling: touch;
+  }
+  .dashboard-snake-step {
+    min-width: 168px;
+  }
+  .dashboard-snake-connector-cell {
+    min-width: 64px;
+  }
+  .dashboard-snake-card {
+    min-height: 102px;
+  }
+}
 @media (max-width: 900px) {
   .agenda-header {
     align-items: stretch;
