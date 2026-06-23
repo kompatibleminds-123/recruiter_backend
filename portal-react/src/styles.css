@@ -1214,9 +1214,16 @@ textarea { min-height: 92px; resize: vertical; }
     justify-content: start;
     align-items: stretch;
     -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+  .dashboard-snake-funnel::-webkit-scrollbar {
+    display: none;
   }
   .dashboard-snake-step {
     min-width: 210px;
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
   }
   .dashboard-snake-connector-cell {
     min-width: 72px;
