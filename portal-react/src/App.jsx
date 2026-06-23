@@ -8940,6 +8940,29 @@ function PortalApp({ token, onLogout }) {
   const dashboardLiveRefreshTimerRef = useRef(null);
   const dashboardLiveRefreshInFlightRef = useRef(false);
   const dashboardLiveRefreshQueuedRef = useRef(false);
+  const scheduleDashboardLiveRefresh = useCallback((reason = "sse") => {
+    if (String(location?.pathname || "").trim() !== "/dashboard") return;
+    if (dashboardLiveRefreshTimerRef.current) {
+      try { clearTimeout(dashboardLiveRefreshTimerRef.current); } catch {}
+    }
+    dashboardLiveRefreshTimerRef.current = setTimeout(() => {
+      dashboardLiveRefreshTimerRef.current = null;
+      if (dashboardLiveRefreshInFlightRef.current) {
+        dashboardLiveRefreshQueuedRef.current = true;
+        return;
+      }
+      dashboardLiveRefreshInFlightRef.current = true;
+      void refreshDashboardAfterAssessmentChange()
+        .catch(() => {})
+        .finally(() => {
+          dashboardLiveRefreshInFlightRef.current = false;
+          if (dashboardLiveRefreshQueuedRef.current) {
+            dashboardLiveRefreshQueuedRef.current = false;
+            scheduleDashboardLiveRefresh(`${reason}:queued`);
+          }
+        });
+    }, 350);
+  }, [location?.pathname, refreshDashboardAfterAssessmentChange]);
   const databaseCandidatesHydratedRef = useRef(false);
   const [candidateFilterPanelOpen, setCandidateFilterPanelOpen] = useState(true);
   const [candidateFilterDrawerOpen, setCandidateFilterDrawerOpen] = useState(false);
@@ -18071,30 +18094,6 @@ function PortalApp({ token, onLogout }) {
     await loadDashboardSummary(dashboardFilters);
     setStatus("workspace", "Dashboard refreshed.", "ok");
   }
-
-  const scheduleDashboardLiveRefresh = useCallback((reason = "sse") => {
-    if (String(location?.pathname || "").trim() !== "/dashboard") return;
-    if (dashboardLiveRefreshTimerRef.current) {
-      try { clearTimeout(dashboardLiveRefreshTimerRef.current); } catch {}
-    }
-    dashboardLiveRefreshTimerRef.current = setTimeout(() => {
-      dashboardLiveRefreshTimerRef.current = null;
-      if (dashboardLiveRefreshInFlightRef.current) {
-        dashboardLiveRefreshQueuedRef.current = true;
-        return;
-      }
-      dashboardLiveRefreshInFlightRef.current = true;
-      void refreshDashboardAfterAssessmentChange()
-        .catch(() => {})
-        .finally(() => {
-          dashboardLiveRefreshInFlightRef.current = false;
-          if (dashboardLiveRefreshQueuedRef.current) {
-            dashboardLiveRefreshQueuedRef.current = false;
-            scheduleDashboardLiveRefresh(`${reason}:queued`);
-          }
-        });
-    }, 350);
-  }, [location?.pathname, refreshDashboardAfterAssessmentChange]);
 
   async function openDashboardDrilldown({ title, metric, groupType, params = {} }) {
     const effectiveClientFilter = groupType === "client" || groupType === "clientPosition" || groupType === "position" || groupType === "clientPositionOwner" || groupType === "recruiter_position"
