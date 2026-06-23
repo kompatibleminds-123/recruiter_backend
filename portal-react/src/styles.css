@@ -4734,8 +4734,8 @@ button:focus-visible {
   }
 }
 
-/* ---------- Tablet: use mobile-style stacked funnel only ---------- */
-@media (min-width: 769px) and (max-width: 1180px) {
+/* ---------- Tablet and narrow landscape: use mobile-style stacked funnel only ---------- */
+@media (min-width: 769px) and (max-width: 1400px) {
   .dashboard-snake-funnel {
     grid-template-columns: 1fr;
     gap: 0.85rem;
