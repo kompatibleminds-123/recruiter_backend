@@ -8766,19 +8766,24 @@ function PortalApp({ token, onLogout }) {
   const [capturedSortBy, setCapturedSortBy] = useState("created"); // created | updated
   const [bulkAssignApplicantModalOpen, setBulkAssignApplicantModalOpen] = useState(false);
   const [bulkAssignCandidateModalOpen, setBulkAssignCandidateModalOpen] = useState(false);
-  const [dbCampaignAttachModal, setDbCampaignAttachModal] = useState({
+  const createEmptyDbCampaignAttachModal = () => ({
     open: false,
+    mode: "new",
     templates: [],
     selectedTemplateId: "",
+    saveAsNew: false,
     busy: false,
     totalCandidates: 0,
-    launchNow: true,
     campaignName: "",
     templateName: "",
     templateTag: "",
     templateSubject: "",
-    templateBodyText: ""
+    templateBodyText: "",
+    sendMode: "staggered",
+    sendGapMinutes: "2",
+    dailyCap: "50"
   });
+  const [dbCampaignAttachModal, setDbCampaignAttachModal] = useState(() => createEmptyDbCampaignAttachModal());
   const [showExtensionPrompt, setShowExtensionPrompt] = useState(false);
   const [hostedJobId, setHostedJobId] = useState("");
   const [hostedRecruiterApplyLinks, setHostedRecruiterApplyLinks] = useState([]);
@@ -19187,21 +19192,26 @@ function PortalApp({ token, onLogout }) {
     const templates = Array.isArray(templateResult?.items) ? templateResult.items : [];
     setDbCampaignAttachModal({
       open: true,
+      mode: templates.length ? "existing" : "new",
       templates,
       selectedTemplateId: String(templates?.[0]?.id || ""),
+      saveAsNew: false,
       busy: false,
       totalCandidates: candidateIds.length,
-      launchNow: true,
       campaignName: "",
       templateName: String(templates?.[0]?.name || ""),
       templateTag: String(templates?.[0]?.tag || ""),
       templateSubject: String(templates?.[0]?.subject || ""),
-      templateBodyText: String(templates?.[0]?.bodyText || templates?.[0]?.body_text || "")
+      templateBodyText: String(templates?.[0]?.bodyText || templates?.[0]?.body_text || ""),
+      sendMode: "staggered",
+      sendGapMinutes: "2",
+      dailyCap: "50"
     });
   }
 
-  async function confirmAttachCurrentDatabasePageToCampaign() {
-    let selectedTemplateId = String(dbCampaignAttachModal?.selectedTemplateId || "").trim();
+  async function saveRecruiterCampaignTemplateFromModal({ forceNew = false } = {}) {
+    const modalMode = String(dbCampaignAttachModal?.mode || "new").trim().toLowerCase();
+    let selectedTemplateId = modalMode === "existing" ? String(dbCampaignAttachModal?.selectedTemplateId || "").trim() : "";
     const selectedTemplate = (dbCampaignAttachModal?.templates || []).find((item) => String(item?.id || "") === selectedTemplateId) || null;
     const templateName = String(dbCampaignAttachModal?.templateName || "").trim();
     const templateTag = String(dbCampaignAttachModal?.templateTag || "").trim();
@@ -19217,31 +19227,79 @@ function PortalApp({ token, onLogout }) {
     }
     if (!templateBodyText) {
       setStatus("workspace", "Template body is required.", "error");
-      return;
+      return null;
     }
-    let liveTemplate = selectedTemplate || null;
-    if (selectedTemplateId) {
-      liveTemplate = await api(`/company/recruiter-campaign-templates/${encodeURIComponent(selectedTemplateId)}`, token, "PATCH", {
-        name: templateName,
-        tag: templateTag,
-        subject: templateSubject,
-        bodyText: templateBodyText
-      });
-    } else {
+    const shouldCreateNew = forceNew || modalMode !== "existing" || !selectedTemplateId || Boolean(dbCampaignAttachModal?.saveAsNew);
+    let liveTemplate = null;
+    if (shouldCreateNew) {
       liveTemplate = await api("/company/recruiter-campaign-templates", token, "POST", {
         name: templateName,
         tag: templateTag,
         subject: templateSubject,
         bodyText: templateBodyText
       });
-      selectedTemplateId = String(liveTemplate?.id || "").trim();
+    } else {
+      liveTemplate = await api(`/company/recruiter-campaign-templates/${encodeURIComponent(selectedTemplateId)}`, token, "PATCH", {
+        name: templateName,
+        tag: templateTag,
+        subject: templateSubject,
+        bodyText: templateBodyText
+      });
     }
+    return liveTemplate || selectedTemplate || null;
+  }
+
+  async function saveCurrentDatabaseCampaignTemplate({ forceNew = false } = {}) {
+    setDbCampaignAttachModal((current) => ({ ...current, busy: true }));
+    try {
+      const liveTemplate = await saveRecruiterCampaignTemplateFromModal({ forceNew });
+      if (!liveTemplate) return;
+      const templateResult = await api("/company/recruiter-campaign-templates", token).catch(() => ({ items: [] }));
+      const templates = Array.isArray(templateResult?.items) ? templateResult.items : [];
+      const liveTemplateId = String(liveTemplate?.id || "").trim();
+      setDbCampaignAttachModal((current) => ({
+        ...current,
+        busy: false,
+        mode: "existing",
+        templates,
+        selectedTemplateId: liveTemplateId,
+        saveAsNew: false,
+        templateName: String(liveTemplate?.name || current.templateName || ""),
+        templateTag: String(liveTemplate?.tag || current.templateTag || ""),
+        templateSubject: String(liveTemplate?.subject || current.templateSubject || ""),
+        templateBodyText: String(liveTemplate?.bodyText || liveTemplate?.body_text || current.templateBodyText || "")
+      }));
+      setStatus("workspace", forceNew ? "Template saved as a new copy." : "Template saved.", "ok");
+    } catch (error) {
+      setDbCampaignAttachModal((current) => ({ ...current, busy: false }));
+      setStatus("workspace", String(error?.message || error || "Failed to save template."), "error");
+    }
+  }
+
+  async function confirmAttachCurrentDatabasePageToCampaign() {
+    setDbCampaignAttachModal((current) => ({ ...current, busy: true }));
+    const liveTemplate = await saveRecruiterCampaignTemplateFromModal();
+    if (!liveTemplate) {
+      setDbCampaignAttachModal((current) => ({ ...current, busy: false }));
+      return;
+    }
+    const templateName = String(liveTemplate?.name || dbCampaignAttachModal?.templateName || "").trim();
+    const templateTag = String(liveTemplate?.tag || dbCampaignAttachModal?.templateTag || "").trim();
+    const templateSubject = String(liveTemplate?.subject || dbCampaignAttachModal?.templateSubject || "").trim();
+    const templateBodyText = String(liveTemplate?.bodyText || liveTemplate?.body_text || dbCampaignAttachModal?.templateBodyText || "").trim();
     const campaignName = String(dbCampaignAttachModal?.campaignName || "").trim() || `${templateName} ${new Date().toISOString().slice(0, 10)}`;
+    const sendMode = String(dbCampaignAttachModal?.sendMode || "staggered").trim().toLowerCase();
+    const requestedGap = Number.parseInt(String(dbCampaignAttachModal?.sendGapMinutes || "2"), 10);
+    const requestedDailyCap = Number.parseInt(String(dbCampaignAttachModal?.dailyCap || "50"), 10);
+    const resolvedGap = sendMode === "instant" ? 0 : (Number.isFinite(requestedGap) && requestedGap >= 0 ? requestedGap : 2);
+    const resolvedDailyCap = sendMode === "instant"
+      ? Math.max(Number(dbCampaignAttachModal?.totalCandidates || 0), Number.isFinite(requestedDailyCap) && requestedDailyCap > 0 ? requestedDailyCap : 50)
+      : (Number.isFinite(requestedDailyCap) && requestedDailyCap > 0 ? requestedDailyCap : 50);
     const createdCampaign = await api("/company/marketing/campaigns", token, "POST", {
       name: campaignName,
       category: templateTag,
-      sendGapMinutes: 5,
-      dailyCap: 50
+      sendGapMinutes: resolvedGap,
+      dailyCap: resolvedDailyCap
     });
     const selectedCampaignId = String(createdCampaign?.id || "").trim();
     const selectedCampaign = createdCampaign || null;
@@ -19255,52 +19313,34 @@ function PortalApp({ token, onLogout }) {
     const candidateIds = Array.from(new Set(candidates.map((item) => String(item?.id || "").trim()).filter(Boolean)));
     if (!candidateIds.length) {
       setStatus("workspace", "No candidates on current page to attach.", "error");
-      setDbCampaignAttachModal((current) => ({ ...current, open: false }));
+      setDbCampaignAttachModal((current) => ({ ...current, busy: false, open: false }));
       return;
     }
-    setDbCampaignAttachModal((current) => ({ ...current, busy: true }));
     const result = await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/attach-candidates`, token, "POST", { candidateIds });
     const linked = Number(result?.campaignLinked || 0);
     const created = Number(result?.createdCampaignOnlyProspects || 0);
     const reused = Number(result?.reusedExistingProspects || 0);
-    const launchNow = Boolean(dbCampaignAttachModal?.launchNow);
-    if (launchNow) {
-      const attachProspectIds = Array.isArray(result?.attachProspectIds)
-        ? result.attachProspectIds.map((id) => String(id || "").trim()).filter(Boolean)
-        : [];
-      if (attachProspectIds.length) {
-        await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", {
-          prospectIds: attachProspectIds
-        });
-      }
-      const liveCampaign = selectedCampaign || (await api("/company/marketing/campaigns", token).then((rows) => (Array.isArray(rows?.items) ? rows.items.find((item) => String(item?.id || "") === selectedCampaignId) : null)).catch(() => null));
-      const campaignStatus = String(liveCampaign?.status || "").trim().toLowerCase();
-      if (campaignStatus !== "active") {
-        if (campaignStatus === "paused") {
-          await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/resume`, token, "POST", {});
-        } else {
-          await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/start`, token, "POST", {});
-        }
-      }
-      const tickResult = await api("/company/marketing/worker/tick", token, "POST", {});
-      const sent = Number(tickResult?.sent || 0);
-      setStatus("workspace", `Launch done for "${selectedCampaign?.name || "campaign"}": linked ${linked}, created ${created}, reused ${reused}, sent now ${sent}.`, "ok");
-    } else {
-      setStatus("workspace", `Attached to "${selectedCampaign?.name || "campaign"}": linked ${linked}, created ${created}, reused ${reused}. Ready in queue.`, "ok");
+    const attachProspectIds = Array.isArray(result?.attachProspectIds)
+      ? result.attachProspectIds.map((id) => String(id || "").trim()).filter(Boolean)
+      : [];
+    if (attachProspectIds.length) {
+      await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", {
+        prospectIds: attachProspectIds
+      });
     }
-    setDbCampaignAttachModal({
-      open: false,
-      templates: [],
-      selectedTemplateId: "",
-      busy: false,
-      totalCandidates: 0,
-      launchNow: true,
-      campaignName: "",
-      templateName: "",
-      templateTag: "",
-      templateSubject: "",
-      templateBodyText: ""
-    });
+    const liveCampaign = selectedCampaign || (await api("/company/marketing/campaigns", token).then((rows) => (Array.isArray(rows?.items) ? rows.items.find((item) => String(item?.id || "") === selectedCampaignId) : null)).catch(() => null));
+    const campaignStatus = String(liveCampaign?.status || "").trim().toLowerCase();
+    if (campaignStatus !== "active") {
+      if (campaignStatus === "paused") {
+        await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/resume`, token, "POST", {});
+      } else {
+        await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/start`, token, "POST", {});
+      }
+    }
+    const tickResult = await api("/company/marketing/worker/tick", token, "POST", {});
+    const sent = Number(tickResult?.sent || 0);
+    setStatus("workspace", `Sent from "${selectedCampaign?.name || "campaign"}": linked ${linked}, created ${created}, reused ${reused}, sent now ${sent}.`, "ok");
+    setDbCampaignAttachModal(createEmptyDbCampaignAttachModal());
   }
 
   function downloadCandidateSmartChipRows(chipId) {
@@ -28177,24 +28217,55 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       {dbCampaignAttachModal.open ? (
         <div
           className="overlay"
-          onClick={() => setDbCampaignAttachModal({
-            open: false,
-            templates: [],
-            selectedTemplateId: "",
-            busy: false,
-            totalCandidates: 0,
-            launchNow: true,
-            campaignName: "",
-            templateName: "",
-            templateTag: "",
-            templateSubject: "",
-            templateBodyText: ""
-          })}
+          onClick={() => setDbCampaignAttachModal(createEmptyDbCampaignAttachModal())}
         >
           <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
-            <h3>Campaign + Launch</h3>
+            <h3>Template + Send</h3>
             <p className="muted">Candidates on current page: {Number(dbCampaignAttachModal.totalCandidates || 0)}</p>
             <div className="form-grid">
+              <label>
+                <span>Template mode</span>
+                <div className="button-row" style={{ justifyContent: "flex-start", gap: 8 }}>
+                  <button
+                    type="button"
+                    className={dbCampaignAttachModal.mode === "new" ? "" : "ghost-btn"}
+                    onClick={() => setDbCampaignAttachModal((current) => ({
+                      ...current,
+                      mode: "new",
+                      selectedTemplateId: "",
+                      saveAsNew: false,
+                      templateName: "",
+                      templateTag: "",
+                      templateSubject: "",
+                      templateBodyText: ""
+                    }))}
+                    disabled={dbCampaignAttachModal.busy}
+                  >
+                    Create new template
+                  </button>
+                  <button
+                    type="button"
+                    className={dbCampaignAttachModal.mode === "existing" ? "" : "ghost-btn"}
+                    onClick={() => {
+                      const firstTemplate = (dbCampaignAttachModal.templates || [])[0] || null;
+                      setDbCampaignAttachModal((current) => ({
+                        ...current,
+                        mode: "existing",
+                        selectedTemplateId: String(firstTemplate?.id || current.selectedTemplateId || ""),
+                        saveAsNew: false,
+                        templateName: String(firstTemplate?.name || current.templateName || ""),
+                        templateTag: String(firstTemplate?.tag || current.templateTag || ""),
+                        templateSubject: String(firstTemplate?.subject || current.templateSubject || ""),
+                        templateBodyText: String(firstTemplate?.bodyText || firstTemplate?.body_text || current.templateBodyText || "")
+                      }));
+                    }}
+                    disabled={dbCampaignAttachModal.busy || !(dbCampaignAttachModal.templates || []).length}
+                  >
+                    Use existing template
+                  </button>
+                </div>
+              </label>
+              {dbCampaignAttachModal.mode === "existing" ? (
               <label>
                 <span>Select existing recruiter template</span>
                 <select
@@ -28221,6 +28292,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   ))}
                 </select>
               </label>
+              ) : null}
               <label>
                 <span>Campaign name</span>
                 <input
@@ -28230,6 +28302,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   disabled={dbCampaignAttachModal.busy}
                 />
               </label>
+              {dbCampaignAttachModal.mode === "existing" ? (
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(dbCampaignAttachModal.saveAsNew)}
+                    onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, saveAsNew: e.target.checked }))}
+                    disabled={dbCampaignAttachModal.busy}
+                  />
+                  <span>Modify and save as new</span>
+                </label>
+              ) : null}
               <label>
                 <span>Template name</span>
                 <input
@@ -28267,37 +28350,69 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   disabled={dbCampaignAttachModal.busy}
                 />
               </label>
-              <label className="checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={Boolean(dbCampaignAttachModal.launchNow)}
-                  onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, launchNow: e.target.checked }))}
+              <label>
+                <span>Send mode</span>
+                <select
+                  value={dbCampaignAttachModal.sendMode || "staggered"}
+                  onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, sendMode: e.target.value }))}
                   disabled={dbCampaignAttachModal.busy}
-                />
-                <span>Launch now from recruiter portal</span>
+                >
+                  <option value="staggered">Safe staggered</option>
+                  <option value="instant">Send in one go</option>
+                </select>
+              </label>
+              <label>
+                <span>Gap between emails (minutes)</span>
+                <select
+                  value={String(dbCampaignAttachModal.sendGapMinutes || "2")}
+                  onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, sendGapMinutes: e.target.value }))}
+                  disabled={dbCampaignAttachModal.busy || String(dbCampaignAttachModal.sendMode || "staggered") === "instant"}
+                >
+                  <option value="1">1 min</option>
+                  <option value="2">2 min</option>
+                  <option value="5">5 min</option>
+                  <option value="10">10 min</option>
+                </select>
+              </label>
+              <label>
+                <span>Daily cap</span>
+                <select
+                  value={String(dbCampaignAttachModal.dailyCap || "50")}
+                  onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, dailyCap: e.target.value }))}
+                  disabled={dbCampaignAttachModal.busy}
+                >
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="200">200</option>
+                </select>
               </label>
               <p className="muted full-span">Existing dropdown shows only recruiter-portal templates. Marketing-made campaigns are intentionally hidden here.</p>
             </div>
             <div className="button-row">
               <button
                 className="ghost-btn"
-                onClick={() => setDbCampaignAttachModal({
-                  open: false,
-                  templates: [],
-                  selectedTemplateId: "",
-                  busy: false,
-                  totalCandidates: 0,
-                  launchNow: true,
-                  campaignName: "",
-                  templateName: "",
-                  templateTag: "",
-                  templateSubject: "",
-                  templateBodyText: ""
-                })}
+                onClick={() => setDbCampaignAttachModal(createEmptyDbCampaignAttachModal())}
                 disabled={dbCampaignAttachModal.busy}
               >
                 Cancel
               </button>
+              <button
+                className="ghost-btn"
+                onClick={() => void saveCurrentDatabaseCampaignTemplate({ forceNew: false })}
+                disabled={dbCampaignAttachModal.busy || !String(dbCampaignAttachModal.templateName || "").trim() || !String(dbCampaignAttachModal.templateSubject || "").trim() || !String(dbCampaignAttachModal.templateBodyText || "").trim()}
+              >
+                Save template
+              </button>
+              {dbCampaignAttachModal.mode === "existing" ? (
+                <button
+                  className="ghost-btn"
+                  onClick={() => void saveCurrentDatabaseCampaignTemplate({ forceNew: true })}
+                  disabled={dbCampaignAttachModal.busy || !String(dbCampaignAttachModal.templateName || "").trim() || !String(dbCampaignAttachModal.templateSubject || "").trim() || !String(dbCampaignAttachModal.templateBodyText || "").trim()}
+                >
+                  Save as new
+                </button>
+              ) : null}
               <button
                 onClick={() => void confirmAttachCurrentDatabasePageToCampaign().catch((error) => {
                   setStatus("workspace", String(error?.message || error || "Failed to attach candidates."), "error");
@@ -28305,9 +28420,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 })}
                 disabled={dbCampaignAttachModal.busy || !String(dbCampaignAttachModal.templateName || "").trim() || !String(dbCampaignAttachModal.templateSubject || "").trim() || !String(dbCampaignAttachModal.templateBodyText || "").trim()}
               >
-                {dbCampaignAttachModal.busy
-                  ? "Processing..."
-                  : (dbCampaignAttachModal.launchNow ? "Save template + Launch now" : "Save template + Attach")}
+                {dbCampaignAttachModal.busy ? "Processing..." : "Send"}
               </button>
             </div>
           </div>
