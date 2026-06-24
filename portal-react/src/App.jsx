@@ -19311,7 +19311,7 @@ function PortalApp({ token, onLogout }) {
   async function loadMarketingBulkMailTemplates() {
     const currentUserId = String(state.user?.id || "").trim();
     const [campaignResult, templateResult] = await Promise.all([
-      api("/company/marketing/campaigns", token).catch(() => ({ items: [] })),
+      api("/company/marketing/campaigns?source=recruiter_portal", token).catch(() => ({ items: [] })),
       api("/company/marketing/templates", token).catch(() => ({ items: [] }))
     ]);
     const campaigns = (Array.isArray(campaignResult?.items) ? campaignResult.items : []).filter((item) => {
@@ -19440,6 +19440,7 @@ function PortalApp({ token, onLogout }) {
       const createdCampaign = await api("/company/marketing/campaigns", token, "POST", {
         name: campaignName,
         category: templateTag,
+        source: "recruiter_portal",
         senderUserId,
         sendGapMinutes: Number.isFinite(requestedGap) && requestedGap > 0 ? requestedGap : 2,
         dailyCap: Number.isFinite(requestedDailyCap) && requestedDailyCap > 0 ? requestedDailyCap : 50

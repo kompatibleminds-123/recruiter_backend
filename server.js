@@ -5240,8 +5240,8 @@ function buildLegacyMarketingCampaignOwnerFilter(actor = null) {
 }
 
 async function fetchMarketingCampaignRows(actor = null, {
-  selectWithCreatedBy = "id,name,category,status,sender_user_id,send_gap_minutes,daily_cap,updated_at,created_at,created_by",
-  selectLegacy = "id,name,category,status,sender_user_id,send_gap_minutes,daily_cap,updated_at,created_at",
+  selectWithCreatedBy = "id,name,category,status,source,sender_user_id,send_gap_minutes,daily_cap,updated_at,created_at,created_by",
+  selectLegacy = "id,name,category,status,source,sender_user_id,send_gap_minutes,daily_cap,updated_at,created_at",
   extraQuery = "",
   limit = 100
 } = {}) {
@@ -15659,8 +15659,11 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
+      const sourceFilter = String(requestUrl.searchParams.get("source") || "").trim();
+      const extraQueryParts = ["&order=updated_at.desc"];
+      if (sourceFilter) extraQueryParts.push(`&source=eq.${encodeURIComponent(sourceFilter)}`);
       const items = await fetchMarketingCampaignRows(actor, {
-        extraQuery: "&order=updated_at.desc",
+        extraQuery: extraQueryParts.join(""),
         limit: 100
       });
       const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
@@ -15708,6 +15711,7 @@ const server = http.createServer(async (req, res) => {
         company_id: actor.companyId,
         name: String(body.name || "").trim(),
         category: String(body.category || "").trim(),
+        source: String(body.source || "").trim() || "marketing_portal",
         status: "draft",
         sender_user_id: senderUserId,
         created_by: actor.id,
