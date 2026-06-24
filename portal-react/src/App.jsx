@@ -21858,9 +21858,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         };
       });
     }
-    if (candidateHasSmartChipSelection) {
-      void refreshCandidateSmartChipRows({ clearVisibleRows: true });
-    }
     setStatus(statusTarget, `Updated status for ${assessment?.candidateName || "candidate"}.`, "ok");
     if (options.closeModal !== false) setAssessmentStatusId("");
 
@@ -21888,6 +21885,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               screening_answers: nextScreeningAnswers
             }
           });
+        }
+        if (candidateHasSmartChipSelection) {
+          void refreshCandidateSmartChipRows({ clearVisibleRows: false });
         }
         void syncPostAssessmentMutation({ candidateId: linkedCandidateId }).catch(() => {});
         void refreshDashboardAfterAssessmentChange().catch(() => {});
