@@ -19309,11 +19309,16 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function loadMarketingBulkMailTemplates() {
+    const currentUserId = String(state.user?.id || "").trim();
     const [campaignResult, templateResult] = await Promise.all([
       api("/company/marketing/campaigns", token).catch(() => ({ items: [] })),
       api("/company/marketing/templates", token).catch(() => ({ items: [] }))
     ]);
-    const campaigns = Array.isArray(campaignResult?.items) ? campaignResult.items : [];
+    const campaigns = (Array.isArray(campaignResult?.items) ? campaignResult.items : []).filter((item) => {
+      const senderUserId = String(item?.sender_user_id || item?.senderUserId || "").trim();
+      if (!currentUserId) return true;
+      return senderUserId === currentUserId;
+    });
     const templates = Array.isArray(templateResult?.items) ? templateResult.items : [];
     const campaignMap = new Map(campaigns.map((item) => [String(item?.id || "").trim(), item]));
     return templates
@@ -19388,11 +19393,27 @@ function PortalApp({ token, onLogout }) {
       setStatus("workspace", "No candidates on current page to attach.", "error");
       return;
     }
-    const templates = await loadMarketingBulkMailTemplates();
-    const firstTemplate = templates[0] || null;
-    const nextState = applyDbCampaignModalTemplate(firstTemplate, candidateIds.length);
-    nextState.templates = templates;
-    setDbCampaignAttachModal(nextState);
+    setDbCampaignAttachModal({
+      ...createEmptyDbCampaignAttachModal(),
+      open: true,
+      busy: true,
+      busyMode: "loading",
+      totalCandidates: candidateIds.length,
+      senderUserId: String(marketingSenderOptions?.[0]?.id || state.user?.id || "").trim()
+    });
+    void loadMarketingBulkMailTemplates()
+      .then((templates) => {
+        const firstTemplate = templates[0] || null;
+        const nextState = applyDbCampaignModalTemplate(firstTemplate, candidateIds.length);
+        nextState.templates = templates;
+        nextState.busy = false;
+        nextState.busyMode = "";
+        setDbCampaignAttachModal(nextState);
+      })
+      .catch((error) => {
+        setDbCampaignAttachModal((current) => ({ ...current, busy: false, busyMode: "" }));
+        setStatus("workspace", String(error?.message || error || "Failed to load templates."), "error");
+      });
   }
 
   async function upsertCurrentDatabaseMarketingTemplate({ forceNew = false } = {}) {
@@ -19407,7 +19428,7 @@ function PortalApp({ token, onLogout }) {
     if (!campaignName) throw new Error("Campaign name is required.");
     if (!templateSubject) throw new Error("Template subject is required.");
     if (!templateBodyText) throw new Error("Template body is required.");
-    const shouldCreateNew = forceNew || modalMode !== "existing" || !selectedTemplateId || Boolean(dbCampaignAttachModal?.saveAsNew);
+    const shouldCreateNew = forceNew || modalMode !== "existing" || !selectedTemplateId;
     if (forceNew && selectedTemplate && isBulkMailTemplateUnchanged(selectedTemplate, { campaignName, templateTag, templateSubject, templateBodyText, senderUserId: dbCampaignAttachModal?.senderUserId, sendGapMinutes: dbCampaignAttachModal?.sendGapMinutes, dailyCap: dbCampaignAttachModal?.dailyCap })) {
       setStatus("workspace", "No changes detected. New copy was not created.", "ok");
       return { template: selectedTemplate, campaign: selectedTemplate, skippedDuplicate: true };
@@ -28666,17 +28687,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   disabled={dbCampaignAttachModal.busy}
                 />
               </label>
-              {dbCampaignAttachModal.mode === "existing" ? (
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(dbCampaignAttachModal.saveAsNew)}
-                    onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, saveAsNew: e.target.checked }))}
-                    disabled={dbCampaignAttachModal.busy}
-                  />
-                  <span>Modify and save as new</span>
-                </label>
-              ) : null}
               <label>
                 <span>Template tag (optional)</span>
                 <input
