@@ -7483,6 +7483,23 @@ function isDatabaseQuickChipRejectStatus(value) {
   return normalized === "screening reject" || normalized === "interview reject";
 }
 
+function formatDatabaseQuickJoinerDateText(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const ts = parseDateLike(raw);
+  if (!Number.isFinite(ts)) return raw;
+  try {
+    return new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "numeric",
+      month: "short",
+      year: "numeric"
+    }).format(new Date(ts));
+  } catch {
+    return raw;
+  }
+}
+
 function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], dateFrom = "", dateTo = "" } = {}) {
   const rowsByChip = createDatabaseQuickChipRowsBucket();
   const dateFromValue = String(dateFrom || "").trim();
@@ -7757,13 +7774,19 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
       });
     }
 
-    if (activeAssessment && noticeDays != null && noticeDays <= 15 && inDateRange(baseRow.dateOfJoining || updatedAt || interviewAt || convertedAt)) {
+    if (
+      activeAssessment
+      && assessmentStatus !== "joined"
+      && noticeDays != null
+      && noticeDays <= 15
+      && inDateRange(baseRow.dateOfJoining || updatedAt || interviewAt || convertedAt)
+    ) {
       rowsByChip.quick_joiners.push({
         ...baseRow,
         round: baseRow.status || "CV shared",
-        date: baseRow.dateOfJoining || updatedAt || interviewAt || convertedAt,
+        date: formatDatabaseQuickJoinerDateText(baseRow.dateOfJoining || updatedAt || interviewAt || convertedAt),
         sortDate: baseRow.dateOfJoining || updatedAt || interviewAt || convertedAt,
-        preserveDateText: Boolean(baseRow.dateOfJoining)
+        preserveDateText: true
       });
     }
     if (assessment && inToday(convertedAt) && inDateRange(convertedAt)) {
