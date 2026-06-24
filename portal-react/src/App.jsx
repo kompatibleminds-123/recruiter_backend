@@ -15732,21 +15732,34 @@ function PortalApp({ token, onLogout }) {
       const currentDraft = getCandidateDraftState(currentCandidate);
       nextPatch.screening_answers = currentDraft.jdScreeningAnswers || parsePortalObjectField(currentCandidate?.screening_answers || currentCandidate?.screeningAnswers);
     }
-    await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: nextPatch });
     const optimisticUpdatedAt = new Date().toISOString();
+    const optimisticCandidate = {
+      ...currentCandidate,
+      ...nextPatch,
+      updated_at: optimisticUpdatedAt,
+      updatedAt: optimisticUpdatedAt
+    };
     await syncPostCandidateMutation({
-      candidate: {
-        ...currentCandidate,
-        ...nextPatch,
-        updated_at: optimisticUpdatedAt,
-        updatedAt: optimisticUpdatedAt
-      },
+      candidate: optimisticCandidate,
       candidateId,
       eventType: "candidate_changed",
       source: "MUTATION_SUCCESS",
       refreshList: options?.refreshList === true,
       context: mutationContext
     });
+    const persistCandidatePatch = async () => {
+      await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: nextPatch });
+    };
+    if (options?.backgroundPersist === true) {
+      void persistCandidatePatch().catch((error) => {
+        const statusTarget = String(options?.statusTarget || "").trim();
+        if (statusTarget) {
+          setStatus(statusTarget, `Candidate sync failed: ${String(error?.message || error)}`, "error");
+        }
+      });
+      return;
+    }
+    await persistCandidatePatch();
     if (options?.refreshList === true) {
       return;
     }
@@ -16053,7 +16066,7 @@ function PortalApp({ token, onLogout }) {
         other_pointers: normalizeOtherPointersBody(quickUpdateText),
         skills: parsedSkills,
         ...extractedFieldPatch
-      });
+      }, { backgroundPersist: true, statusTarget: "quickUpdate" });
       setQuickUpdateMergedPatch(null);
       setQuickUpdateConflicts([]);
       setQuickUpdateParsedSummary(null);
@@ -16092,7 +16105,7 @@ function PortalApp({ token, onLogout }) {
         other_pointers: normalizeOtherPointersBody(quickUpdateText),
         skills: parsedSkills,
         ...extractedFieldPatch
-      });
+      }, { backgroundPersist: true, statusTarget: "quickUpdate" });
       const nextAssessment = {
         ...quickUpdateLinkedAssessment,
         candidateName: merged.name || quickUpdateLinkedAssessment.candidateName || quickUpdateCandidate.name || "",
@@ -16171,7 +16184,7 @@ function PortalApp({ token, onLogout }) {
       } else if (outcome !== "Call later") {
         candidatePatch.next_follow_up_at = "";
       }
-      await patchCandidateQuiet(quickUpdateCandidate.id, candidatePatch);
+      await patchCandidateQuiet(quickUpdateCandidate.id, candidatePatch, { backgroundPersist: true, statusTarget: "quickUpdate" });
       setQuickUpdateStatusText("");
       setQuickUpdateAttemptOutcome("");
       setQuickUpdateStatusAt("");
