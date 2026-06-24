@@ -30500,6 +30500,8 @@ function MarketingPortalApp({ token, onLogout }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed(`${SIDEBAR_PREF_KEY}:marketing`);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [workspaceUsers, setWorkspaceUsers] = useState([]);
 
   useEffect(() => {
     const path = String(location?.pathname || "");
@@ -30507,6 +30509,24 @@ function MarketingPortalApp({ token, onLogout }) {
       navigate("/marketing/prospects", { replace: true });
     }
   }, [location?.pathname, navigate]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const meEnvelope = await api("/auth/me", token).catch(() => null);
+        const usersEnvelope = await api("/company/users", token).catch(() => ({ users: [] }));
+        if (!active) return;
+        setCurrentUser(meEnvelope?.user || null);
+        setWorkspaceUsers(Array.isArray(usersEnvelope?.users) ? usersEnvelope.users : []);
+      } catch {
+        if (!active) return;
+        setCurrentUser(null);
+        setWorkspaceUsers([]);
+      }
+    })();
+    return () => { active = false; };
+  }, [token]);
 
   return (
     <div className={`app-shell${sidebarCollapsed ? " app-shell--sidebar-collapsed" : ""}`}>
@@ -30535,10 +30555,10 @@ function MarketingPortalApp({ token, onLogout }) {
       </aside>
       <main className="main-panel">
         <Routes>
-          <Route path="/marketing/prospects" element={<MarketingModulePage token={token} initialTab="prospects" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
-          <Route path="/marketing/templates" element={<MarketingModulePage token={token} initialTab="templates" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
-          <Route path="/marketing/campaigns" element={<MarketingModulePage token={token} initialTab="campaigns" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
-          <Route path="/marketing/queue" element={<MarketingModulePage token={token} initialTab="queue" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
+          <Route path="/marketing/prospects" element={<MarketingModulePage token={token} initialTab="prospects" showInternalTabs={false} currentUser={currentUser} users={workspaceUsers} />} />
+          <Route path="/marketing/templates" element={<MarketingModulePage token={token} initialTab="templates" showInternalTabs={false} currentUser={currentUser} users={workspaceUsers} />} />
+          <Route path="/marketing/campaigns" element={<MarketingModulePage token={token} initialTab="campaigns" showInternalTabs={false} currentUser={currentUser} users={workspaceUsers} />} />
+          <Route path="/marketing/queue" element={<MarketingModulePage token={token} initialTab="queue" showInternalTabs={false} currentUser={currentUser} users={workspaceUsers} />} />
           <Route path="/marketing-module" element={<Navigate to="/marketing/prospects" replace />} />
           <Route path="*" element={<Navigate to="/marketing/prospects" replace />} />
         </Routes>
