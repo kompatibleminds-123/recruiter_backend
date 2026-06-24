@@ -766,6 +766,10 @@ function sanitizeSharedExportPresetSettings(raw) {
     source.sheetImportMappingsByUser && typeof source.sheetImportMappingsByUser === "object"
       ? source.sheetImportMappingsByUser
       : {};
+  const rawRecruiterCampaignTemplatesByUser =
+    source.recruiterCampaignTemplatesByUser && typeof source.recruiterCampaignTemplatesByUser === "object"
+      ? source.recruiterCampaignTemplatesByUser
+      : {};
   const rawSheetImportLearnedAliases =
     source.sheetImportLearnedAliases && typeof source.sheetImportLearnedAliases === "object"
       ? source.sheetImportLearnedAliases
@@ -848,6 +852,41 @@ function sanitizeSharedExportPresetSettings(raw) {
       .filter(Boolean)
       .slice(0, 200);
     if (list.length) sheetImportLearnedAliases[safeField] = Array.from(new Set(list));
+  });
+  const normalizeRecruiterTemplate = (template, index = 0) => {
+    const item = template && typeof template === "object" ? template : {};
+    const name = String(item.name || item.label || `Template ${index + 1}`).trim();
+    const channelRaw = String(item.channel || "email").trim().toLowerCase();
+    const channel = channelRaw === "whatsapp" ? "whatsapp" : "email";
+    const subject = String(item.subject || "").trim();
+    const bodyText = String(item.bodyText || item.body_text || "").trim();
+    const bodyHtml = String(item.bodyHtml || item.body_html || "").trim();
+    const tag = String(item.tag || item.category || "").trim();
+    const id = String(item.id || `recruiter_template_${index + 1}`).trim();
+    return {
+      id,
+      name,
+      channel,
+      subject,
+      bodyText,
+      bodyHtml,
+      tag,
+      source: "recruiter_portal",
+      createdBy: String(item.createdBy || item.created_by || "").trim(),
+      updatedBy: String(item.updatedBy || item.updated_by || "").trim(),
+      createdAt: String(item.createdAt || item.created_at || "").trim(),
+      updatedAt: String(item.updatedAt || item.updated_at || "").trim()
+    };
+  };
+  const recruiterCampaignTemplatesByUser = {};
+  Object.entries(rawRecruiterCampaignTemplatesByUser).forEach(([userId, templates]) => {
+    const safeUserId = String(userId || "").trim();
+    if (!safeUserId) return;
+    const normalized = (Array.isArray(templates) ? templates : [])
+      .map((item, index) => normalizeRecruiterTemplate(item, index))
+      .filter((item) => item.id && item.name && item.bodyText)
+      .slice(0, 100);
+    if (normalized.length) recruiterCampaignTemplatesByUser[safeUserId] = normalized;
   });
   const defaultHeaderFields = [
     "candidate_name",
@@ -936,6 +975,7 @@ function sanitizeSharedExportPresetSettings(raw) {
       .slice(0, 12),
     sheetImportMappingsByUser,
     sheetImportLearnedAliases,
+    recruiterCampaignTemplatesByUser,
     companyWideShortcuts,
     personalShortcutsByUser,
     updatedAt: String(source.updatedAt || "").trim(),
@@ -3370,6 +3410,130 @@ async function saveCompanyPersonalShortcuts({ actorUserId, companyId, shortcuts 
   }], { conflict: "id", upsert: true });
   const saved = sanitizeSharedExportPresetSettings(rows?.[0]?.payload || rowPayload);
   return sanitizeShortcutMapForPersistence(saved?.personalShortcutsByUser?.[scopedUserId] || {});
+}
+
+async function getCompanyRecruiterCampaignTemplates({ companyId, userId }) {
+  const scopedCompanyId = String(companyId || "").trim();
+  const scopedUserId = String(userId || "").trim();
+  if (!scopedCompanyId || !scopedUserId) throw new Error("companyId and userId are required.");
+  const settings = await getCompanySharedExportPresets(scopedCompanyId).catch(() => ({}));
+  const map = settings?.recruiterCampaignTemplatesByUser && typeof settings.recruiterCampaignTemplatesByUser === "object"
+    ? settings.recruiterCampaignTemplatesByUser
+    : {};
+  return Array.isArray(map[scopedUserId]) ? map[scopedUserId] : [];
+}
+
+async function saveCompanyRecruiterCampaignTemplates({ actorUserId, companyId, templates }) {
+  if (!actorUserId || !companyId) throw new Error("actorUserId and companyId are required.");
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor) throw new Error("Authenticated recruiter not found for this company.");
+  const scopedCompanyId = String(companyId || "").trim();
+  const scopedUserId = String(actor.id || "").trim();
+  const existing = await getCompanySharedExportPresets(scopedCompanyId).catch(() => ({}));
+  const existingMap = existing?.recruiterCampaignTemplatesByUser && typeof existing.recruiterCampaignTemplatesByUser === "object"
+    ? { ...existing.recruiterCampaignTemplatesByUser }
+    : {};
+  const now = new Date().toISOString();
+  const safeTemplates = (Array.isArray(templates) ? templates : [])
+    .map((item, index) => {
+      const safe = item && typeof item === "object" ? item : {};
+      const bodyText = String(safe.bodyText || safe.body_text || "").trim();
+      const name = String(safe.name || safe.label || `Template ${index + 1}`).trim();
+      if (!name || !bodyText) return null;
+      const channelRaw = String(safe.channel || "email").trim().toLowerCase();
+      return {
+        id: String(safe.id || `recruiter_template_${index + 1}`).trim(),
+        name,
+        channel: channelRaw === "whatsapp" ? "whatsapp" : "email",
+        subject: String(safe.subject || "").trim(),
+        bodyText,
+        bodyHtml: String(safe.bodyHtml || safe.body_html || "").trim(),
+        tag: String(safe.tag || safe.category || "").trim(),
+        source: "recruiter_portal",
+        createdBy: String(safe.createdBy || safe.created_by || actor.email || actor.id || "").trim(),
+        updatedBy: String(actor.email || actor.id || "").trim(),
+        createdAt: String(safe.createdAt || safe.created_at || now).trim(),
+        updatedAt: now
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 100);
+  if (safeTemplates.length) existingMap[scopedUserId] = safeTemplates;
+  else delete existingMap[scopedUserId];
+  const payload = {
+    ...existing,
+    recruiterCampaignTemplatesByUser: existingMap
+  };
+  const saved = await saveCompanySharedExportPresets({
+    actorUserId: actor.id,
+    companyId: scopedCompanyId,
+    settings: {
+      ...payload,
+      updatedAt: now,
+      updatedBy: actor.email || actor.id || ""
+    }
+  }).catch(async (error) => {
+    if (!/Only an admin can manage shared export presets/i.test(String(error?.message || error))) throw error;
+    // Fallback path for non-admin recruiters: update the existing system row directly, preserving current payload.
+    if (!cfg().on) {
+      const store = readStore();
+      store.jobs = Array.isArray(store.jobs) ? store.jobs : [];
+      const ix = store.jobs.findIndex((j) => j.companyId === scopedCompanyId && isSharedExportPresetRow(j));
+      const basePayload = sanitizeSharedExportPresetSettings(payload);
+      const next = {
+        id: SHARED_EXPORT_PRESET_ROW_ID,
+        companyId: scopedCompanyId,
+        title: SHARED_EXPORT_PRESET_ROW_TITLE,
+        clientName: "__system__",
+        jobDescription: "Shared export presets",
+        mustHaveSkills: "",
+        redFlags: "",
+        recruiterNotes: "",
+        standardQuestions: "",
+        jdShortcuts: "",
+        createdAt: ix >= 0 ? store.jobs[ix].createdAt : now,
+        updatedAt: now,
+        updatedBy: actor.email,
+        payload: {
+          ...basePayload,
+          id: SHARED_EXPORT_PRESET_ROW_ID,
+          title: SHARED_EXPORT_PRESET_ROW_TITLE,
+          companyId: scopedCompanyId,
+          updatedAt: now,
+          updatedBy: actor.email
+        }
+      };
+      if (ix >= 0) store.jobs[ix] = next; else store.jobs.push(next);
+      writeStore(store);
+      return sanitizeSharedExportPresetSettings(next.payload);
+    }
+    const rowPayload = {
+      ...sanitizeSharedExportPresetSettings(payload),
+      id: SHARED_EXPORT_PRESET_ROW_ID,
+      title: SHARED_EXPORT_PRESET_ROW_TITLE,
+      companyId: scopedCompanyId,
+      updatedAt: now,
+      updatedBy: actor.email
+    };
+    const rows = await sbIns("company_jobs", [{
+      id: systemJobRowId(scopedCompanyId, SHARED_EXPORT_PRESET_ROW_ID),
+      company_id: scopedCompanyId,
+      title: SHARED_EXPORT_PRESET_ROW_TITLE,
+      client_name: "__system__",
+      job_description: "Shared export presets",
+      must_have_skills: "",
+      red_flags: "",
+      recruiter_notes: "",
+      standard_questions: "",
+      jd_shortcuts: "",
+      created_at: now,
+      updated_at: now,
+      updated_by: actor.email,
+      payload: rowPayload
+    }], { conflict: "id", upsert: true });
+    return sanitizeSharedExportPresetSettings(rows?.[0]?.payload || rowPayload);
+  });
+  return Array.isArray(saved?.recruiterCampaignTemplatesByUser?.[scopedUserId]) ? saved.recruiterCampaignTemplatesByUser[scopedUserId] : [];
 }
 async function getCompanyClientUsers(companyId) {
   if (!companyId) throw new Error("companyId is required.");
@@ -5998,6 +6162,7 @@ module.exports = {
   getCompanySharedExportPresets,
   getCompanyEmailThreadByKey,
   getCompanyPersonalShortcuts,
+  getCompanyRecruiterCampaignTemplates,
   getPublicCompanyJob,
   getPublicCompanyJobsBySlug,
   setCompanyExtensionPlan,
@@ -6057,6 +6222,7 @@ module.exports = {
   saveCompanySharedExportPresets,
   upsertCompanyEmailThread,
   saveCompanyPersonalShortcuts,
+  saveCompanyRecruiterCampaignTemplates,
   setCompanyApplicantIntakeSecret,
   updatePlatformCompany,
   searchAssessments,

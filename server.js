@@ -59,6 +59,7 @@ const {
   getCompanySharedExportPresets,
   getCompanyEmailThreadByKey,
   getCompanyPersonalShortcuts,
+  getCompanyRecruiterCampaignTemplates,
   getPublicCompanyJob,
   getPublicCompanyJobsBySlug,
   listCompanyEmployees,
@@ -125,6 +126,7 @@ const {
   listCompanyAuditLogs,
   upsertCompanyEmailThread,
   saveCompanyPersonalShortcuts,
+  saveCompanyRecruiterCampaignTemplates,
   setCompanyExtensionPlan,
   setCompanyApplicantIntakeSecret,
   verifyUserEmail
@@ -5190,6 +5192,26 @@ function normalizeMarketingTemplateRow(row = null) {
 
 function isAdminActor(actor = null) {
   return String(actor?.role || "").trim().toLowerCase() === "admin";
+}
+
+function normalizeRecruiterCampaignTemplateInput(raw = {}, actor = null) {
+  const item = raw && typeof raw === "object" ? raw : {};
+  const channelRaw = String(item.channel || "email").trim().toLowerCase();
+  const channel = channelRaw === "whatsapp" ? "whatsapp" : "email";
+  return {
+    id: String(item.id || crypto.randomUUID()).trim(),
+    name: String(item.name || "").trim(),
+    channel,
+    subject: String(item.subject || "").trim(),
+    bodyText: String(item.bodyText || item.body_text || "").trim(),
+    bodyHtml: String(item.bodyHtml || item.body_html || "").trim(),
+    tag: String(item.tag || item.category || "").trim(),
+    source: "recruiter_portal",
+    createdBy: String(item.createdBy || item.created_by || actor?.email || actor?.id || "").trim(),
+    updatedBy: String(actor?.email || actor?.id || item.updatedBy || item.updated_by || "").trim(),
+    createdAt: String(item.createdAt || item.created_at || toIsoNow()).trim(),
+    updatedAt: toIsoNow()
+  };
 }
 
 function buildMarketingOwnerFilter(actor = null, columnName = "created_by") {
@@ -16313,6 +16335,76 @@ const server = http.createServer(async (req, res) => {
         settings
       });
       sendJson(res, 200, { ok: true, result: settings });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/company/recruiter-campaign-templates") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const items = await getCompanyRecruiterCampaignTemplates({ companyId: actor.companyId, userId: actor.id });
+      sendJson(res, 200, { ok: true, result: { items: Array.isArray(items) ? items : [] } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/recruiter-campaign-templates") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const current = await getCompanyRecruiterCampaignTemplates({ companyId: actor.companyId, userId: actor.id }).catch(() => []);
+      const nextTemplate = normalizeRecruiterCampaignTemplateInput(body, actor);
+      if (!nextTemplate.name) throw new Error("Template name is required.");
+      if (!nextTemplate.bodyText) throw new Error("Template body is required.");
+      if (nextTemplate.channel === "email" && !nextTemplate.subject) throw new Error("Template subject is required for email.");
+      const nextItems = [...(Array.isArray(current) ? current : []), nextTemplate];
+      const saved = await saveCompanyRecruiterCampaignTemplates({ actorUserId: actor.id, companyId: actor.companyId, templates: nextItems });
+      const result = (Array.isArray(saved) ? saved : []).find((item) => String(item?.id || "") === nextTemplate.id) || nextTemplate;
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "PATCH" && /^\/company\/recruiter-campaign-templates\/[^/]+$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const templateId = String(requestUrl.pathname.replace(/^\/company\/recruiter-campaign-templates\//, "")).trim();
+      if (!templateId) throw new Error("Template id is required.");
+      const body = await readJsonBody(req);
+      const current = await getCompanyRecruiterCampaignTemplates({ companyId: actor.companyId, userId: actor.id }).catch(() => []);
+      const nextItems = (Array.isArray(current) ? current : []).map((item) => {
+        if (String(item?.id || "") !== templateId) return item;
+        return normalizeRecruiterCampaignTemplateInput({ ...item, ...body, id: templateId, createdAt: item?.createdAt, createdBy: item?.createdBy }, actor);
+      });
+      const hit = nextItems.find((item) => String(item?.id || "") === templateId);
+      if (!hit) throw new Error("Template not found.");
+      if (!hit.name) throw new Error("Template name is required.");
+      if (!hit.bodyText) throw new Error("Template body is required.");
+      if (hit.channel === "email" && !hit.subject) throw new Error("Template subject is required for email.");
+      const saved = await saveCompanyRecruiterCampaignTemplates({ actorUserId: actor.id, companyId: actor.companyId, templates: nextItems });
+      const result = (Array.isArray(saved) ? saved : []).find((item) => String(item?.id || "") === templateId) || hit;
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && /^\/company\/recruiter-campaign-templates\/[^/]+$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const templateId = String(requestUrl.pathname.replace(/^\/company\/recruiter-campaign-templates\//, "")).trim();
+      if (!templateId) throw new Error("Template id is required.");
+      const current = await getCompanyRecruiterCampaignTemplates({ companyId: actor.companyId, userId: actor.id }).catch(() => []);
+      const nextItems = (Array.isArray(current) ? current : []).filter((item) => String(item?.id || "") !== templateId);
+      await saveCompanyRecruiterCampaignTemplates({ actorUserId: actor.id, companyId: actor.companyId, templates: nextItems });
+      sendJson(res, 200, { ok: true, result: { deleted: true, id: templateId } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
