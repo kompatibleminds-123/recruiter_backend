@@ -5221,6 +5221,43 @@ function buildMarketingOwnerFilter(actor = null, columnName = "created_by") {
   return `&${columnName}=eq.${actorId}`;
 }
 
+function isMissingMarketingCreatedByColumnError(error) {
+  const message = String(error?.message || error || "").trim().toLowerCase();
+  if (!message) return false;
+  return message.includes("created_by") && (
+    message.includes("column") ||
+    message.includes("schema cache") ||
+    message.includes("does not exist") ||
+    message.includes("could not find")
+  );
+}
+
+function buildLegacyMarketingCampaignOwnerFilter(actor = null) {
+  if (isAdminActor(actor)) return "";
+  const actorId = encodeURIComponent(String(actor?.id || "").trim());
+  if (!actorId) return "&id=eq.__no_actor__";
+  return `&sender_user_id=eq.${actorId}`;
+}
+
+async function fetchMarketingCampaignRows(actor = null, {
+  selectWithCreatedBy = "id,name,category,status,sender_user_id,send_gap_minutes,daily_cap,updated_at,created_at,created_by",
+  selectLegacy = "id,name,category,status,sender_user_id,send_gap_minutes,daily_cap,updated_at,created_at",
+  extraQuery = "",
+  limit = 100
+} = {}) {
+  const companyId = encodeURIComponent(String(actor?.companyId || "").trim());
+  const safeExtra = String(extraQuery || "").trim();
+  const safeLimit = Math.max(1, Number(limit || 100));
+  const primaryQuery = `?select=${selectWithCreatedBy}&company_id=eq.${companyId}${isAdminActor(actor) ? "" : `&or=(created_by.eq.${encodeURIComponent(String(actor?.id || "").trim())},and(created_by.is.null,sender_user_id.eq.${encodeURIComponent(String(actor?.id || "").trim())}))`}${safeExtra}&limit=${safeLimit}`;
+  try {
+    return await supabaseTableFetch("marketing_campaigns", primaryQuery);
+  } catch (error) {
+    if (!isMissingMarketingCreatedByColumnError(error)) throw error;
+    const legacyQuery = `?select=${selectLegacy}&company_id=eq.${companyId}${buildLegacyMarketingCampaignOwnerFilter(actor)}${safeExtra}&limit=${safeLimit}`;
+    return await supabaseTableFetch("marketing_campaigns", legacyQuery);
+  }
+}
+
 async function resolveAllowedMarketingSenderUserId(actor = null, requestedSenderUserId = "") {
   const actorId = String(actor?.id || "").trim();
   const companyId = String(actor?.companyId || "").trim();
@@ -5243,15 +5280,27 @@ async function getMarketingCampaignForActor(actor, campaignId = "") {
   const safeCampaignId = encodeURIComponent(String(campaignId || "").trim());
   const safeCompanyId = encodeURIComponent(String(actor?.companyId || "").trim());
   if (!safeCampaignId || !safeCompanyId) return null;
-  const rows = await supabaseTableFetch(
-    "marketing_campaigns",
-    `?select=id,sender_user_id,created_by,company_id&company_id=eq.${safeCompanyId}&id=eq.${safeCampaignId}&limit=1`
-  ).catch(() => []);
+  let rows = [];
+  try {
+    rows = await supabaseTableFetch(
+      "marketing_campaigns",
+      `?select=id,sender_user_id,created_by,company_id&company_id=eq.${safeCompanyId}&id=eq.${safeCampaignId}&limit=1`
+    );
+  } catch (error) {
+    if (!isMissingMarketingCreatedByColumnError(error)) throw error;
+    rows = await supabaseTableFetch(
+      "marketing_campaigns",
+      `?select=id,sender_user_id,company_id&company_id=eq.${safeCompanyId}&id=eq.${safeCampaignId}&limit=1`
+    ).catch(() => []);
+  }
   const campaign = Array.isArray(rows) && rows.length ? rows[0] : null;
   if (!campaign) return null;
   if (isAdminActor(actor)) return campaign;
-  const ownerId = String(campaign?.created_by || campaign?.sender_user_id || "").trim();
-  if (ownerId && ownerId === String(actor?.id || "").trim()) return campaign;
+  const actorId = String(actor?.id || "").trim();
+  const createdBy = String(campaign?.created_by || "").trim();
+  const senderUserId = String(campaign?.sender_user_id || "").trim();
+  if (createdBy && createdBy === actorId) return campaign;
+  if (!createdBy && senderUserId && senderUserId === actorId) return campaign;
   return null;
 }
 
@@ -15165,8 +15214,6 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
-      const isAdmin = isAdminActor(actor);
-      const ownerUserId = encodeURIComponent(String(actor.id || "").trim());
       const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
       const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
       const fromIso = dateFrom ? `${dateFrom}T00:00:00.000Z` : "";
@@ -15179,16 +15226,17 @@ const server = http.createServer(async (req, res) => {
         fromIso ? `event_at=gte.${encodeURIComponent(fromIso)}` : "",
         toIso ? `event_at=lte.${encodeURIComponent(toIso)}` : ""
       ].filter(Boolean).join("&");
-      const campaigns = await supabaseTableFetch(
-        "marketing_campaigns",
-        `?select=id,status&company_id=eq.${companyId}${isAdmin ? "" : `&created_by=eq.${ownerUserId}`}&limit=5000`
-      );
+      const campaigns = await fetchMarketingCampaignRows(actor, {
+        selectWithCreatedBy: "id,status,created_by,sender_user_id,updated_at,created_at",
+        selectLegacy: "id,status,sender_user_id,updated_at,created_at",
+        limit: 5000
+      });
       const campaignIds = (Array.isArray(campaigns) ? campaigns : []).map((item) => String(item?.id || "").trim()).filter(Boolean);
       const campaignInClause = campaignIds.map((id) => `"${id.replace(/"/g, "")}"`).join(",");
       const [prospects, queue, events] = await Promise.all([
         supabaseTableFetch(
           "marketing_prospects",
-          `?select=id,status&company_id=eq.${companyId}${isAdmin ? "" : `&created_by=eq.${ownerUserId}`}&source=neq.db_campaign_only&limit=5000`
+          `?select=id,status&company_id=eq.${companyId}${buildMarketingOwnerFilter(actor, "created_by")}&source=neq.db_campaign_only&limit=5000`
         ),
         campaignIds.length
           ? supabaseTableFetch("marketing_campaign_prospects", `?select=id,state&company_id=eq.${companyId}&campaign_id=in.(${campaignInClause})${queueDateFilters ? `&${queueDateFilters}` : ""}&limit=5000`)
@@ -15611,7 +15659,10 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
-      const items = await supabaseTableFetch("marketing_campaigns", `?select=id,name,category,status,sender_user_id,send_gap_minutes,daily_cap,updated_at,created_at,created_by&company_id=eq.${companyId}${buildMarketingOwnerFilter(actor, "created_by")}&order=updated_at.desc&limit=100`);
+      const items = await fetchMarketingCampaignRows(actor, {
+        extraQuery: "&order=updated_at.desc",
+        limit: 100
+      });
       const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
       const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
       const fromIso = dateFrom ? `${dateFrom}T00:00:00.000Z` : "";
@@ -15666,7 +15717,15 @@ const server = http.createServer(async (req, res) => {
         updated_at: now
       };
       if (!item.name) throw new Error("Campaign name is required.");
-      const saved = await supabaseTableFetch("marketing_campaigns", "?select=*", { method: "POST", body: item, prefer: "return=representation" });
+      let saved;
+      try {
+        saved = await supabaseTableFetch("marketing_campaigns", "?select=*", { method: "POST", body: item, prefer: "return=representation" });
+      } catch (error) {
+        if (!isMissingMarketingCreatedByColumnError(error)) throw error;
+        const legacyItem = { ...item };
+        delete legacyItem.created_by;
+        saved = await supabaseTableFetch("marketing_campaigns", "?select=*", { method: "POST", body: legacyItem, prefer: "return=representation" });
+      }
       sendJson(res, 200, { ok: true, result: (Array.isArray(saved) ? saved[0] : saved) || item });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
@@ -15694,9 +15753,11 @@ const server = http.createServer(async (req, res) => {
       };
       Object.keys(patch).forEach((key) => patch[key] === undefined && delete patch[key]);
       if (!Object.keys(patch).length) throw new Error("Nothing to update.");
+      const campaignAccess = await getMarketingCampaignForActor(actor, campaignId);
+      if (!campaignAccess) throw new Error("Campaign not found or not accessible.");
       const updated = await supabaseTableFetch(
         "marketing_campaigns",
-        `?id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${encodeURIComponent(actor.companyId)}${buildMarketingOwnerFilter(actor, "created_by")}&select=*`,
+        `?id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=*`,
         { method: "PATCH", body: patch, prefer: "return=representation" }
       );
       sendJson(res, 200, { ok: true, result: Array.isArray(updated) && updated.length ? updated[0] : null });
@@ -15711,6 +15772,8 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const campaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "")).trim();
       if (!campaignId) throw new Error("Campaign id is required.");
+      const campaignAccess = await getMarketingCampaignForActor(actor, campaignId);
+      if (!campaignAccess) throw new Error("Campaign not found or not accessible.");
       await supabaseTableFetch(
         "marketing_campaign_prospects",
         `?campaign_id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=id`,
@@ -15728,7 +15791,7 @@ const server = http.createServer(async (req, res) => {
       );
       await supabaseTableFetch(
         "marketing_campaigns",
-        `?id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${encodeURIComponent(actor.companyId)}${buildMarketingOwnerFilter(actor, "created_by")}&select=id`,
+        `?id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=id`,
         { method: "DELETE", prefer: "return=minimal" }
       );
       sendJson(res, 200, { ok: true, result: { deleted: true } });
