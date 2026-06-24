@@ -6118,6 +6118,7 @@ function parseExperienceToYears(value) {
 function parseNoticePeriodToDays(value) {
   const raw = String(value || "").trim().toLowerCase();
   if (!raw) return null;
+  if (/\bimmediate\b\s*(?:\/|-|or)\s*\d+\s*days?\b/.test(raw)) return 0;
   if (/immediate|immediately|serving notice|available now/.test(raw)) return 0;
   if (/\b(lwd|doj)\b/.test(raw) && /\bnext week\b/.test(raw)) return 7;
   if (/(less than|under|within)\s*15\s*days?/.test(raw) || /<=\s*15\s*days?/.test(raw)) return 15;
@@ -7483,23 +7484,6 @@ function isDatabaseQuickChipRejectStatus(value) {
   return normalized === "screening reject" || normalized === "interview reject";
 }
 
-function formatDatabaseQuickJoinerDateText(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-  const ts = parseDateLike(raw);
-  if (!Number.isFinite(ts)) return raw;
-  try {
-    return new Intl.DateTimeFormat("en-IN", {
-      timeZone: "Asia/Kolkata",
-      day: "numeric",
-      month: "short",
-      year: "numeric"
-    }).format(new Date(ts));
-  } catch {
-    return raw;
-  }
-}
-
 function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], dateFrom = "", dateTo = "" } = {}) {
   const rowsByChip = createDatabaseQuickChipRowsBucket();
   const dateFromValue = String(dateFrom || "").trim();
@@ -7616,6 +7600,17 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
       currentCtc: String(assessment?.currentCtc || assessment?.current_ctc || item?.currentCtc || item?.current_ctc || "").trim(),
       expectedCtc: String(assessment?.expectedCtc || assessment?.expected_ctc || item?.expectedCtc || item?.expected_ctc || "").trim(),
       notice: String(assessment?.noticePeriod || assessment?.notice_period || item?.noticePeriod || item?.notice_period || "").trim(),
+      rawJoinerText: String(
+        assessment?.lwdOrDoj
+        || assessment?.lwd_or_doj
+        || assessment?.offerDoj
+        || assessment?.offer_doj
+        || assessment?.payload?.lwdOrDoj
+        || assessment?.payload?.lwd_or_doj
+        || item?.lwdOrDoj
+        || item?.lwd_or_doj
+        || ""
+      ).trim(),
       offerAmount: String(
         assessment?.offerAmount
         || assessment?.offer_amount
@@ -7781,11 +7776,21 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
       && noticeDays <= 15
       && inDateRange(baseRow.dateOfJoining || updatedAt || interviewAt || convertedAt)
     ) {
+      const quickJoinerDisplayText = String(
+        assessment?.noticePeriod
+        || assessment?.notice_period
+        || item?.noticePeriod
+        || item?.notice_period
+        || baseRow.notice
+        || baseRow.rawJoinerText
+        || baseRow.dateOfJoining
+        || ""
+      ).trim();
       rowsByChip.quick_joiners.push({
         ...baseRow,
         round: baseRow.status || "CV shared",
-        date: formatDatabaseQuickJoinerDateText(baseRow.dateOfJoining || updatedAt || interviewAt || convertedAt),
-        sortDate: baseRow.dateOfJoining || updatedAt || interviewAt || convertedAt,
+        date: quickJoinerDisplayText,
+        sortDate: updatedAt || interviewAt || convertedAt || quickJoinerDisplayText,
         preserveDateText: true
       });
     }
