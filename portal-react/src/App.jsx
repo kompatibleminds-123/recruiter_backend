@@ -24121,7 +24121,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                   <thead>
                                     <tr>
                                       <th>Candidate</th>
-                                      <th>Round / Status</th>
+                                      <th>{
+                                        chip.id === "interview_history" || chip.id === "aligned_interviews"
+                                          ? "Round / Status"
+                                          : "Current status"
+                                      }</th>
                                       <th>{
                                         chip.id === "joined_candidates"
                                           ? "Date of Joining"
