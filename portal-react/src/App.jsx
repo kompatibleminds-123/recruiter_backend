@@ -7317,7 +7317,7 @@ function compactDashboardAgendaItem(item = {}) {
   };
 }
 
-function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs = true }) {
+function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs = true, currentUser = null, users = [] }) {
   const location = useLocation();
   const forcedCampaignIdFromUrl = useMemo(() => {
     const params = new URLSearchParams(String(location?.search || ""));
@@ -7415,6 +7415,48 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         : [String(item?.category || "").trim()].filter(Boolean)
     ))
   ]));
+  const marketingSenderOptions = useMemo(() => {
+    const currentUserId = String(currentUser?.id || "").trim();
+    const currentUserEmail = String(currentUser?.email || "").trim();
+    const currentUserName = String(currentUser?.name || "").trim() || currentUserEmail || "Logged in user";
+    const adminUser = (Array.isArray(users) ? users : []).find((item) => String(item?.role || "").trim().toLowerCase() === "admin") || null;
+    const options = [];
+    if (currentUserId) {
+      options.push({
+        id: currentUserId,
+        label: `My email${currentUserEmail ? ` (${currentUserEmail})` : ""}`,
+        kind: "self"
+      });
+    }
+    const adminId = String(adminUser?.id || "").trim();
+    const adminEmail = String(adminUser?.email || "").trim();
+    if (adminId && adminId !== currentUserId) {
+      options.push({
+        id: adminId,
+        label: `Admin email${adminEmail ? ` (${adminEmail})` : ""}`,
+        kind: "admin"
+      });
+    } else if (!options.length && adminId) {
+      options.push({
+        id: adminId,
+        label: `Admin email${adminEmail ? ` (${adminEmail})` : ""}`,
+        kind: "admin"
+      });
+    } else if (!options.length && currentUserId) {
+      options.push({
+        id: currentUserId,
+        label: currentUserName,
+        kind: "self"
+      });
+    }
+    return options;
+  }, [currentUser, users]);
+
+  useEffect(() => {
+    const defaultSenderId = String(marketingSenderOptions?.[0]?.id || "").trim();
+    if (!defaultSenderId) return;
+    setCampaignDraft((current) => current?.senderUserId ? current : { ...current, senderUserId: defaultSenderId });
+  }, [marketingSenderOptions]);
 
   useEffect(() => {
     try {
@@ -7979,14 +8021,14 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       category: String(item.category || ""),
       sendGapMinutes: Number(item.send_gap_minutes || 5),
       dailyCap: Number(item.daily_cap || 50),
-      senderUserId: String(item.sender_user_id || marketingSenderOptions?.[0]?.id || state.user?.id || "").trim()
+      senderUserId: String(item.sender_user_id || marketingSenderOptions?.[0]?.id || currentUser?.id || "").trim()
     });
     setSelectedCampaignId(String(item.id || ""));
   }
 
   function cancelCampaignEdit() {
     setEditingCampaignId("");
-    setCampaignDraft({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50, senderUserId: String(marketingSenderOptions?.[0]?.id || state.user?.id || "").trim() });
+    setCampaignDraft({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50, senderUserId: String(marketingSenderOptions?.[0]?.id || currentUser?.id || "").trim() });
   }
 
   function startTemplateEdit(item) {
@@ -8831,7 +8873,6 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     const defaultSenderId = String(marketingSenderOptions?.[0]?.id || "").trim();
     if (!defaultSenderId) return;
-    setCampaignDraft((current) => current?.senderUserId ? current : { ...current, senderUserId: defaultSenderId });
     setDbCampaignAttachModal((current) => current?.senderUserId ? current : { ...current, senderUserId: defaultSenderId });
   }, [marketingSenderOptions]);
   const [showExtensionPrompt, setShowExtensionPrompt] = useState(false);
@@ -28041,11 +28082,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             <Navigate to="/payroll/runs" replace />
           } />
 
-          <Route path="/marketing" element={<MarketingModulePage token={token} />} />
-          <Route path="/marketing/prospects" element={<MarketingModulePage token={token} initialTab="prospects" showInternalTabs={false} />} />
-          <Route path="/marketing/templates" element={<MarketingModulePage token={token} initialTab="templates" showInternalTabs={false} />} />
-          <Route path="/marketing/campaigns" element={<MarketingModulePage token={token} initialTab="campaigns" showInternalTabs={false} />} />
-          <Route path="/marketing/queue" element={<MarketingModulePage token={token} initialTab="queue" showInternalTabs={false} />} />
+          <Route path="/marketing" element={<MarketingModulePage token={token} currentUser={state.user} users={state.users} />} />
+          <Route path="/marketing/prospects" element={<MarketingModulePage token={token} initialTab="prospects" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
+          <Route path="/marketing/templates" element={<MarketingModulePage token={token} initialTab="templates" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
+          <Route path="/marketing/campaigns" element={<MarketingModulePage token={token} initialTab="campaigns" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
+          <Route path="/marketing/queue" element={<MarketingModulePage token={token} initialTab="queue" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
           <Route path="/marketing-module" element={<Navigate to="/marketing" replace />} />
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
@@ -30494,10 +30535,10 @@ function MarketingPortalApp({ token, onLogout }) {
       </aside>
       <main className="main-panel">
         <Routes>
-          <Route path="/marketing/prospects" element={<MarketingModulePage token={token} initialTab="prospects" showInternalTabs={false} />} />
-          <Route path="/marketing/templates" element={<MarketingModulePage token={token} initialTab="templates" showInternalTabs={false} />} />
-          <Route path="/marketing/campaigns" element={<MarketingModulePage token={token} initialTab="campaigns" showInternalTabs={false} />} />
-          <Route path="/marketing/queue" element={<MarketingModulePage token={token} initialTab="queue" showInternalTabs={false} />} />
+          <Route path="/marketing/prospects" element={<MarketingModulePage token={token} initialTab="prospects" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
+          <Route path="/marketing/templates" element={<MarketingModulePage token={token} initialTab="templates" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
+          <Route path="/marketing/campaigns" element={<MarketingModulePage token={token} initialTab="campaigns" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
+          <Route path="/marketing/queue" element={<MarketingModulePage token={token} initialTab="queue" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
           <Route path="/marketing-module" element={<Navigate to="/marketing/prospects" replace />} />
           <Route path="*" element={<Navigate to="/marketing/prospects" replace />} />
         </Routes>
