@@ -4734,137 +4734,102 @@ button:focus-visible {
   }
 }
 
-/* ---------- Tablet and narrow landscape: use mobile-style stacked funnel only ---------- */
+/* ---------- Tablet and narrow landscape: keep desktop layout and allow clean horizontal scroll ---------- */
 @media (min-width: 769px) and (max-width: 1400px) {
-  body {
-    font-size: 14px;
-  }
-
   .content {
     padding: 1rem;
-    gap: 0.9rem;
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
   }
 
-  .panel,
-  .item-card,
-  .overlay-card,
-  .settings-subsection,
-  .candidate-filter-card {
-    padding: 0.9rem;
-  }
-
-  button {
-    padding: 0.56rem 0.82rem;
-    font-size: 0.88rem;
-  }
-
-  input,
-  select,
-  textarea {
-    padding: 0.6rem 0.78rem;
-    font-size: 0.88rem;
-  }
-
-  .brand h1,
-  .workspace-header h1,
-  .auth-card h1 {
-    font-size: 1.5rem;
-  }
-
-  .item-card h3,
-  .database-result-row__identity h3,
-  .candidate-sheet__head h3,
-  .assessment-placard__candidate-name {
-    font-size: 0.94rem;
-    line-height: 1.24;
-    overflow-wrap: anywhere;
-  }
-
-  .assessment-placard__role-title,
-  .database-result-row__role,
-  .candidate-sheet__head .muted {
-    font-size: 0.86rem;
-    line-height: 1.24;
-    overflow-wrap: anywhere;
-  }
-
-  .metric-label,
-  .metric-card .metric-label,
-  .captured-metric-row .metric-label,
-  .dashboard-snake-card__label,
-  .dashboard-snake-connector__label,
-  .candidate-sheet__kpi-label {
-    font-size: 0.64rem;
-    line-height: 1.12;
-    letter-spacing: 0.05em;
-    white-space: normal;
-    overflow-wrap: anywhere;
-  }
-
-  .metric-value,
-  .metric-card .metric-value,
-  .captured-metric-row .metric-value,
-  .dashboard-snake-card__value,
-  .dashboard-funnel-step__value,
-  .candidate-sheet__kpi-value {
-    font-size: 1.08rem;
-    line-height: 1.08;
-  }
-
-  .dashboard-snake-card {
-    padding: 0.85rem 0.95rem;
-  }
-
-  .dashboard-funnel-step__icon,
-  .dashboard-snake-card__icon {
-    transform: scale(0.92);
-    transform-origin: left center;
-  }
-
-  .nav-btn,
-  .chip,
-  .pill,
-  .copy-preset-control,
-  .toolbar > * {
+  .dashboard-funnel-shell,
+  .dashboard-funnel-toolbar,
+  .dashboard-funnel-filters,
+  .candidate-common-filter-card,
+  .candidate-filter-card,
+  .candidate-search-content,
+  .database-results-toolbar,
+  .captured-filter-grid,
+  .dashboard-table,
+  .table-wrap,
+  .candidate-smart-table-wrap {
     min-width: 0;
   }
 
-  .toolbar,
-  .chip-row,
-  .button-row,
-  .database-results-toolbar,
-  .captured-copy-row,
-  .database-result-row__actions,
-  .candidate-sheet__head-meta {
-    gap: 0.45rem;
-  }
-
-  .copy-preset-control span,
-  .nav-section__label,
-  .brand-kicker,
-  .section-kicker {
-    font-size: 0.66rem;
-  }
-
-  .database-result-row__stats strong,
-  .database-result-row__stats span,
-  .candidate-sheet__value,
-  .assessment-placard__grid strong {
-    overflow-wrap: anywhere;
-  }
-
   .dashboard-snake-funnel {
-    grid-template-columns: 1fr;
-    gap: 0.85rem;
+    grid-template-columns:
+      minmax(168px, 168px) 64px
+      minmax(168px, 168px) 64px
+      minmax(168px, 168px) 64px
+      minmax(168px, 168px) 64px
+      minmax(168px, 168px) 64px
+      minmax(168px, 168px);
+    gap: 12px;
+    overflow-x: visible;
+    overflow-y: hidden;
+    padding-bottom: 6px;
+    justify-content: start;
+    align-items: stretch;
+  }
+
+  .dashboard-funnel-toolbar {
+    min-width: 1180px;
+  }
+
+  .dashboard-funnel-filters {
+    min-width: 1080px;
+  }
+
+  .dashboard-snake-step {
+    min-width: 168px;
   }
 
   .dashboard-snake-connector-cell {
-    display: none;
+    display: grid;
+    min-width: 64px;
+    min-height: 102px;
   }
 
-  .dashboard-snake-card,
-  .metric-card.compact-metric {
-    min-height: 96px;
+  .candidate-common-filter-card {
+    min-width: 1080px;
+  }
+
+  .candidate-common-filter-grid {
+    grid-template-columns: repeat(5, minmax(180px, 1fr));
+    min-width: 1040px;
+  }
+
+  .candidate-filter-card {
+    min-width: 1120px;
+  }
+
+  .candidate-filter-layout {
+    grid-template-columns: minmax(260px, 0.7fr) minmax(260px, 0.7fr) minmax(340px, 1fr);
+    min-width: 1080px;
+  }
+
+  .candidate-search-content {
+    grid-template-columns: minmax(320px, 360px) minmax(760px, 1fr);
+    min-width: 1220px;
+  }
+
+  .database-results-toolbar {
+    min-width: 1220px;
+  }
+
+  .captured-filter-grid {
+    min-width: 1080px;
+  }
+
+  .table-wrap,
+  .candidate-smart-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .dashboard-table {
+    min-width: 1100px;
   }
 }
 
