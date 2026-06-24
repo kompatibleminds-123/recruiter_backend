@@ -19517,7 +19517,7 @@ function PortalApp({ token, onLogout }) {
         ...current,
         busy: false,
         busyMode: "",
-        mode: "existing",
+        mode: String(current?.mode || "new").trim().toLowerCase() === "existing" ? "existing" : "new",
         templates,
         selectedTemplateId: liveTemplateId,
         campaignId: String(liveTemplate?.campaignId || "").trim(),
