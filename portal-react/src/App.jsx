@@ -7382,7 +7382,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [campaignSearchText, setCampaignSearchText] = useState("");
   const [campaignLabelFilter, setCampaignLabelFilter] = useState("");
   const [prospectDraft, setProspectDraft] = useState({ name: "", email: "", phone: "", companyName: "", designation: "", categoriesText: "" });
-  const [campaignDraft, setCampaignDraft] = useState({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50 });
+  const [campaignDraft, setCampaignDraft] = useState({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50, senderUserId: "" });
   const [editingProspectId, setEditingProspectId] = useState("");
   const [editingCampaignId, setEditingCampaignId] = useState("");
   const [csvText, setCsvText] = useState("");
@@ -7978,14 +7978,15 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       name: String(item.name || ""),
       category: String(item.category || ""),
       sendGapMinutes: Number(item.send_gap_minutes || 5),
-      dailyCap: Number(item.daily_cap || 50)
+      dailyCap: Number(item.daily_cap || 50),
+      senderUserId: String(item.sender_user_id || marketingSenderOptions?.[0]?.id || state.user?.id || "").trim()
     });
     setSelectedCampaignId(String(item.id || ""));
   }
 
   function cancelCampaignEdit() {
     setEditingCampaignId("");
-    setCampaignDraft({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50 });
+    setCampaignDraft({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50, senderUserId: String(marketingSenderOptions?.[0]?.id || state.user?.id || "").trim() });
   }
 
   function startTemplateEdit(item) {
@@ -8523,6 +8524,12 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         <div className="form-grid two-col">
           <label><span>Campaign name</span><input value={campaignDraft.name} onChange={(e) => setCampaignDraft((c) => ({ ...c, name: e.target.value }))} /></label>
           <label><span>Campaign tag (optional)</span><input value={campaignDraft.category} onChange={(e) => setCampaignDraft((c) => ({ ...c, category: e.target.value }))} /></label>
+          <label>
+            <span>Send from</span>
+            <select value={campaignDraft.senderUserId || String(marketingSenderOptions?.[0]?.id || "")} onChange={(e) => setCampaignDraft((c) => ({ ...c, senderUserId: e.target.value }))}>
+              {marketingSenderOptions.map((option) => <option key={`campaign-sender-${option.id}`} value={option.id}>{option.label}</option>)}
+            </select>
+          </label>
           <label><span>Send gap (mins)</span><input type="number" min="1" value={campaignDraft.sendGapMinutes} onChange={(e) => setCampaignDraft((c) => ({ ...c, sendGapMinutes: e.target.value }))} /></label>
           <label><span>Daily cap</span><input type="number" min="10" value={campaignDraft.dailyCap} onChange={(e) => setCampaignDraft((c) => ({ ...c, dailyCap: e.target.value }))} /></label>
         </div>
@@ -8779,11 +8786,54 @@ function PortalApp({ token, onLogout }) {
     templateTag: "",
     templateSubject: "",
     templateBodyText: "",
+    senderUserId: "",
     sendMode: "staggered",
     sendGapMinutes: "2",
     dailyCap: "50"
   });
   const [dbCampaignAttachModal, setDbCampaignAttachModal] = useState(() => createEmptyDbCampaignAttachModal());
+  const marketingSenderOptions = useMemo(() => {
+    const currentUserId = String(state.user?.id || "").trim();
+    const currentUserEmail = String(state.user?.email || "").trim();
+    const currentUserName = String(state.user?.name || "").trim() || currentUserEmail || "Logged in user";
+    const adminUser = (Array.isArray(state.users) ? state.users : []).find((item) => String(item?.role || "").trim().toLowerCase() === "admin") || null;
+    const options = [];
+    if (currentUserId) {
+      options.push({
+        id: currentUserId,
+        label: `My email${currentUserEmail ? ` (${currentUserEmail})` : ""}`,
+        kind: "self"
+      });
+    }
+    const adminId = String(adminUser?.id || "").trim();
+    const adminEmail = String(adminUser?.email || "").trim();
+    if (adminId && adminId !== currentUserId) {
+      options.push({
+        id: adminId,
+        label: `Admin email${adminEmail ? ` (${adminEmail})` : ""}`,
+        kind: "admin"
+      });
+    } else if (!options.length && adminId) {
+      options.push({
+        id: adminId,
+        label: `Admin email${adminEmail ? ` (${adminEmail})` : ""}`,
+        kind: "admin"
+      });
+    } else if (!options.length && currentUserId) {
+      options.push({
+        id: currentUserId,
+        label: currentUserName,
+        kind: "self"
+      });
+    }
+    return options;
+  }, [state.user, state.users]);
+  useEffect(() => {
+    const defaultSenderId = String(marketingSenderOptions?.[0]?.id || "").trim();
+    if (!defaultSenderId) return;
+    setCampaignDraft((current) => current?.senderUserId ? current : { ...current, senderUserId: defaultSenderId });
+    setDbCampaignAttachModal((current) => current?.senderUserId ? current : { ...current, senderUserId: defaultSenderId });
+  }, [marketingSenderOptions]);
   const [showExtensionPrompt, setShowExtensionPrompt] = useState(false);
   const [hostedJobId, setHostedJobId] = useState("");
   const [hostedRecruiterApplyLinks, setHostedRecruiterApplyLinks] = useState([]);
@@ -19216,6 +19266,7 @@ function PortalApp({ token, onLogout }) {
       templateTag: String(templates?.[0]?.tag || ""),
       templateSubject: String(templates?.[0]?.subject || ""),
       templateBodyText: String(templates?.[0]?.bodyText || templates?.[0]?.body_text || ""),
+      senderUserId: String(marketingSenderOptions?.[0]?.id || state.user?.id || "").trim(),
       sendMode: "staggered",
       sendGapMinutes: "2",
       dailyCap: "50"
@@ -19311,6 +19362,7 @@ function PortalApp({ token, onLogout }) {
     const createdCampaign = await api("/company/marketing/campaigns", token, "POST", {
       name: campaignName,
       category: templateTag,
+      senderUserId: String(dbCampaignAttachModal?.senderUserId || marketingSenderOptions?.[0]?.id || state.user?.id || "").trim(),
       sendGapMinutes: resolvedGap,
       dailyCap: resolvedDailyCap
     });
@@ -28314,6 +28366,18 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   placeholder="Campaign name"
                   disabled={dbCampaignAttachModal.busy}
                 />
+              </label>
+              <label>
+                <span>Send from</span>
+                <select
+                  value={dbCampaignAttachModal.senderUserId || String(marketingSenderOptions?.[0]?.id || "")}
+                  onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, senderUserId: e.target.value }))}
+                  disabled={dbCampaignAttachModal.busy}
+                >
+                  {marketingSenderOptions.map((option) => (
+                    <option key={`db-campaign-sender-${option.id}`} value={option.id}>{option.label}</option>
+                  ))}
+                </select>
               </label>
               {dbCampaignAttachModal.mode === "existing" ? (
                 <label className="checkbox-row">

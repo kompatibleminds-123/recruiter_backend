@@ -5221,18 +5221,36 @@ function buildMarketingOwnerFilter(actor = null, columnName = "created_by") {
   return `&${columnName}=eq.${actorId}`;
 }
 
+async function resolveAllowedMarketingSenderUserId(actor = null, requestedSenderUserId = "") {
+  const actorId = String(actor?.id || "").trim();
+  const companyId = String(actor?.companyId || "").trim();
+  const requestedId = String(requestedSenderUserId || "").trim();
+  if (!actorId || !companyId) throw new Error("Sender context missing.");
+  if (!requestedId || requestedId === actorId) return actorId;
+  const rows = await supabaseTableFetch(
+    "users",
+    `?select=id,role&company_id=eq.${encodeURIComponent(companyId)}&id=eq.${encodeURIComponent(requestedId)}&limit=1`
+  ).catch(() => []);
+  const match = Array.isArray(rows) && rows.length ? rows[0] : null;
+  if (!match?.id) throw new Error("Selected sender not found.");
+  if (String(match?.role || "").trim().toLowerCase() !== "admin") {
+    throw new Error("Only logged-in user or admin can be selected as sender.");
+  }
+  return String(match.id || "").trim();
+}
+
 async function getMarketingCampaignForActor(actor, campaignId = "") {
   const safeCampaignId = encodeURIComponent(String(campaignId || "").trim());
   const safeCompanyId = encodeURIComponent(String(actor?.companyId || "").trim());
   if (!safeCampaignId || !safeCompanyId) return null;
   const rows = await supabaseTableFetch(
     "marketing_campaigns",
-    `?select=id,sender_user_id,company_id&company_id=eq.${safeCompanyId}&id=eq.${safeCampaignId}&limit=1`
+    `?select=id,sender_user_id,created_by,company_id&company_id=eq.${safeCompanyId}&id=eq.${safeCampaignId}&limit=1`
   ).catch(() => []);
   const campaign = Array.isArray(rows) && rows.length ? rows[0] : null;
   if (!campaign) return null;
   if (isAdminActor(actor)) return campaign;
-  const ownerId = String(campaign?.sender_user_id || "").trim();
+  const ownerId = String(campaign?.created_by || campaign?.sender_user_id || "").trim();
   if (ownerId && ownerId === String(actor?.id || "").trim()) return campaign;
   return null;
 }
@@ -5266,7 +5284,7 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
   const now = new Date();
   const campaigns = await supabaseTableFetch(
     "marketing_campaigns",
-    `?select=*&company_id=eq.${companyId}&status=eq.active${buildMarketingOwnerFilter(actor, "sender_user_id")}&limit=50`
+    `?select=*&company_id=eq.${companyId}&status=eq.active${buildMarketingOwnerFilter(actor, "created_by")}&limit=50`
   );
   let sent = 0;
   let failed = 0;
@@ -15163,7 +15181,7 @@ const server = http.createServer(async (req, res) => {
       ].filter(Boolean).join("&");
       const campaigns = await supabaseTableFetch(
         "marketing_campaigns",
-        `?select=id,status&company_id=eq.${companyId}${isAdmin ? "" : `&sender_user_id=eq.${ownerUserId}`}&limit=5000`
+        `?select=id,status&company_id=eq.${companyId}${isAdmin ? "" : `&created_by=eq.${ownerUserId}`}&limit=5000`
       );
       const campaignIds = (Array.isArray(campaigns) ? campaigns : []).map((item) => String(item?.id || "").trim()).filter(Boolean);
       const campaignInClause = campaignIds.map((id) => `"${id.replace(/"/g, "")}"`).join(",");
@@ -15593,7 +15611,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
-      const items = await supabaseTableFetch("marketing_campaigns", `?select=id,name,category,status,sender_user_id,send_gap_minutes,daily_cap,updated_at,created_at&company_id=eq.${companyId}${buildMarketingOwnerFilter(actor, "sender_user_id")}&order=updated_at.desc&limit=100`);
+      const items = await supabaseTableFetch("marketing_campaigns", `?select=id,name,category,status,sender_user_id,send_gap_minutes,daily_cap,updated_at,created_at,created_by&company_id=eq.${companyId}${buildMarketingOwnerFilter(actor, "created_by")}&order=updated_at.desc&limit=100`);
       const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
       const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
       const fromIso = dateFrom ? `${dateFrom}T00:00:00.000Z` : "";
@@ -15633,13 +15651,15 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
       const now = toIsoNow();
+      const senderUserId = await resolveAllowedMarketingSenderUserId(actor, body.senderUserId);
       const item = {
         id: crypto.randomUUID(),
         company_id: actor.companyId,
         name: String(body.name || "").trim(),
         category: String(body.category || "").trim(),
         status: "draft",
-        sender_user_id: actor.id,
+        sender_user_id: senderUserId,
+        created_by: actor.id,
         send_gap_minutes: Math.max(1, Number(body.sendGapMinutes || 5)),
         daily_cap: Math.max(10, Number(body.dailyCap || 50)),
         created_at: now,
@@ -15660,10 +15680,14 @@ const server = http.createServer(async (req, res) => {
       const campaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "")).trim();
       if (!campaignId) throw new Error("Campaign id is required.");
       const body = await readJsonBody(req);
+      const nextSenderUserId = body.senderUserId !== undefined
+        ? await resolveAllowedMarketingSenderUserId(actor, body.senderUserId)
+        : undefined;
       const patch = {
         name: body.name !== undefined ? String(body.name || "").trim() : undefined,
         category: body.category !== undefined ? String(body.category || "").trim() : undefined,
         status: body.status !== undefined ? String(body.status || "").trim() : undefined,
+        sender_user_id: nextSenderUserId,
         send_gap_minutes: body.sendGapMinutes !== undefined ? Math.max(1, Number(body.sendGapMinutes || 5)) : undefined,
         daily_cap: body.dailyCap !== undefined ? Math.max(10, Number(body.dailyCap || 50)) : undefined,
         updated_at: toIsoNow()
@@ -15672,7 +15696,7 @@ const server = http.createServer(async (req, res) => {
       if (!Object.keys(patch).length) throw new Error("Nothing to update.");
       const updated = await supabaseTableFetch(
         "marketing_campaigns",
-        `?id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${encodeURIComponent(actor.companyId)}${buildMarketingOwnerFilter(actor, "sender_user_id")}&select=*`,
+        `?id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${encodeURIComponent(actor.companyId)}${buildMarketingOwnerFilter(actor, "created_by")}&select=*`,
         { method: "PATCH", body: patch, prefer: "return=representation" }
       );
       sendJson(res, 200, { ok: true, result: Array.isArray(updated) && updated.length ? updated[0] : null });
@@ -15704,7 +15728,7 @@ const server = http.createServer(async (req, res) => {
       );
       await supabaseTableFetch(
         "marketing_campaigns",
-        `?id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${encodeURIComponent(actor.companyId)}${buildMarketingOwnerFilter(actor, "sender_user_id")}&select=id`,
+        `?id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${encodeURIComponent(actor.companyId)}${buildMarketingOwnerFilter(actor, "created_by")}&select=id`,
         { method: "DELETE", prefer: "return=minimal" }
       );
       sendJson(res, 200, { ok: true, result: { deleted: true } });
@@ -15896,7 +15920,7 @@ const server = http.createServer(async (req, res) => {
       const onlyReady = scope !== "all_campaigns_all_states" && scope !== "paused_all_states";
       const campaigns = await supabaseTableFetch(
         "marketing_campaigns",
-        `?select=id,status&company_id=eq.${encodeURIComponent(actor.companyId)}${buildMarketingOwnerFilter(actor, "sender_user_id")}&limit=5000`
+        `?select=id,status&company_id=eq.${encodeURIComponent(actor.companyId)}${buildMarketingOwnerFilter(actor, "created_by")}&limit=5000`
       );
       const scopedCampaigns = (Array.isArray(campaigns) ? campaigns : []).filter((item) => {
         if (!onlyPaused) return true;
