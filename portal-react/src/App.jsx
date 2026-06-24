@@ -24125,6 +24125,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                       <th>{
                                         chip.id === "joined_candidates"
                                           ? "Date of Joining"
+                                          : (chip.id === "shared_today" || chip.id === "shared_this_week" || chip.id === "cv_shared")
+                                            ? "Shared on"
+                                          : chip.id === "quick_joiners"
+                                            ? "LWD / DOJ"
                                           : (chip.id === "interview_history" || chip.id === "aligned_interviews")
                                             ? "Last date of interview"
                                             : "Date"
@@ -24146,11 +24150,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                   <tbody>
                                     {rows.map((row, index) => {
                                       const statusHay = `${row.round || ""} ${row.status || ""}`.toLowerCase();
-                                      const isAlertStatus = statusHay.includes("interview reject");
+                                      const isAlertStatus = Boolean(row.isAlert) || statusHay.includes("interview reject") || statusHay.includes("screening reject");
                                       const roundStatusText = String(row.round || row.status || "-").trim();
                                       const roundParts = roundStatusText.split(" | ").map((part) => String(part || "").trim()).filter(Boolean);
                                       const hasLongTimeline = roundParts.length > 3;
                                       const roundPreviewText = hasLongTimeline ? roundParts.slice(-3).join(" | ") : roundStatusText;
+                                      const dateCellText = chip.id === "quick_joiners" && row.preserveDateText
+                                        ? String(row.date || "").trim()
+                                        : (row.date ? formatDateOrRaw(row.date) : "-");
                                       return (
                                       <tr key={`${chip.id}-${row.item?.id || row.item?.assessmentId || row.candidateName}-${index}`}>
                                         <td>
@@ -24174,7 +24181,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                             roundPreviewText
                                           )}
                                         </td>
-                                        <td>{row.date ? formatDateOrRaw(row.date) : "-"}</td>
+                                        <td className={isAlertStatus ? "candidate-smart-alert" : ""}>{dateCellText || "-"}</td>
                                         <td>{row.client || "-"}</td>
                                         <td>{row.role || "-"}</td>
                                         {chip.id === "joined_candidates" ? (

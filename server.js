@@ -7478,6 +7478,11 @@ function formatDatabaseQuickChipTimelineLabel(statusValue, atValue) {
   return normalizeAssessmentStatusLabel(statusValue);
 }
 
+function isDatabaseQuickChipRejectStatus(value) {
+  const normalized = normalizeAssessmentStatusLabel(String(value || "")).toLowerCase();
+  return normalized === "screening reject" || normalized === "interview reject";
+}
+
 function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], dateFrom = "", dateTo = "" } = {}) {
   const rowsByChip = createDatabaseQuickChipRowsBucket();
   const dateFromValue = String(dateFrom || "").trim();
@@ -7630,7 +7635,9 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
       const at = String(entry?.at || "").trim();
       const statusAt = String(entry?.statusAt || entry?.status_at || "").trim();
       const label = normalizeAssessmentStatusLabel(String(entry?.status || "")).toLowerCase();
-      if (label && SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(label) && at) alignedHistoryEvents.push({ status: label, at, statusAt });
+      if (label && SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(label) && at) {
+        alignedHistoryEvents.push({ status: label, at, statusAt, effectiveAt: statusAt || at });
+      }
       if (isFeedbackAwaitedStatus(label) && at) feedbackAwaitedHistoryEvents.push({ status: label, at });
       pushInterviewTrackEvent(label, at, statusAt);
     });
@@ -7655,10 +7662,14 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
         if (!SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(key)) return true;
         return latestAlignedByStatus.get(key) === event;
       });
+      const sortedAlignedHistoryEvents = [...alignedHistoryEvents]
+        .filter((event) => event?.effectiveAt && Number.isFinite(parseDateLike(event.effectiveAt)))
+        .sort((a, b) => parseDateLike(a.effectiveAt) - parseDateLike(b.effectiveAt));
+      const latestAlignedHistoryEvent = sortedAlignedHistoryEvents[sortedAlignedHistoryEvents.length - 1] || null;
       const exactInterviewContext = getAssessmentExactInterviewContext(assessment, assessmentEventsByAssessmentId);
       const latestInterviewDate = String(
-        dedupedTrackEvents[dedupedTrackEvents.length - 1]?.effectiveAt
-        || dedupedTrackEvents[dedupedTrackEvents.length - 1]?.at
+        latestAlignedHistoryEvent?.effectiveAt
+        || latestAlignedHistoryEvent?.at
         || deriveInterviewAtFromHistory(assessment)
         || assessment?.interviewAt
         || assessment?.interview_at
@@ -7673,6 +7684,7 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
         : "";
       rowsByChip.interview_history.push({
         ...baseRow,
+        isAlert: isDatabaseQuickChipRejectStatus(baseRow.status),
         round: timelineText
           ? `${timelineText} | Current: ${baseRow.status || "-"}`
           : exactInterviewContext?.previousStatus
@@ -7684,17 +7696,24 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
 
     if (alignedHistoryEvents.length) {
       const sortedAlignedEvents = [...alignedHistoryEvents]
-        .filter((event) => event?.at && Number.isFinite(parseDateLike(event.at)))
-        .sort((a, b) => parseDateLike(a.at) - parseDateLike(b.at));
+        .filter((event) => event?.effectiveAt && Number.isFinite(parseDateLike(event.effectiveAt)))
+        .sort((a, b) => parseDateLike(a.effectiveAt) - parseDateLike(b.effectiveAt));
       const latestAlignedEvent = sortedAlignedEvents[sortedAlignedEvents.length - 1] || null;
       const previousAlignedEvent = sortedAlignedEvents.length > 1 ? sortedAlignedEvents[sortedAlignedEvents.length - 2] : null;
-      if (activeAssessment && latestAlignedEvent) {
-        const interviewTimelineDate = String(latestAlignedEvent.at || assessment?.interviewAt || assessment?.interview_at || "").trim();
-        if (inDateRange(interviewTimelineDate || latestAlignedEvent.at)) {
+      if (activeAssessment && latestAlignedEvent && assessmentStatus !== "joined") {
+        const interviewTimelineDate = String(
+          latestAlignedEvent.effectiveAt
+          || latestAlignedEvent.at
+          || assessment?.interviewAt
+          || assessment?.interview_at
+          || ""
+        ).trim();
+        if (inDateRange(interviewTimelineDate || latestAlignedEvent.effectiveAt || latestAlignedEvent.at)) {
           rowsByChip.aligned_interviews.push({
             ...baseRow,
+            isAlert: isDatabaseQuickChipRejectStatus(baseRow.status),
             round: previousAlignedEvent
-              ? `${databaseQuickChipAlignedPhrase(normalizeDatabaseQuickChipAlignedLabel(previousAlignedEvent.status), previousAlignedEvent.at)} on ${formatDatabaseQuickChipEventDate(previousAlignedEvent.at)} | now ${databaseQuickChipAlignedPhrase(normalizeDatabaseQuickChipAlignedLabel(latestAlignedEvent.status), interviewTimelineDate)} on ${formatDatabaseQuickChipEventDate(interviewTimelineDate)} | Current: ${baseRow.status || "-"}`
+              ? `${databaseQuickChipAlignedPhrase(normalizeDatabaseQuickChipAlignedLabel(previousAlignedEvent.status), previousAlignedEvent.effectiveAt || previousAlignedEvent.at)} on ${formatDatabaseQuickChipEventDate(previousAlignedEvent.effectiveAt || previousAlignedEvent.at)} | now ${databaseQuickChipAlignedPhrase(normalizeDatabaseQuickChipAlignedLabel(latestAlignedEvent.status), interviewTimelineDate)} on ${formatDatabaseQuickChipEventDate(interviewTimelineDate)} | Current: ${baseRow.status || "-"}`
               : `${databaseQuickChipAlignedPhrase(normalizeDatabaseQuickChipAlignedLabel(latestAlignedEvent.status), interviewTimelineDate)} on ${formatDatabaseQuickChipEventDate(interviewTimelineDate)} | Current: ${baseRow.status || "-"}`,
             date: interviewTimelineDate || latestAlignedEvent.at
           });
@@ -7702,12 +7721,14 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
       }
     } else if (
       activeAssessment &&
-      (SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(assessmentStatus) || ["interview feedback awaited", "interview on hold", "shortlisted", "offered", "joined"].includes(assessmentStatus)) &&
+      assessmentStatus !== "joined" &&
+      (SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(assessmentStatus) || ["interview feedback awaited", "interview on hold", "shortlisted", "offered", "screening reject", "interview reject"].includes(assessmentStatus)) &&
       inDateRange(interviewAt || updatedAt)
     ) {
       const fallbackInterviewDate = String(deriveInterviewAtFromHistory(assessment) || assessment?.interviewAt || assessment?.interview_at || interviewAt || updatedAt || "").trim();
       rowsByChip.aligned_interviews.push({
         ...baseRow,
+        isAlert: isDatabaseQuickChipRejectStatus(baseRow.status),
         round: `${databaseQuickChipAlignedPhrase(normalizeDatabaseQuickChipAlignedLabel(assessmentStatus), fallbackInterviewDate)} on ${formatDatabaseQuickChipEventDate(fallbackInterviewDate)} | Current: ${baseRow.status || "-"}`,
         date: fallbackInterviewDate
       });
@@ -7737,21 +7758,40 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
     }
 
     if (activeAssessment && noticeDays != null && noticeDays <= 15 && inDateRange(baseRow.dateOfJoining || updatedAt || interviewAt || convertedAt)) {
-      rowsByChip.quick_joiners.push({ ...baseRow, round: baseRow.status || "CV shared", date: baseRow.dateOfJoining || updatedAt || interviewAt || convertedAt });
+      rowsByChip.quick_joiners.push({
+        ...baseRow,
+        round: baseRow.status || "CV shared",
+        date: baseRow.dateOfJoining || updatedAt || interviewAt || convertedAt,
+        sortDate: baseRow.dateOfJoining || updatedAt || interviewAt || convertedAt,
+        preserveDateText: Boolean(baseRow.dateOfJoining)
+      });
     }
     if (assessment && inToday(convertedAt) && inDateRange(convertedAt)) {
-      rowsByChip.shared_today.push({ ...baseRow, round: "Converted to assessment", date: convertedAt });
+      rowsByChip.shared_today.push({
+        ...baseRow,
+        round: baseRow.status || "Assessment created",
+        date: convertedAt,
+        sortDate: convertedAt
+      });
     }
     if (assessment && inThisWeek(convertedAt) && inDateRange(convertedAt)) {
-      rowsByChip.shared_this_week.push({ ...baseRow, round: "Converted to assessment", date: convertedAt });
+      rowsByChip.shared_this_week.push({
+        ...baseRow,
+        round: baseRow.status || "Assessment created",
+        date: convertedAt,
+        sortDate: convertedAt
+      });
     }
     if (assessmentStatus === "joined" && inDateRange(baseRow.dateOfJoining || updatedAt || interviewAt || convertedAt)) {
       rowsByChip.joined_candidates.push({ ...baseRow, round: "Joined", date: baseRow.dateOfJoining || updatedAt || convertedAt });
     }
     if (activeAssessment && inDateRange(updatedAt || interviewAt || convertedAt)) {
-      const statusLower = normalizeAssessmentStatusLabel(baseRow.status || assessmentStatus || "").toLowerCase();
-      const displayDate = statusLower === "cv shared" ? (convertedAt || updatedAt || "") : (interviewAt || updatedAt || convertedAt || "");
-      rowsByChip.cv_shared.push({ ...baseRow, round: baseRow.status || "Active", date: displayDate });
+      rowsByChip.cv_shared.push({
+        ...baseRow,
+        round: baseRow.status || "Active",
+        date: convertedAt || updatedAt || interviewAt || "",
+        sortDate: convertedAt || updatedAt || interviewAt || ""
+      });
     }
   });
 
@@ -7845,7 +7885,7 @@ function buildDatabaseQuickChipInterviewHistoryRowsFromDashboardUniverse({
       ).trim()
     });
   }
-  rows.sort((a, b) => parseDateLike(b?.date || "") - parseDateLike(a?.date || ""));
+  rows.sort((a, b) => parseDateLike(b?.sortDate || b?.date || "") - parseDateLike(a?.sortDate || a?.date || ""));
   return rows;
 }
 
