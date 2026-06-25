@@ -1916,6 +1916,7 @@ function getDeterministicSummaryFromResult(result = null) {
 }
 
 function getPreferredCvSummaryFromResult(result = null, experienceRows = [], educationRows = []) {
+  const preferDeterministicForCv = String(result?.sourceType || "").trim().toLowerCase() === "cv";
   const backendSummary = {
     currentCompany: String(result?.currentCompany || "").trim(),
     currentDesignation: String(result?.currentDesignation || "").trim(),
@@ -1927,12 +1928,24 @@ function getPreferredCvSummaryFromResult(result = null, experienceRows = [], edu
   const deterministicSummary = getDeterministicSummaryFromResult(result) || {};
   const strictSummary = deriveStrictCvSummaryFromRows(experienceRows, educationRows);
   return {
-    currentCompany: backendSummary.currentCompany || deterministicSummary.currentCompany || strictSummary.currentCompany || "",
-    currentDesignation: backendSummary.currentDesignation || deterministicSummary.currentDesignation || strictSummary.currentDesignation || "",
-    totalExperience: backendSummary.totalExperience || deterministicSummary.totalExperience || strictSummary.totalExperience || "",
-    currentOrgTenure: backendSummary.currentOrgTenure || deterministicSummary.currentOrgTenure || strictSummary.currentOrgTenure || "",
-    highestEducation: backendSummary.highestEducation || deterministicSummary.highestEducation || strictSummary.highestEducation || "",
-    location: backendSummary.location || deterministicSummary.location || strictSummary.location || ""
+    currentCompany: preferDeterministicForCv
+      ? (deterministicSummary.currentCompany || backendSummary.currentCompany || strictSummary.currentCompany || "")
+      : (backendSummary.currentCompany || deterministicSummary.currentCompany || strictSummary.currentCompany || ""),
+    currentDesignation: preferDeterministicForCv
+      ? (deterministicSummary.currentDesignation || backendSummary.currentDesignation || strictSummary.currentDesignation || "")
+      : (backendSummary.currentDesignation || deterministicSummary.currentDesignation || strictSummary.currentDesignation || ""),
+    totalExperience: preferDeterministicForCv
+      ? (deterministicSummary.totalExperience || backendSummary.totalExperience || strictSummary.totalExperience || "")
+      : (backendSummary.totalExperience || deterministicSummary.totalExperience || strictSummary.totalExperience || ""),
+    currentOrgTenure: preferDeterministicForCv
+      ? (deterministicSummary.currentOrgTenure || backendSummary.currentOrgTenure || strictSummary.currentOrgTenure || "")
+      : (backendSummary.currentOrgTenure || deterministicSummary.currentOrgTenure || strictSummary.currentOrgTenure || ""),
+    highestEducation: preferDeterministicForCv
+      ? (deterministicSummary.highestEducation || backendSummary.highestEducation || strictSummary.highestEducation || "")
+      : (backendSummary.highestEducation || deterministicSummary.highestEducation || strictSummary.highestEducation || ""),
+    location: preferDeterministicForCv
+      ? (deterministicSummary.location || backendSummary.location || strictSummary.location || "")
+      : (backendSummary.location || deterministicSummary.location || strictSummary.location || "")
   };
 }
 

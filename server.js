@@ -2857,7 +2857,7 @@ function buildUploadedFileFingerprint(file = {}) {
 
 const PARSE_CANDIDATE_CACHE = new Map();
 const PARSE_CANDIDATE_CACHE_MAX = 3000;
-const CV_PARSE_RESULT_VERSION = "2026-06-25-unified-v3";
+const CV_PARSE_RESULT_VERSION = "2026-06-25-unified-v4";
 const CV_EXPERIENCE_POLICY = Object.freeze({
   excludeIntern: true,
   excludeFreelance: true,
@@ -3060,12 +3060,25 @@ function finalizeCvParseResult({ hybrid, aiParseMode = "", aiParseReason = "" })
   const currentOrgTenureBeforeFinalize = String(result.currentOrgTenure || "").trim();
   const highestQualificationBeforeFinalize = String(result.highestQualification || "").trim();
   const locationBeforeFinalize = String(result.location || "").trim();
-  result.currentCompany = choosePreferredScalar(currentCompanyBeforeFinalize, deterministicSummary.currentCompany);
-  result.currentDesignation = choosePreferredScalar(currentDesignationBeforeFinalize, deterministicSummary.currentDesignation);
-  result.totalExperience = choosePreferredScalar(totalExperienceBeforeFinalize, deterministicSummary.totalExperience);
-  result.currentOrgTenure = choosePreferredScalar(currentOrgTenureBeforeFinalize, deterministicSummary.currentOrgTenure);
-  result.highestQualification = choosePreferredScalar(highestQualificationBeforeFinalize, deterministicSummary.highestQualification);
-  result.location = choosePreferredScalar(locationBeforeFinalize, deterministicSummary.location);
+  const preferDeterministicForCv = String(result?.sourceType || "").trim().toLowerCase() === "cv";
+  result.currentCompany = preferDeterministicForCv
+    ? choosePreferredScalar(deterministicSummary.currentCompany, currentCompanyBeforeFinalize)
+    : choosePreferredScalar(currentCompanyBeforeFinalize, deterministicSummary.currentCompany);
+  result.currentDesignation = preferDeterministicForCv
+    ? choosePreferredScalar(deterministicSummary.currentDesignation, currentDesignationBeforeFinalize)
+    : choosePreferredScalar(currentDesignationBeforeFinalize, deterministicSummary.currentDesignation);
+  result.totalExperience = preferDeterministicForCv
+    ? choosePreferredScalar(deterministicSummary.totalExperience, totalExperienceBeforeFinalize)
+    : choosePreferredScalar(totalExperienceBeforeFinalize, deterministicSummary.totalExperience);
+  result.currentOrgTenure = preferDeterministicForCv
+    ? choosePreferredScalar(deterministicSummary.currentOrgTenure, currentOrgTenureBeforeFinalize)
+    : choosePreferredScalar(currentOrgTenureBeforeFinalize, deterministicSummary.currentOrgTenure);
+  result.highestQualification = preferDeterministicForCv
+    ? choosePreferredScalar(deterministicSummary.highestQualification, highestQualificationBeforeFinalize)
+    : choosePreferredScalar(highestQualificationBeforeFinalize, deterministicSummary.highestQualification);
+  result.location = preferDeterministicForCv
+    ? choosePreferredScalar(deterministicSummary.location, locationBeforeFinalize)
+    : choosePreferredScalar(locationBeforeFinalize, deterministicSummary.location);
   result.needsReview = finalOutput.needsReview;
   result.reviewReasons = finalOutput.reviewReasons;
   result.parseMeta = {
