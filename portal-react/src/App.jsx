@@ -1929,22 +1929,22 @@ function getPreferredCvSummaryFromResult(result = null, experienceRows = [], edu
   const strictSummary = deriveStrictCvSummaryFromRows(experienceRows, educationRows);
   return {
     currentCompany: preferDeterministicForCv
-      ? (deterministicSummary.currentCompany || backendSummary.currentCompany || strictSummary.currentCompany || "")
+      ? (backendSummary.currentCompany || deterministicSummary.currentCompany || strictSummary.currentCompany || "")
       : (backendSummary.currentCompany || deterministicSummary.currentCompany || strictSummary.currentCompany || ""),
     currentDesignation: preferDeterministicForCv
-      ? (deterministicSummary.currentDesignation || backendSummary.currentDesignation || strictSummary.currentDesignation || "")
+      ? (backendSummary.currentDesignation || deterministicSummary.currentDesignation || strictSummary.currentDesignation || "")
       : (backendSummary.currentDesignation || deterministicSummary.currentDesignation || strictSummary.currentDesignation || ""),
     totalExperience: preferDeterministicForCv
-      ? (deterministicSummary.totalExperience || backendSummary.totalExperience || strictSummary.totalExperience || "")
+      ? (backendSummary.totalExperience || deterministicSummary.totalExperience || strictSummary.totalExperience || "")
       : (backendSummary.totalExperience || deterministicSummary.totalExperience || strictSummary.totalExperience || ""),
     currentOrgTenure: preferDeterministicForCv
-      ? (deterministicSummary.currentOrgTenure || backendSummary.currentOrgTenure || strictSummary.currentOrgTenure || "")
+      ? (backendSummary.currentOrgTenure || deterministicSummary.currentOrgTenure || strictSummary.currentOrgTenure || "")
       : (backendSummary.currentOrgTenure || deterministicSummary.currentOrgTenure || strictSummary.currentOrgTenure || ""),
     highestEducation: preferDeterministicForCv
-      ? (deterministicSummary.highestEducation || backendSummary.highestEducation || strictSummary.highestEducation || "")
+      ? (backendSummary.highestEducation || deterministicSummary.highestEducation || strictSummary.highestEducation || "")
       : (backendSummary.highestEducation || deterministicSummary.highestEducation || strictSummary.highestEducation || ""),
     location: preferDeterministicForCv
-      ? (deterministicSummary.location || backendSummary.location || strictSummary.location || "")
+      ? (backendSummary.location || deterministicSummary.location || strictSummary.location || "")
       : (backendSummary.location || deterministicSummary.location || strictSummary.location || "")
   };
 }
@@ -16568,14 +16568,14 @@ function PortalApp({ token, onLogout }) {
             phone: String(parsedResult?.phoneNumber || "").trim(),
             email: String(parsedResult?.emailId || "").trim(),
             linkedin: String(parsedResult?.linkedinUrl || "").trim(),
-            company: String(strictSummary.currentCompany || parsedResult?.currentCompany || "").trim(),
-            current_designation: String(strictSummary.currentDesignation || parsedResult?.currentDesignation || "").trim(),
-            total_experience: String(strictSummary.totalExperience || parsedResult?.totalExperience || "").trim(),
-            location: String(strictSummary.location || parsedResult?.location || "").trim(),
+            company: String(parsedResult?.currentCompany || strictSummary.currentCompany || "").trim(),
+            current_designation: String(parsedResult?.currentDesignation || strictSummary.currentDesignation || "").trim(),
+            total_experience: String(parsedResult?.totalExperience || strictSummary.totalExperience || "").trim(),
+            location: String(parsedResult?.location || strictSummary.location || "").trim(),
             current_ctc: String(parsedResult?.currentCtc || "").trim(),
             notice_period: String(parsedResult?.noticePeriod || "").trim(),
-            highest_education: String(strictSummary.highestEducation || parsedResult?.highestQualification || parsedResult?.highestEducation || "").trim(),
-            current_org_tenure: String(strictSummary.currentOrgTenure || parsedResult?.currentOrgTenure || "").trim()
+            highest_education: String(parsedResult?.highestQualification || parsedResult?.highestEducation || strictSummary.highestEducation || "").trim(),
+            current_org_tenure: String(parsedResult?.currentOrgTenure || strictSummary.currentOrgTenure || "").trim()
           };
           const payload = buildManualDraftCandidatePayload({
             draftForm: candidateForm,

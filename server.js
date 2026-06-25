@@ -12833,10 +12833,6 @@ function pickTimelineForCv(normalizedTimeline, fallbackTimeline) {
     return { timeline: normalizedTimeline, source: "ai", reason: "ai_only" };
   }
 
-  if (aiCount === 1 && fallbackCount >= 2) {
-    return { timeline: fallbackTimeline, source: "fallback", reason: "fallback_richer_than_single_ai_row" };
-  }
-
   if (fallbackCount >= aiCount + 2 && fallbackScore >= aiScore) {
     return { timeline: fallbackTimeline, source: "fallback", reason: "fallback_much_richer" };
   }
