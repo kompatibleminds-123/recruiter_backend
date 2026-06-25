@@ -2920,7 +2920,7 @@ function normalizeCvExperienceRowsForContract(result = {}, finalOutput = {}) {
   const fromFinal = Array.isArray(finalOutput?.experienceTimeline) ? finalOutput.experienceTimeline : [];
   const fromResult = Array.isArray(result?.experience_history) ? result.experience_history : [];
   const fallbackTimeline = Array.isArray(result?.experienceTimeline) ? result.experienceTimeline : [];
-  const selected = fromFinal.length ? fromFinal : (fromResult.length ? fromResult : fallbackTimeline);
+  const selected = fromResult.length ? fromResult : (fromFinal.length ? fromFinal : fallbackTimeline);
   const mapped = selected.map((item) => ({
     company_name: String(item?.company_name || item?.company || "").trim(),
     designation: String(item?.designation || item?.title || "").trim(),
@@ -13249,8 +13249,21 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
     parseDebug.parsedEmploymentHistory = Array.isArray(baseResult?.employmentHistory) ? baseResult.employmentHistory : [];
   }
 
-  const experienceHistorySource = Array.isArray(baseResult?.experienceTimeline) && baseResult.experienceTimeline.length
-    ? baseResult.experienceTimeline.map((item) => ({
+  const preferredCvExperienceTimeline = sourceType === "cv"
+    ? (Array.isArray(finalTimeline) && finalTimeline.length ? finalTimeline : cvCareerTimeline)
+    : [];
+  const experienceHistorySource = preferredCvExperienceTimeline.length
+    ? preferredCvExperienceTimeline.map((item) => ({
+        designation: String(item?.designation || item?.title || "").trim(),
+        company_name: String(item?.company_name || item?.company || "").trim(),
+        start_date: String(item?.start_date || item?.startDate || item?.start || "").trim(),
+        end_date: String(item?.end_date || item?.endDate || item?.end || "").trim(),
+        duration: String(item?.duration || "").trim(),
+        raw_line: String(item?.raw_line || item?.sourceText || "").trim(),
+        confidence: String(item?.confidence || "").toLowerCase() === "high" ? 0.9 : 0.68
+      }))
+    : (Array.isArray(baseResult?.experienceTimeline) && baseResult.experienceTimeline.length
+      ? baseResult.experienceTimeline.map((item) => ({
         designation: String(item?.designation || "").trim(),
         company_name: String(item?.company || "").trim(),
         start_date: String(item?.startDate || "").trim(),
@@ -13259,7 +13272,7 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
         raw_line: String(item?.sourceText || "").trim(),
         confidence: String(item?.confidence || "").toLowerCase() === "high" ? 0.9 : 0.68
       }))
-    : (Array.isArray(baseResult?.employmentHistory) ? baseResult.employmentHistory : []);
+      : (Array.isArray(baseResult?.employmentHistory) ? baseResult.employmentHistory : []));
   const experienceHistory = experienceHistorySource
     .map((item) => ({
       designation: String(item?.designation || "").trim(),
@@ -13310,7 +13323,9 @@ function buildCandidateParseResponse(baseResult, normalizedResult, parseMeta = {
 
   // Canonical current-role/tenure must come from final repaired experience_history,
   // not from intermediate fallback timeline variants.
-  const canonicalTimelineForCurrent = (sourceType === "cv" ? cvCareerTimeline : finalTimeline)
+  const canonicalTimelineForCurrent = (sourceType === "cv"
+    ? experienceHistory
+    : finalTimeline)
     .map((item) => ({
       company: String(item?.company || item?.company_name || "").trim(),
       title: String(item?.title || item?.designation || "").trim(),
