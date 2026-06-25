@@ -8841,6 +8841,7 @@ function PortalApp({ token, onLogout }) {
     contentSource: "template",
     templates: [],
     selectedTemplateId: "",
+    savedTemplateId: "",
     saveAsNew: false,
     busy: false,
     busyMode: "",
@@ -16408,6 +16409,26 @@ function PortalApp({ token, onLogout }) {
   }
 
   function buildManualDraftCandidatePayload({ draftForm, assignedRecruiter, parsedResult = null, source = "manual_draft", filename = "" }) {
+    const normalizedExperience = Array.isArray(parsedResult?.experience_history) && parsedResult.experience_history.length
+      ? parsedResult.experience_history
+      : (Array.isArray(parsedResult?.experienceTimeline)
+        ? parsedResult.experienceTimeline.map((item) => ({
+            company_name: String(item?.company || "").trim(),
+            designation: String(item?.designation || "").trim(),
+            start_date: String(item?.startDate || "").trim(),
+            end_date: String(item?.endDate || "").trim()
+          }))
+        : []);
+    const normalizedEducation = Array.isArray(parsedResult?.education_history) && parsedResult.education_history.length
+      ? parsedResult.education_history
+      : (Array.isArray(parsedResult?.education)
+        ? parsedResult.education.map((item) => ({
+            degree: String(item?.degree || "").trim(),
+            institution: String(item?.institution || "").trim(),
+            year: String(item?.year || "").trim()
+          }))
+        : []);
+    const strictSummary = getPreferredCvSummaryFromResult(parsedResult, normalizedExperience, normalizedEducation);
     const parsedSkills = String(draftForm.tags || "")
       .split(/\r?\n|,|\||;/)
       .map((item) => String(item || "").trim())
@@ -16422,12 +16443,12 @@ function PortalApp({ token, onLogout }) {
     return {
       ...draftForm,
       source,
-      role: String(draftForm.current_designation || parsedResult?.currentDesignation || "").trim(),
-      experience: String(draftForm.total_experience || parsedResult?.totalExperience || "").trim(),
+      role: String(draftForm.current_designation || strictSummary.currentDesignation || parsedResult?.currentDesignation || "").trim(),
+      experience: String(draftForm.total_experience || strictSummary.totalExperience || parsedResult?.totalExperience || "").trim(),
       current_ctc: String(draftForm.current_ctc || parsedResult?.currentCtc || "").trim(),
       notice_period: String(draftForm.notice_period || parsedResult?.noticePeriod || "").trim(),
-      highest_education: String(draftForm.highest_education || parsedResult?.highestEducation || "").trim(),
-      current_org_tenure: String(draftForm.current_org_tenure || parsedResult?.currentOrgTenure || "").trim(),
+      highest_education: String(draftForm.highest_education || strictSummary.highestEducation || parsedResult?.highestQualification || parsedResult?.highestEducation || "").trim(),
+      current_org_tenure: String(draftForm.current_org_tenure || strictSummary.currentOrgTenure || parsedResult?.currentOrgTenure || "").trim(),
       recruiter_context_notes: "",
       other_pointers: parsedTimelineLabel || "",
       hidden_from_captured: false,
@@ -16438,18 +16459,18 @@ function PortalApp({ token, onLogout }) {
         phoneNumber: draftForm.phone || "",
         emailId: draftForm.email || "",
         linkedin: draftForm.linkedin || "",
-        location: draftForm.location || "",
-        currentCompany: draftForm.company || "",
-        currentDesignation: String(draftForm.current_designation || parsedResult?.currentDesignation || "").trim(),
-        totalExperience: String(draftForm.total_experience || parsedResult?.totalExperience || "").trim(),
+        location: draftForm.location || strictSummary.location || "",
+        currentCompany: draftForm.company || strictSummary.currentCompany || "",
+        currentDesignation: String(draftForm.current_designation || strictSummary.currentDesignation || parsedResult?.currentDesignation || "").trim(),
+        totalExperience: String(draftForm.total_experience || strictSummary.totalExperience || parsedResult?.totalExperience || "").trim(),
         relevantExperience: "",
-        highestEducation: String(draftForm.highest_education || parsedResult?.highestEducation || "").trim(),
+        highestEducation: String(draftForm.highest_education || strictSummary.highestEducation || parsedResult?.highestQualification || parsedResult?.highestEducation || "").trim(),
         currentCtc: String(draftForm.current_ctc || parsedResult?.currentCtc || "").trim(),
         expectedCtc: "",
         noticePeriod: String(draftForm.notice_period || parsedResult?.noticePeriod || "").trim(),
         offerInHand: "",
         lwdOrDoj: "",
-        currentOrgTenure: String(draftForm.current_org_tenure || parsedResult?.currentOrgTenure || "").trim(),
+        currentOrgTenure: String(draftForm.current_org_tenure || strictSummary.currentOrgTenure || parsedResult?.currentOrgTenure || "").trim(),
         reasonForChange: "",
         clientName: canonicalClientName || "",
         jdTitle: draftForm.jd_title || "",
@@ -16507,6 +16528,26 @@ function PortalApp({ token, onLogout }) {
             }
           });
           const parsedResult = parsed?.result && typeof parsed.result === "object" ? parsed.result : parsed;
+          const normalizedExperience = Array.isArray(parsedResult?.experience_history) && parsedResult.experience_history.length
+            ? parsedResult.experience_history
+            : (Array.isArray(parsedResult?.experienceTimeline)
+              ? parsedResult.experienceTimeline.map((item) => ({
+                  company_name: String(item?.company || "").trim(),
+                  designation: String(item?.designation || "").trim(),
+                  start_date: String(item?.startDate || "").trim(),
+                  end_date: String(item?.endDate || "").trim()
+                }))
+              : []);
+          const normalizedEducation = Array.isArray(parsedResult?.education_history) && parsedResult.education_history.length
+            ? parsedResult.education_history
+            : (Array.isArray(parsedResult?.education)
+              ? parsedResult.education.map((item) => ({
+                  degree: String(item?.degree || "").trim(),
+                  institution: String(item?.institution || "").trim(),
+                  year: String(item?.year || "").trim()
+                }))
+              : []);
+          const strictSummary = getPreferredCvSummaryFromResult(parsedResult, normalizedExperience, normalizedEducation);
           const candidateName = String(parsedResult?.candidateName || file.name?.replace(/\.[^.]+$/, "") || "").trim();
           const candidateForm = {
             ...newDraftForm,
@@ -16514,13 +16555,14 @@ function PortalApp({ token, onLogout }) {
             phone: String(parsedResult?.phoneNumber || "").trim(),
             email: String(parsedResult?.emailId || "").trim(),
             linkedin: String(parsedResult?.linkedinUrl || "").trim(),
-            company: String(parsedResult?.currentCompany || "").trim(),
-            current_designation: String(parsedResult?.currentDesignation || "").trim(),
-            total_experience: String(parsedResult?.totalExperience || "").trim(),
-            location: String(parsedResult?.location || "").trim(),
+            company: String(strictSummary.currentCompany || parsedResult?.currentCompany || "").trim(),
+            current_designation: String(strictSummary.currentDesignation || parsedResult?.currentDesignation || "").trim(),
+            total_experience: String(strictSummary.totalExperience || parsedResult?.totalExperience || "").trim(),
+            location: String(strictSummary.location || parsedResult?.location || "").trim(),
             current_ctc: String(parsedResult?.currentCtc || "").trim(),
             notice_period: String(parsedResult?.noticePeriod || "").trim(),
-            highest_education: String(parsedResult?.highestEducation || "").trim()
+            highest_education: String(strictSummary.highestEducation || parsedResult?.highestQualification || parsedResult?.highestEducation || "").trim(),
+            current_org_tenure: String(strictSummary.currentOrgTenure || parsedResult?.currentOrgTenure || "").trim()
           };
           const payload = buildManualDraftCandidatePayload({
             draftForm: candidateForm,
@@ -19357,6 +19399,7 @@ function PortalApp({ token, onLogout }) {
       contentSource: "template",
       templates: [],
       selectedTemplateId: String(safeTemplate?.id || "").trim(),
+      savedTemplateId: String(safeTemplate?.id || "").trim(),
       saveAsNew: false,
       busy: false,
       busyMode: "",
@@ -19403,12 +19446,12 @@ function PortalApp({ token, onLogout }) {
     });
     void loadMarketingBulkMailTemplates()
       .then((templates) => {
-        const firstTemplate = templates[0] || null;
-        const nextState = applyDbCampaignModalTemplate(firstTemplate, candidateIds.length);
-        nextState.templates = templates;
-        nextState.busy = false;
-        nextState.busyMode = "";
-        setDbCampaignAttachModal(nextState);
+        setDbCampaignAttachModal((current) => ({
+          ...current,
+          templates,
+          busy: false,
+          busyMode: ""
+        }));
       })
       .catch((error) => {
         setDbCampaignAttachModal((current) => ({ ...current, busy: false, busyMode: "" }));
@@ -19519,7 +19562,8 @@ function PortalApp({ token, onLogout }) {
         busyMode: "",
         mode: String(current?.mode || "new").trim().toLowerCase() === "existing" ? "existing" : "new",
         templates,
-        selectedTemplateId: liveTemplateId,
+        selectedTemplateId: String(current?.mode || "new").trim().toLowerCase() === "existing" ? liveTemplateId : "",
+        savedTemplateId: liveTemplateId,
         campaignId: String(liveTemplate?.campaignId || "").trim(),
         saveAsNew: false,
         campaignName: String(liveTemplate?.campaignName || liveTemplate?.name || current.campaignName || "").trim(),
@@ -19624,7 +19668,11 @@ function PortalApp({ token, onLogout }) {
 
   async function confirmAttachCurrentDatabasePageToCampaign() {
     setDbCampaignAttachModal((current) => ({ ...current, busy: true, busyMode: "sending" }));
-    const selectedTemplateId = String(dbCampaignAttachModal?.selectedTemplateId || "").trim();
+    const selectedTemplateId = String(
+      dbCampaignAttachModal?.mode === "existing"
+        ? (dbCampaignAttachModal?.selectedTemplateId || "")
+        : (dbCampaignAttachModal?.savedTemplateId || "")
+    ).trim();
     if (!selectedTemplateId) {
       setDbCampaignAttachModal((current) => ({ ...current, busy: false, busyMode: "" }));
       setStatus("workspace", "Save template first, then send bulk mails.", "error");
@@ -22603,6 +22651,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const wasArchived = Boolean(isAssessmentArchived(safeAssessment));
     const laneMatchesNewState = Boolean(archived) === (assessmentLane === "archived");
     const listDelta = laneMatchesNewState ? 1 : -1;
+    const shouldReloadLists = options?.reload === true;
+    const shouldRefreshDashboard = options?.refreshDashboard === true;
     const next = {
       ...safeAssessment,
       candidateId,
@@ -22644,9 +22694,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       });
       setStatus("assessments", archived ? "Assessment archived." : "Assessment restored.", "ok");
       void syncPostAssessmentMutation({ candidateId }).catch(() => {});
-      void refreshDashboardAfterAssessmentChange().catch(() => {});
-      void reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, safeAssessmentFiltersApplied, assessmentLane, assessmentSortBy).catch(() => {});
-      void reloadAssessmentStats(safeAssessmentFiltersApplied).catch(() => {});
+      if (shouldRefreshDashboard) void refreshDashboardAfterAssessmentChange().catch(() => {});
+      if (shouldReloadLists) {
+        void reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, safeAssessmentFiltersApplied, assessmentLane, assessmentSortBy).catch(() => {});
+        void reloadAssessmentStats(safeAssessmentFiltersApplied).catch(() => {});
+      }
       return saved;
     } catch (error) {
       const message = String(error?.message || error);
@@ -22664,7 +22716,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           });
           setStatus("assessments", "Assessment restored.", "ok");
           void refreshAssessmentFallback({ candidateId }).catch(() => {});
-          void refreshDashboardAfterAssessmentChange().catch(() => {});
+          if (shouldRefreshDashboard) void refreshDashboardAfterAssessmentChange().catch(() => {});
           return restored;
         } catch (restoreError) {
           setStatus("assessments", String(restoreError?.message || restoreError), "error");
@@ -22683,8 +22735,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         },
         source: "LOCAL_PATCH"
       });
-      void reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, safeAssessmentFiltersApplied, assessmentLane, assessmentSortBy).catch(() => {});
-      void reloadAssessmentStats(safeAssessmentFiltersApplied).catch(() => {});
+      if (shouldReloadLists) {
+        void reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, safeAssessmentFiltersApplied, assessmentLane, assessmentSortBy).catch(() => {});
+        void reloadAssessmentStats(safeAssessmentFiltersApplied).catch(() => {});
+      }
       setStatus("assessments", message, "error");
       return null;
     } finally {
@@ -23697,9 +23751,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     : (dashboardAgendaData && String(dashboardAgendaData?.range || dashboardAgendaData?.agendaRange || "") === String(agendaRange)
       ? dashboardAgendaData
       : null);
-  const dashboardAgendaSnapshotForDisplay = dashboardAgendaApiForDisplay || (!assessmentsLiveDataReady && dashboardAgendaSnapshot && String(dashboardAgendaSnapshot.agendaRange || "") === String(agendaRange)
-    ? dashboardAgendaSnapshot
-    : null);
+  const dashboardAgendaLiveForDisplay =
+    String(location?.pathname || "").trim() === "/dashboard" && assessmentsLiveDataReady
+      ? liveDashboardAgendaSnapshot
+      : null;
+  const dashboardAgendaSnapshotForDisplay = dashboardAgendaLiveForDisplay
+    || dashboardAgendaApiForDisplay
+    || (!assessmentsLiveDataReady && dashboardAgendaSnapshot && String(dashboardAgendaSnapshot.agendaRange || "") === String(agendaRange)
+      ? dashboardAgendaSnapshot
+      : null);
   const dashboardAgendaCounts = dashboardAgendaSnapshotForDisplay?.counts || {};
   const dashboardAgendaLists = dashboardAgendaSnapshotForDisplay?.lists || {};
   const displayOverdueFollowUps = Number(dashboardAgendaCounts.overdueFollowUps ?? dashboardAgendaSnapshotForDisplay?.overdueFollowUpCount ?? overdueFollowUps.length ?? 0);
@@ -28559,6 +28619,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       mode: "new",
                       contentSource: current.contentSource || "template",
                       selectedTemplateId: "",
+                      savedTemplateId: "",
                       saveAsNew: false,
                       campaignId: "",
                       campaignName: "",
@@ -28614,6 +28675,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       contentSource: "jd",
                       mode: "new",
                       selectedTemplateId: "",
+                      savedTemplateId: "",
                       saveAsNew: false
                     }))}
                     disabled={dbCampaignAttachModal.busy}
@@ -28663,6 +28725,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             contentSource: "jd",
                             mode: "new",
                             selectedTemplateId: "",
+                            savedTemplateId: "",
                             saveAsNew: false,
                             campaignId: "",
                             ...draft
@@ -28804,7 +28867,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   {dbCampaignAttachModal.busy && dbCampaignAttachModal.busyMode === "deleting" ? "Deleting..." : "Delete template"}
                 </button>
               ) : null}
-              {String(dbCampaignAttachModal.selectedTemplateId || "").trim() ? (
+              {(String(
+                dbCampaignAttachModal.mode === "existing"
+                  ? (dbCampaignAttachModal.selectedTemplateId || "")
+                  : (dbCampaignAttachModal.savedTemplateId || "")
+              ).trim()) ? (
               <button
                 onClick={() => void confirmAttachCurrentDatabasePageToCampaign().catch((error) => {
                   setStatus("workspace", String(error?.message || error || "Failed to attach candidates."), "error");

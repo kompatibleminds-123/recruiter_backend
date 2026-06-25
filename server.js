@@ -2857,7 +2857,7 @@ function buildUploadedFileFingerprint(file = {}) {
 
 const PARSE_CANDIDATE_CACHE = new Map();
 const PARSE_CANDIDATE_CACHE_MAX = 3000;
-const CV_PARSE_RESULT_VERSION = "2026-05-23-unified-v2";
+const CV_PARSE_RESULT_VERSION = "2026-06-25-unified-v3";
 const CV_EXPERIENCE_POLICY = Object.freeze({
   excludeIntern: true,
   excludeFreelance: true,
