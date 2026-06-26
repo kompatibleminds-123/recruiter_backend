@@ -11,7 +11,9 @@
     "portal:stage-assets": "powershell -ExecutionPolicy Bypass -File scripts/portal-stage-assets.ps1",
     "portal:release-check": "npm run portal:build && npm run portal:stage-assets && git status --short public/portal-app",
     "test": "node test/run.js",
-    "test:cv-parser-report": "node test/cv-parser-report.js"
+    "test:cv-parser-report": "node test/cv-parser-report.js",
+    "test:cv-freeze": "node test/cv-hybrid-freeze.spec.js",
+    "test:cv-freeze:update": "powershell -Command \"$env:UPDATE_CV_HYBRID_FREEZE='1'; node test/cv-hybrid-freeze.spec.js\""
   },
   "engines": {
     "node": ">=18"

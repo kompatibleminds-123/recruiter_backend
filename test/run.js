@@ -4,7 +4,8 @@ const specs = [
   "./search-normalize.spec.js",
   "./search-query-parser.spec.js",
   "./search-hybrid.spec.js",
-  "./cv-golden.spec.js"
+  "./cv-golden.spec.js",
+  "./cv-hybrid-freeze.spec.js"
 ];
 
 async function main() {

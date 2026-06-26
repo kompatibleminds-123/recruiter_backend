@@ -14202,6 +14202,8 @@ function PortalApp({ token, onLogout }) {
     let changed = false;
     const nextRoundStatus = buildCandidateSmartChipRoundStatusText(assessment);
     const latestPreview = getLatestAssessmentStatusPreview(assessment);
+    const nextNormalizedStatus = normalizeAssessmentStatusLabel(latestPreview?.status || assessment?.candidateStatus || "");
+    const nextIsAlert = /^(screening reject|interview reject)$/i.test(String(nextNormalizedStatus || "").trim());
     const nextRows = Object.fromEntries(
       Object.entries(currentRows).map(([chipId, rows]) => {
         const nextChipRows = (Array.isArray(rows) ? rows : []).map((row) => {
@@ -14227,8 +14229,9 @@ function PortalApp({ token, onLogout }) {
             : String(latestPreview?.at || assessment?.interviewAt || row?.date || "").trim();
           return {
             ...row,
+            isAlert: nextIsAlert,
             round: nextRoundStatus || row?.round || row?.status || "",
-            status: normalizeAssessmentStatusLabel(latestPreview?.status || assessment?.candidateStatus || row?.status || ""),
+            status: nextNormalizedStatus || row?.status || "",
             date: nextDate,
             client: String(assessment?.clientName || row?.client || "").trim(),
             role: String(assessment?.jdTitle || row?.role || "").trim(),
@@ -17538,80 +17541,105 @@ function PortalApp({ token, onLogout }) {
       }
     }
     setStatus("interview", "Saving assessment...");
-    try {
-      const savedAssessment = await api("/company/assessments", token, "POST", { assessment });
-      const hydratedAssessment = hydrateAssessmentCvRefs(savedAssessment || assessment, interviewCandidate);
-      applyAssessmentChange({
-        type: "UPSERT_ROW",
-        scope: "all",
-        assessment: hydratedAssessment,
-        source: "MUTATION_SUCCESS"
-      });
-      if (savedAssessment?.id) {
-        setInterviewMeta((current) => ({
-          ...current,
-          assessmentId: String(savedAssessment.id),
-          assessmentUpdatedAt: String(savedAssessment?.updatedAt || savedAssessment?.updated_at || "").trim()
-        }));
-      }
-      if (interviewMeta.candidateId) {
-        const existingCandidate = (state.candidates || []).find((item) => String(item.id) === String(interviewMeta.candidateId));
-        const existingMeta = decodePortalApplicantMetadata(existingCandidate || {});
-        const nextMeta = mergeStoredCvIntoApplicantMeta(existingMeta, form.cvAnalysis || null);
-        const candidatePatchPayload = {
-          name: form.candidateName,
-          phone: form.phoneNumber,
-          email: form.emailId,
-          linkedin: form.linkedin,
-          location: form.location,
-          company: form.currentCompany,
-          role: form.currentDesignation,
-          experience: form.totalExperience,
-          relevant_experience: form.relevantExperience,
-          highest_education: form.highestEducation,
-          current_ctc: form.currentCtc,
-          expected_ctc: form.expectedCtc,
-          notice_period: form.noticePeriod,
-          recruiter_context_notes: form.recruiterNotes,
-          other_pointers: form.otherPointers,
-          skills: parseTagInputValue(form.tags),
-          lwd_or_doj: sanitizeLwdOrDojValue(form.lwdOrDoj),
-          jd_title: form.jdTitle,
-          client_name: form.clientName,
-          next_follow_up_at: form.followUpAt,
-          screening_answers: form.jdScreeningAnswers || {},
-          draft_payload: {
-            ...form,
-            current_org_tenure: String(form.currentOrgTenure || "").trim(),
-            jdScreeningAnswers: form.jdScreeningAnswers || {}
-          },
-          raw_note: encodePortalApplicantMetadata({
-            ...nextMeta,
-            jdScreeningAnswers: form.jdScreeningAnswers || {}
-          })
-        };
-        setStatus("interview", "Assessment saved and candidate details updated.", "ok");
-        void syncPostAssessmentMutation({ candidateId: interviewMeta.candidateId }).catch(() => {});
-        void refreshDashboardAfterAssessmentChange().catch(() => {});
-        void patchCandidateQuiet(interviewMeta.candidateId, candidatePatchPayload).catch((error) => {
-          setStatus("interview", `Assessment saved, but candidate sync is still pending: ${String(error?.message || error)}`, "error");
-        });
-      } else {
-        void refreshDashboardAfterAssessmentChange().catch(() => {});
-        setStatus("interview", "Assessment saved.", "ok");
-      }
-    } catch (error) {
-      setStatus("interview", String(error?.message || error), "error");
-    } finally {
-      if (lockKey) {
-        assessmentStatusSaveLockRef.current.delete(lockKey);
-        setAssessmentActionBusyIds((current) => {
-          const next = { ...current };
-          delete next[lockKey];
-          return next;
-        });
-      }
+    const optimisticUpdatedAt = new Date().toISOString();
+    const optimisticAssessment = hydrateAssessmentCvRefs({
+      ...assessment,
+      updatedAt: optimisticUpdatedAt,
+      updated_at: optimisticUpdatedAt
+    }, interviewCandidate);
+    applyAssessmentChange({
+      type: "UPSERT_ROW",
+      scope: "all",
+      assessment: optimisticAssessment,
+      source: "LOCAL_PATCH"
+    });
+    if (interviewMeta.assessmentId) {
+      setInterviewMeta((current) => ({
+        ...current,
+        assessmentUpdatedAt: optimisticUpdatedAt
+      }));
     }
+    setStatus("interview", interviewMeta.candidateId ? "Assessment saved. Syncing in background..." : "Assessment saved. Syncing in background...", "ok");
+    if (lockKey) {
+      setAssessmentActionBusyIds((current) => {
+        const next = { ...current };
+        delete next[lockKey];
+        return next;
+      });
+    }
+    void (async () => {
+      try {
+        const savedAssessment = await api("/company/assessments", token, "POST", { assessment });
+        const hydratedAssessment = hydrateAssessmentCvRefs(savedAssessment || assessment, interviewCandidate);
+        applyAssessmentChange({
+          type: "UPSERT_ROW",
+          scope: "all",
+          assessment: hydratedAssessment,
+          source: "MUTATION_SUCCESS"
+        });
+        if (savedAssessment?.id) {
+          setInterviewMeta((current) => ({
+            ...current,
+            assessmentId: String(savedAssessment.id),
+            assessmentUpdatedAt: String(savedAssessment?.updatedAt || savedAssessment?.updated_at || "").trim()
+          }));
+        }
+        if (interviewMeta.candidateId) {
+          const existingCandidate = (state.candidates || []).find((item) => String(item.id) === String(interviewMeta.candidateId));
+          const existingMeta = decodePortalApplicantMetadata(existingCandidate || {});
+          const nextMeta = mergeStoredCvIntoApplicantMeta(existingMeta, form.cvAnalysis || null);
+          const candidatePatchPayload = {
+            name: form.candidateName,
+            phone: form.phoneNumber,
+            email: form.emailId,
+            linkedin: form.linkedin,
+            location: form.location,
+            company: form.currentCompany,
+            role: form.currentDesignation,
+            experience: form.totalExperience,
+            relevant_experience: form.relevantExperience,
+            highest_education: form.highestEducation,
+            current_ctc: form.currentCtc,
+            expected_ctc: form.expectedCtc,
+            notice_period: form.noticePeriod,
+            recruiter_context_notes: form.recruiterNotes,
+            other_pointers: form.otherPointers,
+            skills: parseTagInputValue(form.tags),
+            lwd_or_doj: sanitizeLwdOrDojValue(form.lwdOrDoj),
+            jd_title: form.jdTitle,
+            client_name: form.clientName,
+            next_follow_up_at: form.followUpAt,
+            screening_answers: form.jdScreeningAnswers || {},
+            draft_payload: {
+              ...form,
+              current_org_tenure: String(form.currentOrgTenure || "").trim(),
+              jdScreeningAnswers: form.jdScreeningAnswers || {}
+            },
+            raw_note: encodePortalApplicantMetadata({
+              ...nextMeta,
+              jdScreeningAnswers: form.jdScreeningAnswers || {}
+            })
+          };
+          void syncPostAssessmentMutation({ candidateId: interviewMeta.candidateId }).catch(() => {});
+          void refreshDashboardAfterAssessmentChange().catch(() => {});
+          void patchCandidateQuiet(interviewMeta.candidateId, candidatePatchPayload).catch((error) => {
+            setStatus("interview", `Assessment saved, but candidate sync is still pending: ${String(error?.message || error)}`, "error");
+          });
+        } else {
+          void refreshDashboardAfterAssessmentChange().catch(() => {});
+          setStatus("interview", "Assessment saved.", "ok");
+        }
+      } catch (error) {
+        setStatus("interview", String(error?.message || error), "error");
+        if (interviewMeta.candidateId) {
+          void refreshAssessmentFallback({ candidateId: interviewMeta.candidateId }).catch(() => {});
+        }
+      } finally {
+        if (lockKey) {
+          assessmentStatusSaveLockRef.current.delete(lockKey);
+        }
+      }
+    })();
     // Skip immediate workspace refresh to keep viewport stable after assessment save.
   }
 
@@ -24646,8 +24674,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                   </thead>
                                   <tbody>
                                     {rows.map((row, index) => {
-                                      const statusHay = `${row.round || ""} ${row.status || ""}`.toLowerCase();
-                                      const isAlertStatus = Boolean(row.isAlert) || statusHay.includes("interview reject") || statusHay.includes("screening reject");
+                                      const currentRowStatus = normalizeAssessmentStatusLabel(String(row.status || row.item?.assessment?.candidateStatus || "").trim());
+                                      const isAlertStatus = Boolean(row.isAlert) || /^(screening reject|interview reject)$/i.test(currentRowStatus);
                                       const roundStatusText = String(row.round || row.status || "-").trim();
                                       const roundParts = roundStatusText.split(" | ").map((part) => String(part || "").trim()).filter(Boolean);
                                       const hasLongTimeline = roundParts.length > 3;
