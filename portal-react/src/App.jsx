@@ -531,6 +531,7 @@ const BULK_MAIL_TEMPLATE_PLACEHOLDERS = [
 ];
 const JD_SHARE_TEMPLATE_PLACEHOLDERS = [
   "{Candidate}",
+  "{CandidateFirstName}",
   "{Role}",
   "{Recruiter}",
   "{Company}",
@@ -18956,8 +18957,14 @@ function PortalApp({ token, onLogout }) {
 
   function fillJdEmailTemplate(template, { candidateName, recruiterName, roleLabel, companyName, recruiterEmail, recruiterPhone }) {
     const tpl = String(template || "");
+    const candidateFirstName = String(candidateName || "")
+      .trim()
+      .split(/\s+/)
+      .map((token) => String(token || "").trim())
+      .find((token) => /^[A-Za-z][A-Za-z.'-]*$/.test(token)) || "";
     return tpl
       .replace(/\{Candidate\}/gi, String(candidateName || ""))
+      .replace(/\{CandidateFirstName\}/gi, String(candidateFirstName || ""))
       .replace(/\{Recruiter\}/gi, String(recruiterName || ""))
       .replace(/\{Role\}/gi, String(roleLabel || ""))
       .replace(/\{Company\}/gi, String(companyName || ""))

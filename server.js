@@ -5317,12 +5317,28 @@ async function getMarketingCampaignForActor(actor, campaignId = "") {
   return null;
 }
 
-function buildMarketingSignatureHtmlAndText(settings = {}) {
-  const signatureHtml = String(settings?.signatureHtml || "").trim();
-  const signatureText = String(settings?.signatureText || "").trim();
+function buildMarketingSignatureHtmlAndText(settings = {}, fallbackSettings = {}) {
+  const primaryHasContent = Boolean(
+    String(settings?.signatureHtml || "").trim()
+    || String(settings?.signatureText || "").trim()
+    || String(settings?.signatureLinkUrl || "").trim()
+    || String(settings?.signatureLinkUrl2 || "").trim()
+  );
+  const source = primaryHasContent
+    ? settings
+    : {
+        signatureHtml: "",
+        signatureText: String(fallbackSettings?.clientShareSignatureText || "").trim(),
+        signatureLinkLabel: String(fallbackSettings?.clientShareSignatureLinkLabel || "").trim(),
+        signatureLinkUrl: String(fallbackSettings?.clientShareSignatureLinkUrl || "").trim(),
+        signatureLinkLabel2: String(fallbackSettings?.clientShareSignatureLinkLabel2 || "").trim(),
+        signatureLinkUrl2: String(fallbackSettings?.clientShareSignatureLinkUrl2 || "").trim()
+      };
+  const signatureHtml = String(source?.signatureHtml || "").trim();
+  const signatureText = String(source?.signatureText || "").trim();
   const links = [
-    { label: String(settings?.signatureLinkLabel || "").trim(), url: String(settings?.signatureLinkUrl || "").trim() },
-    { label: String(settings?.signatureLinkLabel2 || "").trim(), url: String(settings?.signatureLinkUrl2 || "").trim() }
+    { label: String(source?.signatureLinkLabel || "").trim(), url: String(source?.signatureLinkUrl || "").trim() },
+    { label: String(source?.signatureLinkLabel2 || "").trim(), url: String(source?.signatureLinkUrl2 || "").trim() }
   ].filter((item) => item.url);
   const linksHtml = links
     .map((item) => `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.label || item.url)}</a>`)
@@ -5342,6 +5358,7 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
   const batchPerCampaign = Math.max(1, Math.min(50, Number(options?.batchPerCampaign || 1)));
   const companyUsers = await listCompanyUsers(String(actor?.companyId || "").trim()).catch(() => []);
   const userById = new Map((Array.isArray(companyUsers) ? companyUsers : []).map((item) => [String(item?.id || "").trim(), item]));
+  const sharedCopySettings = await getCompanySharedExportPresets(String(actor?.companyId || "").trim()).catch(() => ({}));
   const smtpByUserId = new Map();
   const now = new Date();
   const campaigns = await supabaseTableFetch(
@@ -5374,7 +5391,7 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
       role: String(senderUser.role || actor?.role || "").trim(),
       companyId: String(actor?.companyId || "").trim()
     };
-    const signature = buildMarketingSignatureHtmlAndText(senderSmtp || {});
+    const signature = buildMarketingSignatureHtmlAndText(senderSmtp || {}, sharedCopySettings || {});
     const templateRows = await supabaseTableFetch("marketing_templates", `?select=*&campaign_id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${companyId}&limit=1`);
     const template = Array.isArray(templateRows) && templateRows.length ? templateRows[0] : null;
     if (!template?.subject || !template?.body_text) continue;
