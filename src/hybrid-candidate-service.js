@@ -78,6 +78,14 @@ function looksLikeResponsibilityText(value = "") {
   return /^(built|led|managed|developed|created|executed|driving|working|maintaining|collaborating|generated|achieved|provided|used|implemented|designed|delivered|owned|applied|partnered)\b/i.test(String(value || "").trim());
 }
 
+function looksLikeSentenceLine(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length < 7) return false;
+  return /[,.]/.test(text) || /\b(with|for|from|into|using|through|responsible|handling|managing|developing|worked|associated|experience)\b/i.test(text);
+}
+
 function looksLikeProjectDomainHeading(value = "") {
   const text = String(value || "").trim();
   if (!text) return false;
