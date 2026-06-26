@@ -135,6 +135,48 @@ function mapTimelineRows(timeline = []) {
   }));
 }
 
+function scoreTimelineRowQuality(row = {}) {
+  const company = String(row?.company || "").trim();
+  const designation = String(row?.designation || "").trim();
+  const startDate = String(row?.startDate || "").trim();
+  const endDate = String(row?.endDate || "").trim();
+  let score = 0;
+
+  if (company && !isSuspiciousCompanyCandidate(company) && !looksLikeSentenceLine(company)) score += 4;
+  else if (company) score -= 3;
+
+  if (designation && looksLikeRoleLine(designation) && !looksLikeSentenceLine(designation)) score += 3;
+  else if (designation) score -= 2;
+
+  if (startDate) score += 2;
+  if (endDate) score += 1;
+  if (isPresentLike(endDate)) score += 1;
+
+  return score;
+}
+
+function scoreTimelineQuality(rows = []) {
+  return (rows || []).reduce((sum, row) => sum + scoreTimelineRowQuality(row), 0);
+}
+
+function shouldPreferBlockRowsOverAi(aiRows = [], blockRows = []) {
+  const aiTimeline = mapTimelineRows(aiRows);
+  const blockTimeline = mapTimelineRows(blockRows);
+  if (!blockTimeline.length) return false;
+  if (!aiTimeline.length) return true;
+
+  const aiScore = scoreTimelineQuality(aiTimeline);
+  const blockScore = scoreTimelineQuality(blockTimeline);
+
+  const aiBlankCompanies = aiTimeline.filter((row) => !String(row?.company || "").trim()).length;
+  const blockBlankCompanies = blockTimeline.filter((row) => !String(row?.company || "").trim()).length;
+
+  if (blockScore >= aiScore + 4 && blockBlankCompanies <= aiBlankCompanies) return true;
+  if (blockScore > aiScore && blockTimeline.length >= aiTimeline.length && blockBlankCompanies < aiBlankCompanies) return true;
+
+  return false;
+}
+
 const PROJECT_DOMAIN_WORDS = /\b(framework|platform|project|product|application|system|module|tool|engine|service|rpa|ai agent|idp|automation framework|enterprise application)\b/i;
 const ROLE_WORDS = /\b(engineer|developer|manager|lead|architect|consultant|analyst|executive|associate|specialist|intern|estimator|surveyor|account executive|sdr|bdr)\b/i;
 const SECTION_END_WORDS = /\b(education|academic|qualification|skills|projects|achievements|certifications|declaration|personal details)\b/i;
@@ -954,14 +996,16 @@ async function parseCandidateHybrid({ payload, apiKey = "", model = "", normaliz
   // Phase-1 block repair: build experience blocks from raw text and prefer them when meaningful.
   const blockRows = buildExperienceRowsFromBlocks(parsed.rawText || "");
   if (normalized && blockRows.length >= 1) {
-    normalized.timeline = blockRows.map((r) => ({
-      company: r.company || null,
-      designation: r.designation || null,
-      start: r.startDate || null,
-      end: r.endDate || null,
-      duration: null,
-      sourceText: r.sourceText || null
-    }));
+    if (shouldPreferBlockRowsOverAi(normalized.timeline || [], blockRows)) {
+      normalized.timeline = blockRows.map((r) => ({
+        company: r.company || null,
+        designation: r.designation || null,
+        start: r.startDate || null,
+        end: r.endDate || null,
+        duration: null,
+        sourceText: r.sourceText || null
+      }));
+    }
   } else if (!normalized && blockRows.length >= 1) {
     parsed.experienceTimeline = blockRows.map((r) => ({
       company: r.company || "",
