@@ -256,6 +256,8 @@ function FeatureLockedSection({ title = "Feature locked" }) {
   customExportPresets: [],
   whatsappTemplate: "{{index}}. {{name}}\nRole: {{jd_title}}\nCompany: {{company}}\nOutcome: {{outcome}}\nRecruiter note: {{recruiter_notes}}",
   emailTemplate: "{{index}}. {{name}}\nCompany: {{company}}\nRole: {{jd_title}}\nLocation: {{location}}\nOutcome: {{outcome}}\nEmail: {{email}}\nPhone: {{phone}}\nNotes: {{recruiter_notes}}",
+  bulkMailSubjectTemplate: "Opportunity with {{company}}",
+  bulkMailBodyTemplate: "Hello {{name}},\n\nI hope you are doing well.\n\nI came across your profile and wanted to connect regarding a relevant opportunity.\n\nRegards,\n{{sender_name}}\n{{sender_email}}",
   clientShareIntroTemplate: "Hello {{hr_name}},\n\nGreetings !!\n\nThis is {{recruiter_name}} from {{company_name}}.\nPFA the profiles for {{role}}.\nKindly review and share your feedback.",
   clientShareThreadIntroTemplate: "Hello {{hr_name}},\n\nSharing additional profiles for {{role}} in the same mail chain.\n\nRegards,\n{{recruiter_name}}",
   clientShareSubjectTemplate: "{{client_name}} - Candidate Profiles for {{role}}",
@@ -368,6 +370,8 @@ function migrateCopySettings(settings = {}) {
   // Auto-clean known mojibake from persisted templates/labels so symbols do not reappear.
   next.whatsappTemplate = normalizeMojibakeSymbols(next.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate || "");
   next.emailTemplate = normalizeMojibakeSymbols(next.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate || "");
+  next.bulkMailSubjectTemplate = normalizeMojibakeSymbols(next.bulkMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkMailSubjectTemplate || "");
+  next.bulkMailBodyTemplate = normalizeMojibakeSymbols(next.bulkMailBodyTemplate || DEFAULT_COPY_SETTINGS.bulkMailBodyTemplate || "");
   next.clientShareIntroTemplate = normalizeMojibakeSymbols(next.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "");
   next.clientShareThreadIntroTemplate = normalizeMojibakeSymbols(next.clientShareThreadIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareThreadIntroTemplate || "");
   next.clientShareSubjectTemplate = normalizeMojibakeSymbols(next.clientShareSubjectTemplate || DEFAULT_COPY_SETTINGS.clientShareSubjectTemplate || "");
@@ -516,6 +520,14 @@ const CLIENT_SHARE_TEMPLATE_PLACEHOLDERS = [
   "{{recruiter_email}}",
   "{{recruiter_phone}}",
   "{{company_name}}"
+];
+const BULK_MAIL_TEMPLATE_PLACEHOLDERS = [
+  "{{name}}",
+  "{{first_name}}",
+  "{{company}}",
+  "{{sender_name}}",
+  "{{sender_first_name}}",
+  "{{sender_email}}"
 ];
 const JD_SHARE_TEMPLATE_PLACEHOLDERS = [
   "{Candidate}",
@@ -9813,6 +9825,8 @@ function PortalApp({ token, onLogout }) {
   const jdWorkspaceShortcutTextareaRef = useRef(null);
   const jdEmailSubjectTemplateTextareaRef = useRef(null);
   const jdEmailBodyTemplateTextareaRef = useRef(null);
+  const bulkMailSubjectTemplateTextareaRef = useRef(null);
+  const bulkMailBodyTemplateTextareaRef = useRef(null);
   const directShareSubjectTemplateTextareaRef = useRef(null);
   const directShareIntroTemplateTextareaRef = useRef(null);
   const directShareThreadTemplateTextareaRef = useRef(null);
@@ -19479,6 +19493,20 @@ function PortalApp({ token, onLogout }) {
     };
   }
 
+  function buildDbCampaignDefaultTemplateDraft() {
+    return {
+      campaignName: "",
+      templateName: "",
+      templateTag: "",
+      templateSubject: String(copySettings.bulkMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkMailSubjectTemplate || "").trim(),
+      templateBodyText: String(copySettings.bulkMailBodyTemplate || DEFAULT_COPY_SETTINGS.bulkMailBodyTemplate || "").trim(),
+      senderUserId: String(marketingSenderOptions?.[0]?.id || state.user?.id || "").trim(),
+      sendMode: "staggered",
+      sendGapMinutes: "2",
+      dailyCap: "50"
+    };
+  }
+
   function isBulkMailTemplateUnchanged(selectedTemplate = null, draft = {}) {
     if (!selectedTemplate || typeof selectedTemplate !== "object") return false;
     return String(selectedTemplate?.campaignName || selectedTemplate?.name || "").trim() === String(draft?.campaignName || "").trim()
@@ -19500,6 +19528,7 @@ function PortalApp({ token, onLogout }) {
     const cachedTemplates = Array.isArray(dbCampaignTemplatesCacheRef.current) ? dbCampaignTemplatesCacheRef.current : [];
     setDbCampaignAttachModal({
       ...createEmptyDbCampaignAttachModal(),
+      ...buildDbCampaignDefaultTemplateDraft(),
       open: true,
       busy: !cachedTemplates.length,
       busyMode: cachedTemplates.length ? "" : "loading",
@@ -27575,6 +27604,65 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <Section kicker="Admin Settings" title="Email Templates">
                   {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
                   <div className="settings-subsection">
+                    <div className="section-kicker">Bulk Mail Template</div>
+                    <div className="form-grid">
+                      <label className="full">
+                        <span>Subject template</span>
+                        <input
+                          ref={bulkMailSubjectTemplateTextareaRef}
+                          value={copySettings.bulkMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkMailSubjectTemplate}
+                          onChange={(e) => setCopySettings((current) => ({ ...current, bulkMailSubjectTemplate: e.target.value }))}
+                        />
+                        <span className="field-help">Click placeholders to insert:</span>
+                        <div className="placeholder-selector">
+                          {BULK_MAIL_TEMPLATE_PLACEHOLDERS.map((token) => (
+                            <button
+                              key={`bulk-subject-${token}`}
+                              type="button"
+                              className="ghost-btn placeholder-chip"
+                              onClick={() => insertPlaceholderAtCursor(
+                                bulkMailSubjectTemplateTextareaRef,
+                                copySettings.bulkMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkMailSubjectTemplate,
+                                (next) => setCopySettings((current) => ({ ...current, bulkMailSubjectTemplate: next })),
+                                token
+                              )}
+                            >
+                              {token}
+                            </button>
+                          ))}
+                        </div>
+                      </label>
+                      <label className="full">
+                        <span>Body template</span>
+                        <textarea
+                          ref={bulkMailBodyTemplateTextareaRef}
+                          rows={8}
+                          value={copySettings.bulkMailBodyTemplate || DEFAULT_COPY_SETTINGS.bulkMailBodyTemplate}
+                          onChange={(e) => setCopySettings((current) => ({ ...current, bulkMailBodyTemplate: e.target.value }))}
+                        />
+                        <span className="field-help">Click placeholders to insert:</span>
+                        <div className="placeholder-selector">
+                          {BULK_MAIL_TEMPLATE_PLACEHOLDERS.map((token) => (
+                            <button
+                              key={`bulk-body-${token}`}
+                              type="button"
+                              className="ghost-btn placeholder-chip"
+                              onClick={() => insertPlaceholderAtCursor(
+                                bulkMailBodyTemplateTextareaRef,
+                                copySettings.bulkMailBodyTemplate || DEFAULT_COPY_SETTINGS.bulkMailBodyTemplate,
+                                (next) => setCopySettings((current) => ({ ...current, bulkMailBodyTemplate: next })),
+                                token
+                              )}
+                            >
+                              {token}
+                            </button>
+                          ))}
+                        </div>
+                      </label>
+                    </div>
+                    <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("Bulk mail template saved.")}>Save bulk mail template</button></div>
+                  </div>
+                  <div className="settings-subsection">
                     <div className="section-kicker">JD Share Template</div>
                     <div className="form-grid">
                       <label className="full"><span>Subject template</span><input ref={jdEmailSubjectTemplateTextareaRef} value={copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailSubjectTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{JD_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`jd-subject-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(jdEmailSubjectTemplateTextareaRef, copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate, (next) => setCopySettings((current) => ({ ...current, jdEmailSubjectTemplate: next })), token)}>{token}</button>))}</div></label>
@@ -28705,6 +28793,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
             <h3>Send Bulk Mails</h3>
             <p className="muted">Candidates on current page: {Number(dbCampaignAttachModal.totalCandidates || 0)}</p>
+            {(() => {
+              const modalActionLocked = ["saving", "sending", "deleting"].includes(String(dbCampaignAttachModal.busyMode || "").trim().toLowerCase());
+              return (
             <div className="form-grid">
               <label>
                 <span>Template mode</span>
@@ -28723,15 +28814,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       campaignName: "",
                       templateName: "",
                       templateTag: "",
-                      templateSubject: "",
-                      templateBodyText: "",
+                      templateSubject: String(copySettings.bulkMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkMailSubjectTemplate || "").trim(),
+                      templateBodyText: String(copySettings.bulkMailBodyTemplate || DEFAULT_COPY_SETTINGS.bulkMailBodyTemplate || "").trim(),
                       jdJobId: "",
                       senderUserId: String(marketingSenderOptions?.[0]?.id || current.senderUserId || ""),
                       sendMode: "staggered",
                       sendGapMinutes: "2",
                       dailyCap: "50"
                     }))}
-                    disabled={dbCampaignAttachModal.busy}
+                    disabled={modalActionLocked}
                   >
                     Create new template
                   </button>
@@ -28748,7 +28839,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         return hydrated;
                       });
                     }}
-                    disabled={dbCampaignAttachModal.busy || !(dbCampaignAttachModal.templates || []).length}
+                    disabled={modalActionLocked || !(dbCampaignAttachModal.templates || []).length}
                   >
                     Use existing template
                   </button>
@@ -28761,7 +28852,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     type="button"
                     className={dbCampaignAttachModal.contentSource === "template" ? "" : "ghost-btn"}
                     onClick={() => setDbCampaignAttachModal((current) => ({ ...current, contentSource: "template" }))}
-                    disabled={dbCampaignAttachModal.busy}
+                    disabled={modalActionLocked}
                   >
                     Use template
                   </button>
@@ -28781,7 +28872,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         ...(jdDraft || {})
                       };
                     })}
-                    disabled={dbCampaignAttachModal.busy}
+                    disabled={modalActionLocked}
                   >
                     Send JD link
                   </button>
@@ -28934,6 +29025,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   : "Saved templates here are backed by the marketing system directly. Campaign name is used as the saved template label."}
               </p>
             </div>
+              );
+            })()}
             <div className="button-row">
               <button
                 className="ghost-btn"
