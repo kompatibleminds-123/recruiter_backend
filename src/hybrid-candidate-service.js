@@ -846,9 +846,17 @@ function validateAndCleanOutput(candidate = {}, context = {}) {
     }
   }
 
-  // Generic guard: if current-row company is generic meta text but designation contains a company-like token,
-  // prefer designation-derived company token to avoid "Framework/Platform" as current company.
-  if (looksLikeGenericCompanyText(currentCompany)) {
+  // Narrow guard: only recover company from designation when current company is actually blank
+  // or clearly invalid/junk. Do not replace unusual-but-real company names like
+  // "GTM US- Outbound: Loop Subscriptions" just because they contain generic words.
+  const currentCompanyClearlyInvalid =
+    !String(currentCompany || "").trim() ||
+    looksLikeDateMetaText(currentCompany) ||
+    looksLikeTaglineText(currentCompany) ||
+    looksLikeResponsibilityText(currentCompany) ||
+    looksLikeEducationCompanyText(currentCompany) ||
+    isSuspiciousCompanyCandidate(currentCompany);
+  if (currentCompanyClearlyInvalid) {
     const fromDesignation = normalizeCompanyName(extractCompanyCandidateFromDesignation(currentDesignation));
     if (fromDesignation && !looksLikeGenericCompanyText(fromDesignation) && !isSuspiciousCompanyCandidate(fromDesignation)) {
       currentCompany = fromDesignation;
