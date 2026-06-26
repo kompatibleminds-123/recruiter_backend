@@ -86,6 +86,12 @@ function looksLikeSentenceLine(value = "") {
   return /[,.]/.test(text) || /\b(with|for|from|into|using|through|responsible|handling|managing|developing|worked|associated|experience)\b/i.test(text);
 }
 
+function looksLikeRoleLine(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  return /\b(manager|engineer|developer|lead|architect|consultant|analyst|executive|associate|specialist|intern|sdr|bdr|sales|marketing|business development|account manager|account executive|technical lead|principal engineer|researcher|hardware engineer)\b/i.test(text);
+}
+
 function looksLikeProjectDomainHeading(value = "") {
   const text = String(value || "").trim();
   if (!text) return false;
