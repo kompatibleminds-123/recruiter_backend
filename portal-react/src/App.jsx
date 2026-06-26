@@ -5355,6 +5355,7 @@ function MultiSelectChipFilter({ label, options, selected, onToggle }) {
       <div className="info-label">{label}</div>
       <div className="chip-row">
         <button
+          type="button"
           className={`chip chip-toggle${!selected.length ? " active" : ""}`}
           onClick={() => onToggle("__all__")}
         >
@@ -5362,6 +5363,7 @@ function MultiSelectChipFilter({ label, options, selected, onToggle }) {
         </button>
         {options.map((option) => (
           <button
+            type="button"
             key={option}
             className={`chip chip-toggle${selected.includes(option) ? " active" : ""}`}
             onClick={() => onToggle(option)}
@@ -5385,7 +5387,7 @@ function MultiSelectDropdown({ label, options, selected, onToggle, allowAll = tr
       <div className="filter-dropdown__body">
         <div className="chip-row">
           {allowAll ? (
-            <button className={`chip chip-toggle${!selected.length ? " active" : ""}`} onClick={() => onToggle("__all__")}>All</button>
+            <button type="button" className={`chip chip-toggle${!selected.length ? " active" : ""}`} onClick={() => onToggle("__all__")}>All</button>
           ) : null}
           {options.map((option) => {
             const value = typeof option === "object" && option !== null ? String(option.value || "").trim() : String(option || "").trim();
@@ -5393,6 +5395,7 @@ function MultiSelectDropdown({ label, options, selected, onToggle, allowAll = tr
             const labelValue = typeof option === "object" && option !== null ? String(option.label || option.value || value).trim() : value;
             return (
               <button
+                type="button"
                 key={value}
                 className={`chip chip-toggle${selected.includes(value) ? " active" : ""}`}
                 onClick={() => onToggle(value)}
@@ -8872,6 +8875,8 @@ function PortalApp({ token, onLogout }) {
     campaignId: ""
   });
   const [dbCampaignAttachModal, setDbCampaignAttachModal] = useState(() => createEmptyDbCampaignAttachModal());
+  const dbCampaignTemplatesCacheRef = useRef([]);
+  const dbCampaignTemplatesLoadingRef = useRef(null);
   const marketingSenderOptions = useMemo(() => {
     const currentUserId = String(state.user?.id || "").trim();
     const currentUserEmail = String(state.user?.email || "").trim();
@@ -10074,16 +10079,16 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (!openAssessmentMoreId) return;
-    const handlePointerDown = (event) => {
+    const handleDocumentClick = (event) => {
       const root = assessmentMoreMenuRef.current;
       if (root && event?.target && root.contains(event.target)) return;
       setOpenAssessmentMoreId("");
     };
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("touchstart", handlePointerDown);
+    document.addEventListener("click", handleDocumentClick);
+    document.addEventListener("touchend", handleDocumentClick);
     return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("touchstart", handlePointerDown);
+      document.removeEventListener("click", handleDocumentClick);
+      document.removeEventListener("touchend", handleDocumentClick);
     };
   }, [openAssessmentMoreId]);
   useEffect(() => {
@@ -19432,6 +19437,21 @@ function PortalApp({ token, onLogout }) {
       });
   }
 
+  async function preloadMarketingBulkMailTemplates({ force = false } = {}) {
+    const cached = Array.isArray(dbCampaignTemplatesCacheRef.current) ? dbCampaignTemplatesCacheRef.current : [];
+    if (!force && cached.length) return cached;
+    if (dbCampaignTemplatesLoadingRef.current) return dbCampaignTemplatesLoadingRef.current;
+    dbCampaignTemplatesLoadingRef.current = loadMarketingBulkMailTemplates()
+      .then((templates) => {
+        dbCampaignTemplatesCacheRef.current = Array.isArray(templates) ? templates : [];
+        return dbCampaignTemplatesCacheRef.current;
+      })
+      .finally(() => {
+        dbCampaignTemplatesLoadingRef.current = null;
+      });
+    return dbCampaignTemplatesLoadingRef.current;
+  }
+
   function applyDbCampaignModalTemplate(template = null, totalCandidates = 0) {
     const safeTemplate = template && typeof template === "object" ? template : null;
     return {
@@ -19477,15 +19497,17 @@ function PortalApp({ token, onLogout }) {
       setStatus("workspace", "No candidates on current page to attach.", "error");
       return;
     }
+    const cachedTemplates = Array.isArray(dbCampaignTemplatesCacheRef.current) ? dbCampaignTemplatesCacheRef.current : [];
     setDbCampaignAttachModal({
       ...createEmptyDbCampaignAttachModal(),
       open: true,
-      busy: true,
-      busyMode: "loading",
+      busy: !cachedTemplates.length,
+      busyMode: cachedTemplates.length ? "" : "loading",
+      templates: cachedTemplates,
       totalCandidates: candidateIds.length,
       senderUserId: String(marketingSenderOptions?.[0]?.id || state.user?.id || "").trim()
     });
-    void loadMarketingBulkMailTemplates()
+    void preloadMarketingBulkMailTemplates({ force: !cachedTemplates.length })
       .then((templates) => {
         setDbCampaignAttachModal((current) => ({
           ...current,
@@ -19500,7 +19522,7 @@ function PortalApp({ token, onLogout }) {
       });
   }
 
-  async function upsertCurrentDatabaseMarketingTemplate({ forceNew = false } = {}) {
+  async function upsertCurrentDatabaseMarketingTemplate({ forceNew = false, sourceOverride = "" } = {}) {
     const modalMode = String(dbCampaignAttachModal?.mode || "new").trim().toLowerCase();
     const selectedTemplateId = modalMode === "existing" ? String(dbCampaignAttachModal?.selectedTemplateId || "").trim() : "";
     const selectedTemplate = (dbCampaignAttachModal?.templates || []).find((item) => String(item?.id || "") === selectedTemplateId) || null;
@@ -19520,11 +19542,12 @@ function PortalApp({ token, onLogout }) {
     const requestedGap = Number.parseInt(String(dbCampaignAttachModal?.sendGapMinutes || "2"), 10);
     const requestedDailyCap = Number.parseInt(String(dbCampaignAttachModal?.dailyCap || "50"), 10);
     const senderUserId = String(dbCampaignAttachModal?.senderUserId || marketingSenderOptions?.[0]?.id || state.user?.id || "").trim();
+    const campaignSource = String(sourceOverride || "recruiter_portal").trim() || "recruiter_portal";
     if (shouldCreateNew) {
       const createdCampaign = await api("/company/marketing/campaigns", token, "POST", {
         name: campaignName,
         category: templateTag,
-        source: "recruiter_portal",
+        source: campaignSource,
         senderUserId,
         sendGapMinutes: Number.isFinite(requestedGap) && requestedGap > 0 ? requestedGap : 2,
         dailyCap: Number.isFinite(requestedDailyCap) && requestedDailyCap > 0 ? requestedDailyCap : 50
@@ -19594,7 +19617,7 @@ function PortalApp({ token, onLogout }) {
         setDbCampaignAttachModal((current) => ({ ...current, busy: false, busyMode: "" }));
         return;
       }
-      const templates = await loadMarketingBulkMailTemplates();
+      const templates = await preloadMarketingBulkMailTemplates({ force: true });
       const liveTemplateId = String(saved?.template?.id || "").trim();
       const liveTemplate = templates.find((item) => String(item?.id || "") === liveTemplateId) || saved.template;
       setDbCampaignAttachModal((current) => ({
@@ -19629,21 +19652,12 @@ function PortalApp({ token, onLogout }) {
     return nextState;
   }
 
-  async function resolveDbCampaignModalJdDraft(jobId = "") {
+  function buildDbCampaignModalJdDraftSync(jobId = "", applyLinkOverride = "") {
     const resolvedJobId = String(jobId || "").trim();
-    if (!resolvedJobId) throw new Error("Select JD / role first.");
+    if (!resolvedJobId) return null;
     const job = (Array.isArray(state.jobs) ? state.jobs : []).find((item) => String(item?.id || "").trim() === resolvedJobId) || null;
-    if (!job) throw new Error("JD not found.");
-    let applyLink = getApplyLink(resolvedJobId);
-    try {
-      const result = await api(`/company/jobs/${encodeURIComponent(resolvedJobId)}/apply-link-signatures`, token);
-      const items = Array.isArray(result?.items) ? result.items : [];
-      const selfId = String(state.user?.id || "").trim();
-      const mine = items.find((item) => String(item?.recruiterId || "").trim() === selfId) || items[0] || null;
-      if (mine?.sig) applyLink = getRecruiterApplyLink(resolvedJobId, mine.recruiterId, mine.sig);
-    } catch {
-      // Keep generic apply link.
-    }
+    if (!job) return null;
+    const applyLink = String(applyLinkOverride || getApplyLink(resolvedJobId) || "").trim();
     const recruiterName = String(state.user?.name || "Recruiter").trim();
     const recruiterEmail = String(state.user?.email || "").trim();
     const recruiterPhone = String(
@@ -19658,7 +19672,7 @@ function PortalApp({ token, onLogout }) {
     const subjectTpl = String(copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate || "Job Description - {Role}").trim();
     const introTpl = String(copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate || "").trim();
     const subject = fillJdEmailTemplate(subjectTpl, {
-      candidateName: "",
+      candidateName: "{{name}}",
       recruiterName,
       roleLabel,
       companyName,
@@ -19666,7 +19680,7 @@ function PortalApp({ token, onLogout }) {
       recruiterPhone
     }).trim();
     const introText = fillJdEmailTemplate(introTpl, {
-      candidateName: "",
+      candidateName: "{{name}}",
       recruiterName,
       roleLabel,
       companyName,
@@ -19688,6 +19702,32 @@ function PortalApp({ token, onLogout }) {
     };
   }
 
+  async function enhanceDbCampaignModalJdLink(jobId = "") {
+    const resolvedJobId = String(jobId || "").trim();
+    if (!resolvedJobId) return;
+    try {
+      const result = await api(`/company/jobs/${encodeURIComponent(resolvedJobId)}/apply-link-signatures`, token);
+      const items = Array.isArray(result?.items) ? result.items : [];
+      const selfId = String(state.user?.id || "").trim();
+      const mine = items.find((item) => String(item?.recruiterId || "").trim() === selfId) || items[0] || null;
+      const signedLink = mine?.sig ? getRecruiterApplyLink(resolvedJobId, mine.recruiterId, mine.sig) : "";
+      if (!signedLink) return;
+      const draft = buildDbCampaignModalJdDraftSync(resolvedJobId, signedLink);
+      if (!draft) return;
+      setDbCampaignAttachModal((current) => {
+        if (!current?.open) return current;
+        if (String(current?.contentSource || "") !== "jd") return current;
+        if (String(current?.jdJobId || "") !== resolvedJobId) return current;
+        return {
+          ...current,
+          ...draft
+        };
+      });
+    } catch {
+      // Keep generic apply link already shown in modal.
+    }
+  }
+
   async function deleteCurrentDatabaseCampaignTemplate() {
     const selectedTemplateId = String(dbCampaignAttachModal?.selectedTemplateId || "").trim();
     if (!selectedTemplateId) return;
@@ -19695,7 +19735,7 @@ function PortalApp({ token, onLogout }) {
     setDbCampaignAttachModal((current) => ({ ...current, busy: true, busyMode: "deleting" }));
     try {
       await api(`/company/marketing/templates/${encodeURIComponent(selectedTemplateId)}`, token, "DELETE");
-      const templates = await loadMarketingBulkMailTemplates();
+      const templates = await preloadMarketingBulkMailTemplates({ force: true });
       const firstTemplate = templates[0] || null;
       const nextState = applyDbCampaignModalTemplate(firstTemplate, Number(dbCampaignAttachModal?.totalCandidates || 0));
       nextState.templates = templates;
@@ -19709,17 +19749,27 @@ function PortalApp({ token, onLogout }) {
 
   async function confirmAttachCurrentDatabasePageToCampaign() {
     setDbCampaignAttachModal((current) => ({ ...current, busy: true, busyMode: "sending" }));
+    const isJdMode = String(dbCampaignAttachModal?.contentSource || "").trim().toLowerCase() === "jd";
     const selectedTemplateId = String(
       dbCampaignAttachModal?.mode === "existing"
         ? (dbCampaignAttachModal?.selectedTemplateId || "")
         : (dbCampaignAttachModal?.savedTemplateId || "")
     ).trim();
-    if (!selectedTemplateId) {
+    if (!isJdMode && !selectedTemplateId) {
       setDbCampaignAttachModal((current) => ({ ...current, busy: false, busyMode: "" }));
       setStatus("workspace", "Save template first, then send bulk mails.", "error");
       return;
     }
-    const saved = await upsertCurrentDatabaseMarketingTemplate({ forceNew: false });
+    if (isJdMode && !String(dbCampaignAttachModal?.jdJobId || "").trim()) {
+      setDbCampaignAttachModal((current) => ({ ...current, busy: false, busyMode: "" }));
+      setStatus("workspace", "Select JD / role first.", "error");
+      return;
+    }
+    const saved = await upsertCurrentDatabaseMarketingTemplate(
+      isJdMode
+        ? { forceNew: true, sourceOverride: "recruiter_portal_jd_runtime" }
+        : { forceNew: false }
+    );
     const liveTemplate = saved?.template || null;
     const selectedCampaign = saved?.campaign || null;
     const selectedCampaignId = String(liveTemplate?.campaignId || selectedCampaign?.id || dbCampaignAttachModal?.campaignId || "").trim();
@@ -19754,7 +19804,7 @@ function PortalApp({ token, onLogout }) {
     }
     const tickResult = await api("/company/marketing/worker/tick", token, "POST", {});
     const sent = Number(tickResult?.sent || 0);
-    setStatus("workspace", `Sent from "${selectedCampaign?.name || "campaign"}": linked ${linked}, created ${created}, reused ${reused}, sent now ${sent}.`, "ok");
+    setStatus("workspace", `${isJdMode ? "JD mail sent" : "Sent"} from "${selectedCampaign?.name || "campaign"}": linked ${linked}, created ${created}, reused ${reused}, sent now ${sent}.`, "ok");
     setDbCampaignAttachModal(createEmptyDbCampaignAttachModal());
   }
 
@@ -24756,7 +24806,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <span className="captured-copy-excel-btn__icon" aria-hidden="true">X</span>
                         <span>Copy Excel</span>
                       </button>
-                      <button className="ghost-btn" onClick={() => void attachCurrentDatabasePageToCampaign()}>Send Bulk mails</button>
+                      <button
+                        className="ghost-btn"
+                        onMouseEnter={() => { void preloadMarketingBulkMailTemplates(); }}
+                        onFocus={() => { void preloadMarketingBulkMailTemplates(); }}
+                        onClick={() => void attachCurrentDatabasePageToCampaign()}
+                      >
+                        Send Bulk mails
+                      </button>
                       {String(state.user?.role || "").toLowerCase() === "admin" ? (
                         <button className="ghost-btn" onClick={() => downloadCandidatesExcel()}>Download results</button>
                       ) : null}
@@ -28711,14 +28768,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <button
                     type="button"
                     className={dbCampaignAttachModal.contentSource === "jd" ? "" : "ghost-btn"}
-                    onClick={() => setDbCampaignAttachModal((current) => ({
-                      ...current,
-                      contentSource: "jd",
-                      mode: "new",
-                      selectedTemplateId: "",
-                      savedTemplateId: "",
-                      saveAsNew: false
-                    }))}
+                    onClick={() => setDbCampaignAttachModal((current) => {
+                      const jdDraft = buildDbCampaignModalJdDraftSync(current?.jdJobId || "");
+                      return {
+                        ...current,
+                        contentSource: "jd",
+                        mode: "new",
+                        selectedTemplateId: "",
+                        savedTemplateId: "",
+                        saveAsNew: false,
+                        campaignId: "",
+                        ...(jdDraft || {})
+                      };
+                    })}
                     disabled={dbCampaignAttachModal.busy}
                   >
                     Send JD link
@@ -28757,22 +28819,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     value={dbCampaignAttachModal.jdJobId || ""}
                     onChange={(e) => {
                       const nextJobId = e.target.value;
-                      setDbCampaignAttachModal((current) => ({ ...current, jdJobId: nextJobId }));
+                      const draft = buildDbCampaignModalJdDraftSync(nextJobId);
+                      setDbCampaignAttachModal((current) => ({
+                        ...current,
+                        contentSource: "jd",
+                        mode: "new",
+                        selectedTemplateId: "",
+                        savedTemplateId: "",
+                        saveAsNew: false,
+                        campaignId: "",
+                        ...(draft || { jdJobId: nextJobId })
+                      }));
                       if (!nextJobId) return;
-                      void resolveDbCampaignModalJdDraft(nextJobId)
-                        .then((draft) => {
-                          setDbCampaignAttachModal((current) => ({
-                            ...current,
-                            contentSource: "jd",
-                            mode: "new",
-                            selectedTemplateId: "",
-                            savedTemplateId: "",
-                            saveAsNew: false,
-                            campaignId: "",
-                            ...draft
-                          }));
-                        })
-                        .catch((error) => setStatus("workspace", String(error?.message || error || "Failed to prepare JD mail."), "error"));
+                      void enhanceDbCampaignModalJdLink(nextJobId);
                     }}
                     disabled={dbCampaignAttachModal.busy}
                   >
@@ -28871,7 +28930,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               </label>
               <p className="muted full-span">
                 {dbCampaignAttachModal.contentSource === "jd"
-                  ? "JD mode auto-builds subject and body from your saved JD-share template and adds the recruiter apply link."
+                  ? "JD mode auto-builds subject and body from the admin JD-share template, supports candidate placeholders, and sends directly without saving a recruiter template."
                   : "Saved templates here are backed by the marketing system directly. Campaign name is used as the saved template label."}
               </p>
             </div>
@@ -28883,14 +28942,16 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               >
                 Cancel
               </button>
-              <button
-                className="ghost-btn"
-                onClick={() => void saveCurrentDatabaseCampaignTemplate({ forceNew: false })}
-                disabled={dbCampaignAttachModal.busy || !String(dbCampaignAttachModal.campaignName || "").trim() || !String(dbCampaignAttachModal.templateSubject || "").trim() || !String(dbCampaignAttachModal.templateBodyText || "").trim()}
-              >
-                {dbCampaignAttachModal.busy && dbCampaignAttachModal.busyMode === "saving" ? "Saving..." : "Save template"}
-              </button>
-              {dbCampaignAttachModal.mode === "existing" ? (
+              {dbCampaignAttachModal.contentSource !== "jd" ? (
+                <button
+                  className="ghost-btn"
+                  onClick={() => void saveCurrentDatabaseCampaignTemplate({ forceNew: false })}
+                  disabled={dbCampaignAttachModal.busy || !String(dbCampaignAttachModal.campaignName || "").trim() || !String(dbCampaignAttachModal.templateSubject || "").trim() || !String(dbCampaignAttachModal.templateBodyText || "").trim()}
+                >
+                  {dbCampaignAttachModal.busy && dbCampaignAttachModal.busyMode === "saving" ? "Saving..." : "Save template"}
+                </button>
+              ) : null}
+              {dbCampaignAttachModal.contentSource !== "jd" && dbCampaignAttachModal.mode === "existing" ? (
                 <button
                   className="ghost-btn"
                   onClick={() => void saveCurrentDatabaseCampaignTemplate({ forceNew: true })}
@@ -28899,7 +28960,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   {dbCampaignAttachModal.busy && dbCampaignAttachModal.busyMode === "saving" ? "Saving..." : "Save as new"}
                 </button>
               ) : null}
-              {dbCampaignAttachModal.mode === "existing" && String(dbCampaignAttachModal.selectedTemplateId || "").trim() ? (
+              {dbCampaignAttachModal.contentSource !== "jd" && dbCampaignAttachModal.mode === "existing" && String(dbCampaignAttachModal.selectedTemplateId || "").trim() ? (
                 <button
                   className="ghost-btn"
                   onClick={() => void deleteCurrentDatabaseCampaignTemplate()}
@@ -28908,7 +28969,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   {dbCampaignAttachModal.busy && dbCampaignAttachModal.busyMode === "deleting" ? "Deleting..." : "Delete template"}
                 </button>
               ) : null}
-              {(String(
+              {(dbCampaignAttachModal.contentSource === "jd" || String(
                 dbCampaignAttachModal.mode === "existing"
                   ? (dbCampaignAttachModal.selectedTemplateId || "")
                   : (dbCampaignAttachModal.savedTemplateId || "")
@@ -28918,9 +28979,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   setStatus("workspace", String(error?.message || error || "Failed to attach candidates."), "error");
                   setDbCampaignAttachModal((current) => ({ ...current, busy: false, busyMode: "" }));
                 })}
-                disabled={dbCampaignAttachModal.busy || !String(dbCampaignAttachModal.campaignName || "").trim() || !String(dbCampaignAttachModal.templateSubject || "").trim() || !String(dbCampaignAttachModal.templateBodyText || "").trim()}
+                disabled={dbCampaignAttachModal.busy || !String(dbCampaignAttachModal.campaignName || "").trim() || !String(dbCampaignAttachModal.templateSubject || "").trim() || !String(dbCampaignAttachModal.templateBodyText || "").trim() || (dbCampaignAttachModal.contentSource === "jd" && !String(dbCampaignAttachModal.jdJobId || "").trim())}
               >
-                {dbCampaignAttachModal.busy && dbCampaignAttachModal.busyMode === "sending" ? "Sending..." : "Send"}
+                {dbCampaignAttachModal.busy && dbCampaignAttachModal.busyMode === "sending" ? "Sending..." : (dbCampaignAttachModal.contentSource === "jd" ? "Send JD" : "Send")}
               </button>
               ) : null}
             </div>
