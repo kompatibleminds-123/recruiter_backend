@@ -5108,6 +5108,139 @@ function drawPosterTextBlock(ctx, text, x, y, width, lineHeight, maxLines, fillS
   ctx.restore();
 }
 
+function drawPosterIllustration(ctx, templateId) {
+  ctx.save();
+  if (templateId === "dark_blue_laptop") {
+    ctx.fillStyle = "rgba(60, 128, 255, 0.18)";
+    ctx.beginPath();
+    ctx.arc(790, 480, 220, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    drawRoundedRect(ctx, 618, 330, 318, 210, 24);
+    ctx.fill();
+    ctx.fillStyle = "#141a2f";
+    drawRoundedRect(ctx, 638, 350, 274, 166, 18);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 42px Arial, sans-serif";
+    ctx.fillText("JOIN", 715, 416);
+    ctx.fillStyle = "#4aa0ff";
+    ctx.font = "900 42px Arial, sans-serif";
+    ctx.fillText("OUR", 724, 465);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("TEAM", 714, 514);
+    ctx.fillStyle = "#9da6b8";
+    drawRoundedRect(ctx, 585, 540, 410, 26, 12);
+    ctx.fill();
+    ctx.fillStyle = "#d4d9e6";
+    drawRoundedRect(ctx, 642, 548, 296, 12, 6);
+    ctx.fill();
+  } else if (templateId === "teal_monitor") {
+    ctx.fillStyle = "rgba(28, 192, 172, 0.12)";
+    ctx.beginPath();
+    ctx.arc(820, 456, 212, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    drawRoundedRect(ctx, 628, 336, 302, 180, 20);
+    ctx.fill();
+    ctx.fillStyle = "#123c46";
+    drawRoundedRect(ctx, 646, 354, 266, 146, 14);
+    ctx.fill();
+    ctx.fillStyle = "#58c4b7";
+    drawRoundedRect(ctx, 741, 516, 76, 22, 10);
+    ctx.fill();
+    drawRoundedRect(ctx, 716, 538, 126, 16, 8);
+    ctx.fill();
+    ctx.fillStyle = "#dff7f4";
+    ctx.beginPath();
+    ctx.arc(794, 440, 72, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#1b9b8f";
+    ctx.beginPath();
+    ctx.arc(794, 430, 54, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (templateId === "amber_megaphone") {
+    ctx.fillStyle = "rgba(255, 190, 45, 0.18)";
+    ctx.beginPath();
+    ctx.arc(780, 900, 256, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#111111";
+    drawRoundedRect(ctx, 656, 620, 206, 106, 20);
+    ctx.fill();
+    ctx.fillStyle = "#f6f7fb";
+    ctx.beginPath();
+    ctx.arc(684, 680, 88, -0.9, 0.9);
+    ctx.lineTo(790, 626);
+    ctx.lineTo(790, 734);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#f3c04b";
+    ctx.beginPath();
+    ctx.arc(684, 680, 54, -0.9, 0.9);
+    ctx.lineTo(746, 644);
+    ctx.lineTo(746, 716);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#f7b300";
+    ctx.beginPath();
+    ctx.arc(600, 760, 54, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#fff8e3";
+    drawRoundedRect(ctx, 576, 742, 130, 38, 18);
+    ctx.fill();
+  } else if (templateId === "purple_rocket") {
+    ctx.strokeStyle = "rgba(255,120,255,0.28)";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(836, 520, 186, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(756, 760, 258, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "#f5f1ff";
+    drawRoundedRect(ctx, 782, 318, 118, 270, 58);
+    ctx.fill();
+    ctx.fillStyle = "#c25cff";
+    ctx.beginPath();
+    ctx.moveTo(842, 286);
+    ctx.lineTo(874, 332);
+    ctx.lineTo(810, 332);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#8e42ff";
+    ctx.beginPath();
+    ctx.arc(841, 428, 34, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ff7af7";
+    ctx.beginPath();
+    ctx.moveTo(782, 542);
+    ctx.lineTo(746, 640);
+    ctx.lineTo(796, 612);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(900, 542);
+    ctx.lineTo(940, 640);
+    ctx.lineTo(888, 612);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#f3bbff";
+    ctx.beginPath();
+    ctx.arc(841, 430, 62, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.fillRect(810, 662, 64, 92);
+    ctx.fillStyle = "#ff58ff";
+    ctx.beginPath();
+    ctx.moveTo(804, 660);
+    ctx.lineTo(878, 660);
+    ctx.lineTo(841, 878);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 async function downloadJobPoster(job, copySettings, companyName, senderEmail = "") {
   if (!job) throw new Error("Select a JD first.");
   const template = getJobPosterTemplate(copySettings?.jobBoard?.posterTemplateId);
@@ -5146,6 +5279,8 @@ async function downloadJobPoster(job, copySettings, companyName, senderEmail = "
     ctx.beginPath(); ctx.arc(840, 520, 190, 0, Math.PI * 2); ctx.stroke();
     ctx.beginPath(); ctx.arc(760, 760, 260, 0, Math.PI * 2); ctx.stroke();
   }
+
+  drawPosterIllustration(ctx, template.id);
 
   const companyLine = String(job.publicCompanyLine || "").trim() || "Anonymous company";
   const title = String(job.publicTitle || job.title || "").trim() || "Hiring";
