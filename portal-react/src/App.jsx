@@ -9712,8 +9712,12 @@ function PortalApp({ token, onLogout }) {
   const draftCvInputRef = useRef(null);
   const assessmentStatusSaveLockRef = useRef(new Set());
   const assessmentInlineStatusTimersRef = useRef({});
+  const capturedInlineStatusTimersRef = useRef({});
+  const applicantInlineStatusTimersRef = useRef({});
   const [assessmentActionBusyIds, setAssessmentActionBusyIds] = useState({});
   const [assessmentInlineStatuses, setAssessmentInlineStatuses] = useState({});
+  const [capturedInlineStatuses, setCapturedInlineStatuses] = useState({});
+  const [applicantInlineStatuses, setApplicantInlineStatuses] = useState({});
   const [notesCandidateId, setNotesCandidateId] = useState("");
   const [notesCandidateSnapshot, setNotesCandidateSnapshot] = useState(null);
   const [attemptsCandidateId, setAttemptsCandidateId] = useState("");
@@ -10560,6 +10564,48 @@ function PortalApp({ token, onLogout }) {
     }, timeoutMs);
   }
 
+  function setCapturedInlineStatus(candidateId, message, kind = "") {
+    const scopedKey = String(candidateId || "").trim();
+    if (!scopedKey) return;
+    const safeMessage = normalizeMojibakeSymbols(String(message || ""));
+    if (capturedInlineStatusTimersRef.current[scopedKey]) {
+      clearTimeout(capturedInlineStatusTimersRef.current[scopedKey]);
+      delete capturedInlineStatusTimersRef.current[scopedKey];
+    }
+    setCapturedInlineStatuses((current) => ({ ...current, [scopedKey]: { message: safeMessage, kind } }));
+    if (!String(safeMessage || "").trim()) return;
+    const timeoutMs = kind === "error" ? 7000 : 4000;
+    capturedInlineStatusTimersRef.current[scopedKey] = setTimeout(() => {
+      setCapturedInlineStatuses((current) => {
+        const next = { ...current };
+        delete next[scopedKey];
+        return next;
+      });
+      delete capturedInlineStatusTimersRef.current[scopedKey];
+    }, timeoutMs);
+  }
+
+  function setApplicantInlineStatus(candidateId, message, kind = "") {
+    const scopedKey = String(candidateId || "").trim();
+    if (!scopedKey) return;
+    const safeMessage = normalizeMojibakeSymbols(String(message || ""));
+    if (applicantInlineStatusTimersRef.current[scopedKey]) {
+      clearTimeout(applicantInlineStatusTimersRef.current[scopedKey]);
+      delete applicantInlineStatusTimersRef.current[scopedKey];
+    }
+    setApplicantInlineStatuses((current) => ({ ...current, [scopedKey]: { message: safeMessage, kind } }));
+    if (!String(safeMessage || "").trim()) return;
+    const timeoutMs = kind === "error" ? 7000 : 4000;
+    applicantInlineStatusTimersRef.current[scopedKey] = setTimeout(() => {
+      setApplicantInlineStatuses((current) => {
+        const next = { ...current };
+        delete next[scopedKey];
+        return next;
+      });
+      delete applicantInlineStatusTimersRef.current[scopedKey];
+    }, timeoutMs);
+  }
+
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
@@ -10625,6 +10671,14 @@ function PortalApp({ token, onLogout }) {
       try { clearTimeout(timerId); } catch { /* ignore */ }
     });
     assessmentInlineStatusTimersRef.current = {};
+    Object.values(capturedInlineStatusTimersRef.current || {}).forEach((timerId) => {
+      try { clearTimeout(timerId); } catch { /* ignore */ }
+    });
+    capturedInlineStatusTimersRef.current = {};
+    Object.values(applicantInlineStatusTimersRef.current || {}).forEach((timerId) => {
+      try { clearTimeout(timerId); } catch { /* ignore */ }
+    });
+    applicantInlineStatusTimersRef.current = {};
   }, []);
 
   useEffect(() => {
@@ -15440,7 +15494,7 @@ function PortalApp({ token, onLogout }) {
     await reloadApplicantsSlice();
     await reloadApplicantStats(applicantFiltersApplied).catch(() => null);
     void refreshWorkspaceSilently("post-applicant-remove");
-    setStatus("applicants", "Applicant removed.", "ok");
+    setApplicantInlineStatus(applicantId, "Applicant removed.", "ok");
   }
 
   async function bulkDeleteSelectedApplicants() {
@@ -15519,7 +15573,7 @@ function PortalApp({ token, onLogout }) {
       await api(`/company/candidates/${encodeURIComponent(applicantId)}`, token, "PATCH", { patch: { hidden_from_captured: true } });
       await refreshCandidateStatsAfterMutation("applicants");
       void refreshDashboardAfterAssessmentChange().catch(() => {});
-      setStatus("applicants", "Applicant hidden from active list.", "ok");
+      setApplicantInlineStatus(applicantId, "Applicant hidden from active list.", "ok");
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -15550,7 +15604,7 @@ function PortalApp({ token, onLogout }) {
           };
         });
       }
-      setStatus("applicants", String(error?.message || error), "error");
+      setApplicantInlineStatus(applicantId, String(error?.message || error), "error");
     }
   }
 
@@ -15592,7 +15646,7 @@ function PortalApp({ token, onLogout }) {
       await api(`/company/candidates/${encodeURIComponent(applicantId)}`, token, "PATCH", { patch: { hidden_from_captured: false } });
       await refreshCandidateStatsAfterMutation("applicants");
       void refreshDashboardAfterAssessmentChange().catch(() => {});
-      setStatus("applicants", "Applicant restored to active list.", "ok");
+      setApplicantInlineStatus(applicantId, "Applicant restored to active list.", "ok");
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -15623,7 +15677,7 @@ function PortalApp({ token, onLogout }) {
           };
         });
       }
-      setStatus("applicants", String(error?.message || error), "error");
+      setApplicantInlineStatus(applicantId, String(error?.message || error), "error");
     }
   }
 
@@ -15687,10 +15741,12 @@ function PortalApp({ token, onLogout }) {
     setBulkAssignApplicantModalOpen(false);
     const successCount = results.filter((entry) => entry.status === "fulfilled").length;
     const failCount = Math.max(0, ids.length - successCount);
-    if (failCount > 0) {
+    if (ids.length === 1) {
+      setApplicantInlineStatus(ids[0], failCount > 0 ? `${successCount}/${ids.length} applicants assigned. ${failCount} failed, retry once.` : "Applicant assigned into recruiter workflow.", failCount > 0 ? "error" : "ok");
+    } else if (failCount > 0) {
       setStatus("applicants", `${successCount}/${ids.length} applicants assigned. ${failCount} failed, retry once.`, "error");
     } else {
-      setStatus("applicants", ids.length > 1 ? `${ids.length} applicants assigned.` : "Applicant assigned into recruiter workflow.", "ok");
+      setStatus("applicants", `${ids.length} applicants assigned.`, "ok");
     }
     return;
   }
@@ -15819,10 +15875,12 @@ function PortalApp({ token, onLogout }) {
       setAssignCandidateId("");
       setBulkAssignCandidateIds([]);
       setBulkAssignCandidateModalOpen(false);
-      if (failCount > 0) {
+      if (ids.length === 1) {
+        setCapturedInlineStatus(ids[0], failCount > 0 ? `${successCount}/${ids.length} drafts assigned. ${failCount} failed, retry once.` : "Draft assigned to recruiter.", failCount > 0 ? "error" : "ok");
+      } else if (failCount > 0) {
         setStatus("captured", `${successCount}/${ids.length} drafts assigned. ${failCount} failed, retry once.`, "error");
       } else {
-        setStatus("captured", ids.length > 1 ? `${ids.length} drafts assigned to recruiter.` : "Draft assigned to recruiter.", "ok");
+        setStatus("captured", `${ids.length} drafts assigned to recruiter.`, "ok");
       }
       void refreshDashboardAfterAssessmentChange().catch(() => {});
       // Keep reassignment visually stable; local optimistic patch already reflects latest values.
@@ -15845,10 +15903,12 @@ function PortalApp({ token, onLogout }) {
     setAssignCandidateId("");
     setBulkAssignCandidateIds([]);
     setBulkAssignCandidateModalOpen(false);
-    if (failCount > 0) {
+    if (ids.length === 1) {
+      setCapturedInlineStatus(ids[0], failCount > 0 ? `${successCount}/${ids.length} drafts assigned. ${failCount} failed, retry once.` : "Draft assigned to recruiter.", failCount > 0 ? "error" : "ok");
+    } else if (failCount > 0) {
       setStatus("captured", `${successCount}/${ids.length} drafts assigned. ${failCount} failed, retry once.`, "error");
     } else {
-      setStatus("captured", ids.length > 1 ? `${ids.length} drafts assigned to recruiter.` : "Draft assigned to recruiter.", "ok");
+      setStatus("captured", `${ids.length} drafts assigned to recruiter.`, "ok");
     }
     void refreshDashboardAfterAssessmentChange().catch(() => {});
     // Keep reassignment visually stable; local optimistic patch already reflects latest values.
@@ -15990,7 +16050,7 @@ function PortalApp({ token, onLogout }) {
       await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: { hidden_from_captured: true } });
       await refreshCandidateStatsAfterMutation("captured");
       void refreshDashboardAfterAssessmentChange().catch(() => {});
-      setStatus("captured", "Candidate hidden from captured notes.", "ok");
+      setCapturedInlineStatus(candidateId, "Candidate hidden from captured notes.", "ok");
     } catch (error) {
       setCapturedListItems((current) => (shouldRemainVisible
         ? patchHiddenState(current, false)
@@ -16017,7 +16077,7 @@ function PortalApp({ token, onLogout }) {
           };
         });
       }
-      setStatus("captured", String(error?.message || error), "error");
+      setCapturedInlineStatus(candidateId, String(error?.message || error), "error");
     }
   }
 
@@ -16059,7 +16119,7 @@ function PortalApp({ token, onLogout }) {
       await api(`/company/candidates/${encodeURIComponent(candidateId)}`, token, "PATCH", { patch: { hidden_from_captured: false } });
       await refreshCandidateStatsAfterMutation("captured");
       void refreshDashboardAfterAssessmentChange().catch(() => {});
-      setStatus("captured", "Candidate restored to active captured notes.", "ok");
+      setCapturedInlineStatus(candidateId, "Candidate restored to active captured notes.", "ok");
     } catch (error) {
       setCapturedListItems((current) => (shouldRemainVisible
         ? patchHiddenState(current, true)
@@ -16086,7 +16146,7 @@ function PortalApp({ token, onLogout }) {
           };
         });
       }
-      setStatus("captured", String(error?.message || error), "error");
+      setCapturedInlineStatus(candidateId, String(error?.message || error), "error");
     }
   }
 
@@ -16145,7 +16205,7 @@ function PortalApp({ token, onLogout }) {
     setCapturedListItems((current) => removeCandidatesById(current, [requestedId, deletedId]));
     await reloadCandidatesSlice({ includeDatabase: location?.pathname === "/candidates" });
     await reloadCapturedStats(safeCandidateFiltersApplied).catch(() => null);
-    setStatus("captured", "Candidate deleted.", "ok");
+    setCapturedInlineStatus(requestedId || deletedId, "Candidate deleted.", "ok");
   }
 
   async function bulkDeleteCapturedCandidates() {
@@ -17186,17 +17246,24 @@ function PortalApp({ token, onLogout }) {
   async function createAssessmentFromCandidate(candidateId) {
     const sourceApplicant = (state.applicants || []).find((item) => String(item.id) === String(candidateId)) || null;
     const statusKey = sourceApplicant ? "applicants" : "captured";
+    const pushCandidateInlineStatus = (message, kind = "") => {
+      if (sourceApplicant) {
+        setApplicantInlineStatus(candidateId, message, kind);
+        return;
+      }
+      setCapturedInlineStatus(candidateId, message, kind);
+    };
     const linkedApplicantCandidate = sourceApplicant ? applicantCandidateMap.get(String(sourceApplicant.id)) : null;
     let candidate = (state.candidates || []).find((item) => String(item.id) === String(candidateId)) || linkedApplicantCandidate;
     const applicantView = sourceApplicant ? normalizeApplicantVisibleRow(sourceApplicant) : null;
     const source = candidate || sourceApplicant;
     const capturedCandidateId = String(candidate?.id || sourceApplicant?.id || candidateId || "").trim();
     if (!source) {
-      setStatus(statusKey, "Candidate not found for assessment conversion.", "error");
+      pushCandidateInlineStatus("Candidate not found for assessment conversion.", "error");
       return;
     }
     if (candidate?.hidden_from_captured) {
-      setStatus(statusKey, "This note is hidden/inactive. Restore to active first, then convert to assessment.", "error");
+      pushCandidateInlineStatus("This note is hidden/inactive. Restore to active first, then convert to assessment.", "error");
       return;
     }
     const candidateName = candidate?.name || sourceApplicant?.candidateName || "";
@@ -17220,7 +17287,7 @@ function PortalApp({ token, onLogout }) {
       }
     }
     if (String(candidate?.assessment_id || candidate?.assessmentId || sourceApplicant?.assessment_id || sourceApplicant?.assessmentId || "").trim()) {
-      setStatus(statusKey, "Linked assessment not found locally; opening a fresh assessment instead.", "warning");
+      pushCandidateInlineStatus("Linked assessment not found locally; opening a fresh assessment instead.", "warning");
     }
 
     if (!window.confirm(`Create assessment for ${candidateName || "this candidate"}? This will move the record out of the active ${sourceApplicant ? "Applied Candidates" : "Captured Notes"} list.`)) {
@@ -17310,13 +17377,13 @@ function PortalApp({ token, onLogout }) {
           databaseCandidates: upsertCandidatesById(current.databaseCandidates, [autoLinkedCandidate])
         }));
       } catch (error) {
-        setStatus(statusKey, `Could not auto-save this applied candidate before assessment conversion: ${String(error?.message || error)}`, "error");
+        pushCandidateInlineStatus(`Could not auto-save this applied candidate before assessment conversion: ${String(error?.message || error)}`, "error");
         return;
       }
     }
     const lockKey = capturedCandidateId;
     if (lockKey && assessmentStatusSaveLockRef.current.has(lockKey)) {
-      setStatus(statusKey, "Assessment action already in progress for this candidate. Please wait.", "error");
+      pushCandidateInlineStatus("Assessment action already in progress for this candidate. Please wait.", "error");
       return;
     }
     if (lockKey) {
@@ -17418,7 +17485,7 @@ function PortalApp({ token, onLogout }) {
       updatedAt: new Date().toISOString()
     };
 
-    setStatus(statusKey, "Converting draft into assessment...");
+    pushCandidateInlineStatus("Converting draft into assessment...");
     try {
       const saved = await api("/company/assessments", token, "POST", { assessment });
       const savedAssessment = saved && typeof saved === "object" ? saved : assessment;
@@ -17482,7 +17549,7 @@ function PortalApp({ token, onLogout }) {
       setStatus("assessments", `Converted ${candidateName || "candidate"} into assessment.`, "ok");
       // Skip immediate workspace refresh to keep viewport stable after conversion.
     } catch (error) {
-      setStatus(statusKey, String(error?.message || error), "error");
+      pushCandidateInlineStatus(String(error?.message || error), "error");
     } finally {
       if (lockKey) {
         assessmentStatusSaveLockRef.current.delete(lockKey);
@@ -25274,6 +25341,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <div className="captured-note-summary-full">{getApplicantRecruiterNoteText(item)}</div>
                       </details>
                     ) : null}
+                    {applicantInlineStatuses[String(item.id || "")]?.message ? (
+                      <div
+                        className={`status ${applicantInlineStatuses[String(item.id || "")]?.kind || ""}`}
+                        aria-live="polite"
+                        style={{ marginTop: 10 }}
+                      >
+                        {applicantInlineStatuses[String(item.id || "")]?.message}
+                      </div>
+                    ) : null}
                   </article>
                   );
                 })
@@ -25737,11 +25813,20 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           className="captured-action-danger"
                           disabled={!isUuidLike(String(item?.id || ""))}
                           title={!isUuidLike(String(item?.id || "")) ? "Refreshing candidate id. Please refresh and retry." : "Delete"}
-                          onClick={() => void deleteCapturedCandidate(item).catch((error) => setStatus("captured", String(error?.message || error), "error"))}
+                          onClick={() => void deleteCapturedCandidate(item).catch((error) => setCapturedInlineStatus(item?.id, String(error?.message || error), "error"))}
                         >
                           Delete
                         </button>
                       </div>
+                      {capturedInlineStatuses[String(item.id || "")]?.message ? (
+                        <div
+                          className={`status ${capturedInlineStatuses[String(item.id || "")]?.kind || ""}`}
+                          aria-live="polite"
+                          style={{ marginTop: 10 }}
+                        >
+                          {capturedInlineStatuses[String(item.id || "")]?.message}
+                        </div>
+                      ) : null}
                     </article>
                   );
                 })) : <div className="empty-state">Loading captured notes...</div>}
