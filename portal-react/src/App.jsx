@@ -21213,13 +21213,21 @@ function PortalApp({ token, onLogout }) {
     }
     try {
       setStatus("loginClient", "Creating client login...");
+      const normalizedClientName = canonicalizeClientName(String(clientUserDraft.clientName || "").trim());
       const payload = {
         username: String(clientUserDraft.username || "").trim(),
         password: String(clientUserDraft.password || ""),
-        clientName: String(clientUserDraft.clientName || "").trim(),
+        clientName: normalizedClientName,
         allowedPositions: []
       };
       await api("/company/client-users", token, "POST", payload);
+      if (normalizedClientName) {
+        await saveClientDirectoryName(normalizedClientName, {
+          statusKey: "loginClient",
+          silentIfExists: true,
+          skipStatus: true
+        });
+      }
       await reloadLoginSettingsWorkspace();
       setClientUserDraft({ username: "", password: "", clientName: "", allowedPositions: "" });
       setStatus("loginClient", "Client login created.", "ok");
@@ -21234,15 +21242,17 @@ function PortalApp({ token, onLogout }) {
       return "";
     }
     const normalizedClientName = canonicalizeClientName(String(rawClientName || "").trim());
+    const statusKey = options?.statusKey || "loginClient";
+    const skipStatus = options?.skipStatus === true;
     if (!normalizedClientName) {
-      setStatus(options?.statusKey || "loginClient", "Client name is required.", "error");
+      if (!skipStatus) setStatus(statusKey, "Client name is required.", "error");
       return "";
     }
     const existingClients = Array.isArray(copySettings?.clientDirectory) ? copySettings.clientDirectory : [];
     const alreadyExists = existingClients.some((item) => normalizeClientIdentityKey(item) === normalizeClientIdentityKey(normalizedClientName))
       || availablePresetClients.some((item) => normalizeClientIdentityKey(item) === normalizeClientIdentityKey(normalizedClientName));
     if (alreadyExists) {
-      setStatus(options?.statusKey || "loginClient", "Client already exists.", "warning");
+      if (!skipStatus && !options?.silentIfExists) setStatus(statusKey, "Client already exists.", "warning");
       return normalizedClientName;
     }
     const nextClientDirectory = [...existingClients, normalizedClientName]
@@ -21254,11 +21264,10 @@ function PortalApp({ token, onLogout }) {
       ...copySettings,
       clientDirectory: nextClientDirectory
     });
-    const statusKey = options?.statusKey || "loginClient";
-    setStatus(statusKey, options?.progressMessage || "Saving client...");
+    if (!skipStatus) setStatus(statusKey, options?.progressMessage || "Saving client...");
     const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
     setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
-    setStatus(statusKey, options?.successMessage || "Client saved.", "ok");
+    if (!skipStatus) setStatus(statusKey, options?.successMessage || "Client saved.", "ok");
     return normalizedClientName;
   }
 
@@ -21282,11 +21291,19 @@ function PortalApp({ token, onLogout }) {
     const draft = clientUserEditDrafts[id] || {};
     try {
       setStatus("loginClient", "Saving client account...");
+      const normalizedClientName = canonicalizeClientName(String(draft.clientName || "").trim());
       await api("/company/client-users", token, "PATCH", {
         clientUserId: id,
         username: String(draft.username || "").trim(),
-        clientName: String(draft.clientName || "").trim()
+        clientName: normalizedClientName
       });
+      if (normalizedClientName) {
+        await saveClientDirectoryName(normalizedClientName, {
+          statusKey: "loginClient",
+          silentIfExists: true,
+          skipStatus: true
+        });
+      }
       await reloadLoginSettingsWorkspace();
       setStatus("loginClient", "Client account updated.", "ok");
     } catch (error) {
@@ -27355,7 +27372,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <div className="settings-subsection mail-settings-notes jd-shell-basic">
                   <div className="section-kicker">Basic Job Setup</div>
                   <div className="form-grid two-col">
-                  <label><span>Job title</span><input disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.title} onChange={(e) => setJobDraft((c) => ({ ...c, title: e.target.value }))} /></label>
+                  <label style={{ alignSelf: "start" }}><span>Job title</span><input disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.title} onChange={(e) => setJobDraft((c) => ({ ...c, title: e.target.value }))} /></label>
                   <label>
                     <span>Client</span>
                     <select
