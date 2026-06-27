@@ -21378,16 +21378,16 @@ function PortalApp({ token, onLogout }) {
   }, [visibleClientMasterOptions, selectedClientMasterName]);
 
   useEffect(() => {
-    if (clientMasterViewFilter === "archived" && selectedClientMaster && selectedClientMaster.archived !== true) {
-      setSelectedClientMasterName(archivedClientMasterOptions[0]?.name || "");
+    const isSelectedVisible = selectedClientMasterName
+      ? visibleClientMasterOptions.some((item) => item.name === selectedClientMasterName)
+      : false;
+    if (selectedClientMasterName && !isSelectedVisible) {
+      setSelectedClientMasterName("");
+      setClientMasterRenameDraft("");
       return;
     }
-    if (!selectedClientMasterName && visibleClientMasterOptions.length) {
-      setSelectedClientMasterName(visibleClientMasterOptions[0].name);
-      return;
-    }
-    if (selectedClientMasterName && !visibleClientMasterOptions.some((item) => item.name === selectedClientMasterName)) {
-      setSelectedClientMasterName(visibleClientMasterOptions[0]?.name || "");
+    if (!selectedClientMasterName) {
+      if (clientMasterRenameDraft) setClientMasterRenameDraft("");
       return;
     }
     if (selectedClientMaster && clientMasterRenameDraft !== selectedClientMaster.name) {
@@ -21477,8 +21477,8 @@ function PortalApp({ token, onLogout }) {
       ))));
       setClientMasterViewTransitioning(true);
       setClientMasterViewFilter(nextArchived ? "archived" : "active");
-      setSelectedClientMasterName(selectedClientMaster.name);
-      setClientMasterRenameDraft(selectedClientMaster.name);
+      setSelectedClientMasterName("");
+      setClientMasterRenameDraft("");
       setStatus("loginClientArchive", nextArchived ? "Client archived. It is hidden from dropdowns." : "Client restored to dropdowns.", "ok");
       void reloadClientRecordsWorkspace().catch(() => {});
     } catch (error) {
