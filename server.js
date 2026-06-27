@@ -4851,23 +4851,43 @@ function renderMarketingTemplate(template = "", prospect = {}, context = {}) {
   const senderName = String(context?.senderName || context?.actorName || "").trim();
   const senderFirstName = extractSafeFirstName(senderName);
   const senderEmail = String(context?.senderEmail || "").trim();
+  const senderPhone = String(context?.senderPhone || "").trim();
+  const senderCompany = String(context?.senderCompany || context?.companyName || "").trim();
+  const resolvedRole = String(prospect?.jd_title || prospect?.jdTitle || prospect?.role || prospect?.designation || "").trim();
+  const resolvedCompany = String(senderCompany || prospect?.company_name || prospect?.companyName || "").trim();
   const replacementMap = {
     name: String(prospect?.name || "").trim(),
     first_name: firstName,
     email: String(prospect?.email || "").trim(),
     phone: String(prospect?.phone || "").trim(),
-    company: String(prospect?.company_name || prospect?.companyName || "").trim(),
-    company_name: String(prospect?.company_name || prospect?.companyName || "").trim(),
+    company: resolvedCompany,
+    company_name: resolvedCompany,
     designation: String(prospect?.designation || "").trim(),
+    role: resolvedRole,
+    jd_title: resolvedRole,
     category: String(prospect?.category || "").trim(),
     categories: Array.isArray(prospect?.categories) ? prospect.categories.join(", ") : String(prospect?.categories || "").trim(),
     sender_name: senderName,
     sender_first_name: senderFirstName,
-    sender_email: senderEmail
+    sender_email: senderEmail,
+    sender_phone: senderPhone
   };
-  return source.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key) => {
+  const withDoubleBraceTokens = source.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key) => {
     const needle = String(key || "").trim().toLowerCase();
     return Object.prototype.hasOwnProperty.call(replacementMap, needle) ? replacementMap[needle] : "";
+  });
+  return withDoubleBraceTokens.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (match, key) => {
+    const aliasMap = {
+      Candidate: replacementMap.name,
+      CandidateFirstName: replacementMap.first_name,
+      Role: replacementMap.role,
+      Recruiter: replacementMap.sender_name,
+      RecruiterFirstName: replacementMap.sender_first_name,
+      Company: replacementMap.company,
+      RecruiterEmail: replacementMap.sender_email,
+      RecruiterPhone: replacementMap.sender_phone
+    };
+    return Object.prototype.hasOwnProperty.call(aliasMap, key) ? aliasMap[key] : match;
   });
 }
 
@@ -5423,11 +5443,15 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
       if (!to) continue;
       const subject = renderMarketingTemplate(template.subject, prospect, {
         senderName: String(senderActor?.name || "").trim(),
-        senderEmail: String(senderActor?.email || "").trim()
+        senderEmail: String(senderActor?.email || "").trim(),
+        senderPhone: String(senderActor?.phone || senderActor?.mobile || "").trim(),
+        senderCompany: String(senderActor?.company_name || senderActor?.companyName || "").trim()
       });
       const renderedBody = renderMarketingTemplate(templateBody, prospect, {
         senderName: String(senderActor?.name || "").trim(),
-        senderEmail: String(senderActor?.email || "").trim()
+        senderEmail: String(senderActor?.email || "").trim(),
+        senderPhone: String(senderActor?.phone || senderActor?.mobile || "").trim(),
+        senderCompany: String(senderActor?.company_name || senderActor?.companyName || "").trim()
       });
       const hasHtmlBody = /<[^>]+>/.test(renderedBody);
       const textBase = hasHtmlBody ? stripHtmlForText(renderedBody) : renderedBody;
@@ -16214,11 +16238,15 @@ const server = http.createServer(async (req, res) => {
 
       const renderedSubject = renderMarketingTemplate(subject, prospect, {
         senderName: String(actor?.name || "").trim(),
-        senderEmail: String(actor?.email || "").trim()
+        senderEmail: String(actor?.email || "").trim(),
+        senderPhone: String(actor?.phone || actor?.mobile || "").trim(),
+        senderCompany: String(actor?.company_name || actor?.companyName || "").trim()
       });
       const renderedBody = renderMarketingTemplate(bodyText, prospect, {
         senderName: String(actor?.name || "").trim(),
-        senderEmail: String(actor?.email || "").trim()
+        senderEmail: String(actor?.email || "").trim(),
+        senderPhone: String(actor?.phone || actor?.mobile || "").trim(),
+        senderCompany: String(actor?.company_name || actor?.companyName || "").trim()
       });
       const isHtml = /<[^>]+>/.test(renderedBody);
       sendJson(res, 200, {

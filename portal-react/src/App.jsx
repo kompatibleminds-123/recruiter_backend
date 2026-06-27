@@ -256,8 +256,8 @@ function FeatureLockedSection({ title = "Feature locked" }) {
   customExportPresets: [],
   whatsappTemplate: "{{index}}. {{name}}\nRole: {{jd_title}}\nCompany: {{company}}\nOutcome: {{outcome}}\nRecruiter note: {{recruiter_notes}}",
   emailTemplate: "{{index}}. {{name}}\nCompany: {{company}}\nRole: {{jd_title}}\nLocation: {{location}}\nOutcome: {{outcome}}\nEmail: {{email}}\nPhone: {{phone}}\nNotes: {{recruiter_notes}}",
-  bulkMailSubjectTemplate: "Opportunity with {{company}}",
-  bulkMailBodyTemplate: "Hello {{name}},\n\nI hope you are doing well.\n\nI came across your profile and wanted to connect regarding a relevant opportunity.\n\nRegards,\n{{sender_name}}\n{{sender_email}}",
+  bulkMailSubjectTemplate: "Opportunity with {Company}",
+  bulkMailBodyTemplate: "Hello {Candidate},\n\nI hope you are doing well.\n\nI came across your profile and wanted to connect regarding a relevant opportunity.\n\nRegards,\n{Recruiter}\n{RecruiterEmail}",
   clientShareIntroTemplate: "Hello {{hr_name}},\n\nGreetings !!\n\nThis is {{recruiter_name}} from {{company_name}}.\nPFA the profiles for {{role}}.\nKindly review and share your feedback.",
   clientShareThreadIntroTemplate: "Hello {{hr_name}},\n\nSharing additional profiles for {{role}} in the same mail chain.\n\nRegards,\n{{recruiter_name}}",
   clientShareSubjectTemplate: "{{client_name}} - Candidate Profiles for {{role}}",
@@ -522,12 +522,13 @@ const CLIENT_SHARE_TEMPLATE_PLACEHOLDERS = [
   "{{company_name}}"
 ];
 const BULK_MAIL_TEMPLATE_PLACEHOLDERS = [
-  "{{name}}",
-  "{{first_name}}",
-  "{{company}}",
-  "{{sender_name}}",
-  "{{sender_first_name}}",
-  "{{sender_email}}"
+  "{Candidate}",
+  "{CandidateFirstName}",
+  "{Role}",
+  "{Recruiter}",
+  "{Company}",
+  "{RecruiterEmail}",
+  "{RecruiterPhone}"
 ];
 const JD_SHARE_TEMPLATE_PLACEHOLDERS = [
   "{Candidate}",
