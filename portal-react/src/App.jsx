@@ -9497,6 +9497,7 @@ function PortalApp({ token, onLogout }) {
   const [clientOnlyDraft, setClientOnlyDraft] = useState("");
   const [selectedClientMasterName, setSelectedClientMasterName] = useState("");
   const [clientMasterRenameDraft, setClientMasterRenameDraft] = useState("");
+  const [clientMasterActionBusy, setClientMasterActionBusy] = useState("");
   const [jobClientQuickCreateOpen, setJobClientQuickCreateOpen] = useState(false);
   const [jobClientQuickCreateName, setJobClientQuickCreateName] = useState("");
   const [jobClientQuickCreateBusy, setJobClientQuickCreateBusy] = useState(false);
@@ -21377,6 +21378,7 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     try {
+      setClientMasterActionBusy("rename");
       setStatus("loginClient", "Renaming client globally...");
       const result = await api("/company/client-master/rename", token, "POST", { previousName, nextName });
       setClientRecords((current) => mergeClientRecordsByIdentity([], result || current.map((item) => (
@@ -21408,6 +21410,8 @@ function PortalApp({ token, onLogout }) {
       setStatus("loginClient", "Client renamed globally.", "ok");
     } catch (error) {
       setStatus("loginClient", String(error?.message || error), "error");
+    } finally {
+      setClientMasterActionBusy("");
     }
   }
 
@@ -21421,6 +21425,7 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     try {
+      setClientMasterActionBusy(nextArchived ? "archive" : "restore");
       setStatus("loginClient", nextArchived ? "Archiving client..." : "Restoring client...");
       const result = await api("/company/client-master/archive", token, "POST", {
         clientName: selectedClientMaster.name,
@@ -21434,6 +21439,8 @@ function PortalApp({ token, onLogout }) {
       setStatus("loginClient", nextArchived ? "Client archived. It is hidden from dropdowns." : "Client restored to dropdowns.", "ok");
     } catch (error) {
       setStatus("loginClient", String(error?.message || error), "error");
+    } finally {
+      setClientMasterActionBusy("");
     }
   }
 
@@ -28935,11 +28942,26 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </label>
                     </div>
                     {selectedClientMaster ? (
-                      <div className="button-row tight" style={{ marginTop: 10 }}>
-                        <button onClick={() => void renameClientMasterSelection()} disabled={!isSettingsAdmin}>Save rename globally</button>
-                        <button className="ghost-btn" onClick={() => void setClientMasterArchived(selectedClientMaster.archived !== true)} disabled={!isSettingsAdmin}>
-                          {selectedClientMaster.archived ? "Restore client" : "Archive client"}
-                        </button>
+                      <div style={{ marginTop: 10 }}>
+                        <div className="button-row tight">
+                          <button onClick={() => void renameClientMasterSelection()} disabled={!isSettingsAdmin || !!clientMasterActionBusy}>
+                            {clientMasterActionBusy === "rename" ? "Saving..." : "Save rename globally"}
+                          </button>
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+                            <button
+                              className="ghost-btn"
+                              onClick={() => void setClientMasterArchived(selectedClientMaster.archived !== true)}
+                              disabled={!isSettingsAdmin || !!clientMasterActionBusy}
+                            >
+                              {clientMasterActionBusy === "archive"
+                                ? "Archiving..."
+                                : clientMasterActionBusy === "restore"
+                                  ? "Restoring..."
+                                  : (selectedClientMaster.archived ? "Restore client" : "Archive client")}
+                            </button>
+                            {statuses.loginClient ? <div className={`status ${statuses.loginClientKind || ""}`} style={{ marginTop: 8 }}>{statuses.loginClient}</div> : null}
+                          </div>
+                        </div>
                       </div>
                     ) : (
                       <div className="empty-state">No client master entries yet. Create one below or from Jobs.</div>
@@ -29009,7 +29031,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </div>
                     ) : null}
                   </div>
-                  {statuses.loginClient ? <div className={`status ${statuses.loginClientKind || ""}`}>{statuses.loginClient}</div> : null}
+                  {!selectedClientMaster && statuses.loginClient ? <div className={`status ${statuses.loginClientKind || ""}`}>{statuses.loginClient}</div> : null}
                 </details>
                 ) : null}
 
