@@ -9499,6 +9499,7 @@ function PortalApp({ token, onLogout }) {
   const [clientMasterRenameDraft, setClientMasterRenameDraft] = useState("");
   const [clientMasterActionBusy, setClientMasterActionBusy] = useState("");
   const [clientMasterViewFilter, setClientMasterViewFilter] = useState("active");
+  const [clientMasterViewTransitioning, setClientMasterViewTransitioning] = useState(false);
   const [jobClientQuickCreateOpen, setJobClientQuickCreateOpen] = useState(false);
   const [jobClientQuickCreateName, setJobClientQuickCreateName] = useState("");
   const [jobClientQuickCreateBusy, setJobClientQuickCreateBusy] = useState(false);
@@ -16141,6 +16142,22 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  async function reloadClientRecordsWorkspace() {
+    if (!token) return;
+    const clientsResult = await api("/company/clients", token).catch(() => ({ clients: [] }));
+    setClientRecords((current) => mergeClientRecordsByIdentity(current, clientsResult?.clients || []));
+  }
+
+  async function reloadJobsCatalogWorkspace() {
+    if (!token) return;
+    const jobsResult = await api("/company/jds", token).catch(() => ({ jobs: [] }));
+    setState((current) => ({
+      ...current,
+      jobs: jobsResult?.jobs || current.jobs || []
+    }));
+    setJobsCatalog((current) => mergeJobsCatalog(current, jobsResult?.jobs || [], []));
+  }
+
   async function hideCapturedCandidate(candidateId) {
     if (!String(candidateId || "").trim()) {
       setStatus("captured", "Cannot hide: missing candidate id.", "error");
@@ -18250,7 +18267,7 @@ function PortalApp({ token, onLogout }) {
           assignedRecruiters: Array.from(dedupedRecruiters.values())
         }
       });
-      await reloadJobsWorkspace();
+      void reloadJobsCatalogWorkspace().catch(() => {});
       const nextId = String(result?.id || selectedJobId || jobDraft.id || "").trim();
       if (nextId) {
         setSelectedJobId(nextId);
@@ -18313,7 +18330,6 @@ function PortalApp({ token, onLogout }) {
         // Fallback: force a fully fresh insert payload if first attempt fails.
         result = await api("/company/jds", token, "POST", { job: buildNewJobPayload(true) });
       }
-      await reloadJobsWorkspace();
       const nextId = String(result?.id || "").trim();
       if (nextId) {
         loadJobIntoDraft(nextId);
@@ -18321,6 +18337,7 @@ function PortalApp({ token, onLogout }) {
         resetJobDraftBlank();
       }
       setStatus("jobs", "Saved as a new JD.", "ok");
+      void reloadJobsCatalogWorkspace().catch(() => {});
     } catch (error) {
       setStatus("jobs", `Save as new failed: ${String(error?.message || error)}`, "error");
     } finally {
@@ -18338,7 +18355,7 @@ function PortalApp({ token, onLogout }) {
     setStatus("jobs", "Deleting JD...");
     try {
       await api("/company/jds", token, "DELETE", { jobId });
-      await reloadJobsWorkspace();
+      void reloadJobsCatalogWorkspace().catch(() => {});
       resetJobDraftBlank();
       setStatus("jobs", "JD deleted.", "ok");
     } catch (error) {
@@ -18385,7 +18402,6 @@ function PortalApp({ token, onLogout }) {
           assignedRecruiters: Array.from(dedupedRecruiters.values())
         }
       });
-      await reloadJobsWorkspace();
       setJobDraft((current) => ({
         ...current,
         isArchived: Boolean(nextArchived),
@@ -18396,6 +18412,7 @@ function PortalApp({ token, onLogout }) {
         closedBy: nextArchived ? (current.closedBy || String(state.user?.email || "")) : ""
       }));
       setStatus("jobs", nextArchived ? "Job closed and moved to Archived JDs." : "JD reactivated.", "ok");
+      void reloadJobsCatalogWorkspace().catch(() => {});
     } catch (error) {
       setStatus("jobs", `${nextArchived ? "Archive" : "Reactivate"} failed: ${String(error?.message || error)}`, "error");
     } finally {
@@ -21378,6 +21395,12 @@ function PortalApp({ token, onLogout }) {
     }
   }, [clientMasterViewFilter, activeClientMasterOptions, archivedClientMasterOptions, visibleClientMasterOptions, selectedClientMasterName, selectedClientMaster, clientMasterRenameDraft]);
 
+  useEffect(() => {
+    if (!clientMasterViewTransitioning) return undefined;
+    const timer = setTimeout(() => setClientMasterViewTransitioning(false), 180);
+    return () => clearTimeout(timer);
+  }, [clientMasterViewTransitioning]);
+
   async function renameClientMasterSelection() {
     if (!isSettingsAdmin) {
       setStatus("loginClientRename", "Only admin can rename clients.", "error");
@@ -21396,10 +21419,10 @@ function PortalApp({ token, onLogout }) {
     try {
       setClientMasterActionBusy("rename");
       setStatus("loginClientRename", "Renaming client globally...");
-      const result = await api("/company/client-master/rename", token, "POST", { previousName, nextName });
-      setClientRecords((current) => mergeClientRecordsByIdentity([], result || current.map((item) => (
+      await api("/company/client-master/rename", token, "POST", { previousName, nextName });
+      setClientRecords((current) => mergeClientRecordsByIdentity(current.map((item) => (
         normalizeClientIdentityKey(String(item?.name || "").trim()) === normalizeClientIdentityKey(previousName)
-          ? { ...item, name: nextName, archived: false }
+          ? { ...item, name: nextName, archived: false, status: "active" }
           : item
       ))));
       setClientUsers((current) => current.map((item) => (
@@ -21422,8 +21445,8 @@ function PortalApp({ token, onLogout }) {
       }));
       setSelectedClientMasterName(nextName);
       setClientMasterRenameDraft(nextName);
-      await reloadLoginSettingsWorkspace();
       setStatus("loginClientRename", "Client renamed globally.", "ok");
+      void reloadClientRecordsWorkspace().catch(() => {});
     } catch (error) {
       setStatus("loginClientRename", String(error?.message || error), "error");
     } finally {
@@ -21443,19 +21466,21 @@ function PortalApp({ token, onLogout }) {
     try {
       setClientMasterActionBusy(nextArchived ? "archive" : "restore");
       setStatus("loginClientArchive", nextArchived ? "Archiving client..." : "Restoring client...");
-      const result = await api("/company/client-master/archive", token, "POST", {
+      await api("/company/client-master/archive", token, "POST", {
         clientName: selectedClientMaster.name,
         archived: nextArchived
       });
-      setClientRecords((current) => mergeClientRecordsByIdentity([], result || current.map((item) => (
+      setClientRecords((current) => mergeClientRecordsByIdentity(current.map((item) => (
         normalizeClientIdentityKey(String(item?.name || "").trim()) === normalizeClientIdentityKey(selectedClientMaster.name)
           ? { ...item, archived: nextArchived, status: nextArchived ? "archived" : "active" }
           : item
       ))));
+      setClientMasterViewTransitioning(true);
       setClientMasterViewFilter(nextArchived ? "archived" : "active");
       setSelectedClientMasterName(selectedClientMaster.name);
       setClientMasterRenameDraft(selectedClientMaster.name);
       setStatus("loginClientArchive", nextArchived ? "Client archived. It is hidden from dropdowns." : "Client restored to dropdowns.", "ok");
+      void reloadClientRecordsWorkspace().catch(() => {});
     } catch (error) {
       setStatus("loginClientArchive", String(error?.message || error), "error");
     } finally {
@@ -28933,13 +28958,24 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <div className="settings-subsection">
                     <div className="section-kicker">Client Master</div>
                     <p className="muted">Rename client globally across jobs, candidates, assessments, and portal mapping. Archive hides it from dropdowns while keeping history intact.</p>
-                    <div className="form-grid three-col">
+                    <div
+                      className="client-master-switch"
+                      style={{
+                        opacity: clientMasterViewTransitioning ? 0.78 : 1,
+                        transform: clientMasterViewTransitioning ? "translateY(2px)" : "translateY(0)",
+                        transition: "opacity 160ms ease, transform 160ms ease"
+                      }}
+                    >
+                      <div className="form-grid three-col">
                       <label>
                         <span>View</span>
                         <select
                           disabled={!isSettingsAdmin}
                           value={clientMasterViewFilter}
-                          onChange={(e) => setClientMasterViewFilter(e.target.value)}
+                          onChange={(e) => {
+                            setClientMasterViewTransitioning(true);
+                            setClientMasterViewFilter(e.target.value);
+                          }}
                         >
                           <option value="active">Active</option>
                           <option value="archived">Archived</option>
@@ -28970,6 +29006,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           placeholder="Enter new client name"
                         />
                       </label>
+                      </div>
                     </div>
                     {selectedClientMaster ? (
                       <div style={{ marginTop: 10 }}>
