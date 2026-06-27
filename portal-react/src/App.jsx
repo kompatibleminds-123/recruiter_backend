@@ -258,6 +258,7 @@ function FeatureLockedSection({ title = "Feature locked" }) {
   emailTemplate: "{{index}}. {{name}}\nCompany: {{company}}\nRole: {{jd_title}}\nLocation: {{location}}\nOutcome: {{outcome}}\nEmail: {{email}}\nPhone: {{phone}}\nNotes: {{recruiter_notes}}",
   bulkMailSubjectTemplate: "Opportunity with {Company}",
   bulkMailBodyTemplate: "Hello {Candidate},\n\nI hope you are doing well.\n\nI came across your profile and wanted to connect regarding a relevant opportunity.\n\nRegards,\n{Recruiter}\n{RecruiterEmail}",
+  clientDirectory: [],
   clientShareIntroTemplate: "Hello {{hr_name}},\n\nGreetings !!\n\nThis is {{recruiter_name}} from {{company_name}}.\nPFA the profiles for {{role}}.\nKindly review and share your feedback.",
   clientShareThreadIntroTemplate: "Hello {{hr_name}},\n\nSharing additional profiles for {{role}} in the same mail chain.\n\nRegards,\n{{recruiter_name}}",
   clientShareSubjectTemplate: "{{client_name}} - Candidate Profiles for {{role}}",
@@ -339,6 +340,9 @@ function normalizeJobApplyField(field, index = 0) {
 
 function migrateCopySettings(settings = {}) {
   const next = { ...DEFAULT_COPY_SETTINGS, ...(settings || {}) };
+  next.clientDirectory = Array.isArray(next.clientDirectory)
+    ? next.clientDirectory.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
   next.deletedSuggestedShortcuts = (Array.isArray(next.deletedSuggestedShortcuts) ? next.deletedSuggestedShortcuts : [])
     .map((item) => normalizeShortcutKey(item))
     .filter(Boolean);
@@ -9476,6 +9480,10 @@ function PortalApp({ token, onLogout }) {
   const [companyEditDrafts, setCompanyEditDrafts] = useState({});
   const [clientUsers, setClientUsers] = useState([]);
   const [clientUserEditDrafts, setClientUserEditDrafts] = useState({});
+  const [clientOnlyDraft, setClientOnlyDraft] = useState("");
+  const [jobClientQuickCreateOpen, setJobClientQuickCreateOpen] = useState(false);
+  const [jobClientQuickCreateName, setJobClientQuickCreateName] = useState("");
+  const [jobClientQuickCreateBusy, setJobClientQuickCreateBusy] = useState(false);
   const payrollWorkspaceUsers = useMemo(
     () => (state.users || []).filter((item) => ["payroll_owner", "payroll_manager"].includes(String(item?.role || "").toLowerCase())),
     [state.users]
@@ -9517,12 +9525,28 @@ function PortalApp({ token, onLogout }) {
       const nextTs = rowTs(job);
       if (nextTs >= Number(existing?.ts || 0)) byKey.set(key, { value: candidate, ts: nextTs });
     });
+    (Array.isArray(clientUsers) ? clientUsers : []).forEach((item) => {
+      const original = String(item?.clientName || "").trim();
+      if (!original || original.startsWith("__")) return;
+      const cleaned = sanitizeClientNameInput(original);
+      const key = normalizeClientIdentityKey(cleaned || original);
+      if (!key) return;
+      if (!byKey.has(key)) byKey.set(key, { value: cleaned || original, ts: 0 });
+    });
+    (Array.isArray(copySettings?.clientDirectory) ? copySettings.clientDirectory : []).forEach((item) => {
+      const original = String(item || "").trim();
+      if (!original || original.startsWith("__")) return;
+      const cleaned = sanitizeClientNameInput(original);
+      const key = normalizeClientIdentityKey(cleaned || original);
+      if (!key) return;
+      if (!byKey.has(key)) byKey.set(key, { value: cleaned || original, ts: 0 });
+    });
     const output = new Map();
     byKey.forEach((entry, key) => {
       output.set(key, String(entry?.value || "").trim());
     });
     return output;
-  }, [state.jobs, normalizeClientIdentityKey, sanitizeClientNameInput]);
+  }, [state.jobs, clientUsers, copySettings?.clientDirectory, normalizeClientIdentityKey, sanitizeClientNameInput]);
   const canonicalizeClientName = useCallback((value = "") => {
     const cleaned = sanitizeClientNameInput(value);
     const key = normalizeClientIdentityKey(cleaned);
@@ -9537,8 +9561,18 @@ function PortalApp({ token, onLogout }) {
       if (clientName.startsWith("__")) return;
       values.add(clientName);
     });
+    (Array.isArray(clientUsers) ? clientUsers : []).forEach((item) => {
+      const clientName = canonicalizeClientName(String(item?.clientName || "").trim());
+      if (!clientName || clientName.startsWith("__")) return;
+      values.add(clientName);
+    });
+    (Array.isArray(copySettings?.clientDirectory) ? copySettings.clientDirectory : []).forEach((item) => {
+      const clientName = canonicalizeClientName(String(item || "").trim());
+      if (!clientName || clientName.startsWith("__")) return;
+      values.add(clientName);
+    });
     return Array.from(values).sort((a, b) => a.localeCompare(b));
-  }, [state.jobs, canonicalizeClientName]);
+  }, [state.jobs, clientUsers, copySettings?.clientDirectory, canonicalizeClientName]);
   const clientRoleOptionsByClient = useMemo(() => {
     const byClient = new Map();
     (Array.isArray(state.jobs) ? state.jobs : []).forEach((job) => {
@@ -18008,6 +18042,8 @@ function PortalApp({ token, onLogout }) {
 
   function resetJobDraftBlank() {
     setSelectedJobId("");
+    setJobClientQuickCreateOpen(false);
+    setJobClientQuickCreateName("");
     setJobDraft({
       id: "",
       title: "",
@@ -18047,6 +18083,8 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     setSelectedJobId(String(job.id || ""));
+    setJobClientQuickCreateOpen(false);
+    setJobClientQuickCreateName("");
     setJobListLane(Boolean(job.isArchived) ? "archived" : "active");
     setJobDraft({
       id: String(job.id || ""),
@@ -21188,6 +21226,40 @@ function PortalApp({ token, onLogout }) {
     } catch (error) {
       setStatus("loginClient", String(error?.message || error), "error");
     }
+  }
+
+  async function saveClientDirectoryName(rawClientName, options = {}) {
+    if (!isSettingsAdmin) {
+      setStatus("loginClient", "Only admin can create clients.", "error");
+      return "";
+    }
+    const normalizedClientName = canonicalizeClientName(String(rawClientName || "").trim());
+    if (!normalizedClientName) {
+      setStatus(options?.statusKey || "loginClient", "Client name is required.", "error");
+      return "";
+    }
+    const existingClients = Array.isArray(copySettings?.clientDirectory) ? copySettings.clientDirectory : [];
+    const alreadyExists = existingClients.some((item) => normalizeClientIdentityKey(item) === normalizeClientIdentityKey(normalizedClientName))
+      || availablePresetClients.some((item) => normalizeClientIdentityKey(item) === normalizeClientIdentityKey(normalizedClientName));
+    if (alreadyExists) {
+      setStatus(options?.statusKey || "loginClient", "Client already exists.", "warning");
+      return normalizedClientName;
+    }
+    const nextClientDirectory = [...existingClients, normalizedClientName]
+      .map((item) => canonicalizeClientName(String(item || "").trim()))
+      .filter(Boolean)
+      .filter((item, index, arr) => arr.findIndex((entry) => normalizeClientIdentityKey(entry) === normalizeClientIdentityKey(item)) === index)
+      .sort((a, b) => a.localeCompare(b));
+    const payload = migrateCopySettings({
+      ...copySettings,
+      clientDirectory: nextClientDirectory
+    });
+    const statusKey = options?.statusKey || "loginClient";
+    setStatus(statusKey, options?.progressMessage || "Saving client...");
+    const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
+    setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
+    setStatus(statusKey, options?.successMessage || "Client saved.", "ok");
+    return normalizedClientName;
   }
 
   function getClientUserEditDraft(item) {
@@ -27290,12 +27362,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       disabled={jobDraftReadOnly || jobActionBusy}
                       value={jobDraft.clientName}
                       onChange={(e) => {
+                        if (e.target.value === "__create_new_client__") {
+                          setJobClientQuickCreateOpen(true);
+                          setJobClientQuickCreateName("");
+                          return;
+                        }
                         const nextClient = canonicalizeClientName(e.target.value);
+                        setJobClientQuickCreateOpen(false);
                         setJobDraft((c) => ({ ...c, clientName: nextClient }));
                         applyClientJobContentDefaults(nextClient);
                       }}
                     >
                       <option value="">Select client</option>
+                      <option value="__create_new_client__">+ Create new client</option>
                       {jobDraft.clientName && !availablePresetClients.includes(jobDraft.clientName) ? (
                         <option value={jobDraft.clientName}>{jobDraft.clientName}</option>
                       ) : null}
@@ -27303,6 +27382,56 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <option key={`job-client-${clientName}`} value={clientName}>{clientName}</option>
                       ))}
                     </select>
+                    {jobClientQuickCreateOpen ? (
+                      <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                        <input
+                          disabled={jobDraftReadOnly || jobActionBusy || jobClientQuickCreateBusy}
+                          value={jobClientQuickCreateName}
+                          onChange={(e) => setJobClientQuickCreateName(e.target.value)}
+                          placeholder="Enter new client name"
+                        />
+                        <div className="button-row tight">
+                          <button
+                            type="button"
+                            disabled={jobDraftReadOnly || jobActionBusy || jobClientQuickCreateBusy}
+                            onClick={async () => {
+                              try {
+                                setJobClientQuickCreateBusy(true);
+                                const savedClientName = await saveClientDirectoryName(jobClientQuickCreateName, {
+                                  statusKey: "jobs",
+                                  progressMessage: "Creating client...",
+                                  successMessage: "Client created."
+                                });
+                                if (savedClientName) {
+                                  setJobDraft((current) => ({ ...current, clientName: savedClientName }));
+                                  applyClientJobContentDefaults(savedClientName);
+                                  setJobClientQuickCreateOpen(false);
+                                  setJobClientQuickCreateName("");
+                                }
+                              } catch (error) {
+                                setStatus("jobs", String(error?.message || error), "error");
+                              } finally {
+                                setJobClientQuickCreateBusy(false);
+                              }
+                            }}
+                          >
+                            {jobClientQuickCreateBusy ? "Saving..." : "Create client"}
+                          </button>
+                          <button
+                            type="button"
+                            className="ghost-btn"
+                            disabled={jobDraftReadOnly || jobActionBusy || jobClientQuickCreateBusy}
+                            onClick={() => {
+                              setJobClientQuickCreateOpen(false);
+                              setJobClientQuickCreateName("");
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        <span className="field-help">Creates client only. No client portal login is created here.</span>
+                      </div>
+                    ) : null}
                   </label>
                   <label><span>Location</span><input disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.location} onChange={(e) => setJobDraft((c) => ({ ...c, location: e.target.value }))} placeholder="Mumbai / Bengaluru / Remote" /></label>
                   <label><span>Work mode</span><select disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.workMode} onChange={(e) => setJobDraft((c) => ({ ...c, workMode: e.target.value }))}><option value="">Not specified</option><option value="Remote">Remote</option><option value="Hybrid">Hybrid</option><option value="Work from office">Work from office</option></select></label>
@@ -28631,6 +28760,33 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <label><span>Client name</span><input autoComplete="off" disabled={!isSettingsAdmin} value={clientUserDraft.clientName} onChange={(e) => setClientUserDraft((current) => ({ ...current, clientName: e.target.value }))} placeholder="Enter client name" /></label>
                     </div>
                     {isSettingsAdmin ? <div className="button-row"><button onClick={() => void createClientPortalUser()}>Create client login</button></div> : null}
+                  </div>
+                  <div className="settings-subsection">
+                    <div className="section-kicker">Create Client Only</div>
+                    <p className="muted">Use this when you only want the client available in JD / role workflows, without creating a client portal login.</p>
+                    <div className="form-grid two-col">
+                      <label><span>Client name</span><input autoComplete="off" disabled={!isSettingsAdmin} value={clientOnlyDraft} onChange={(e) => setClientOnlyDraft(e.target.value)} placeholder="Enter client name only" /></label>
+                    </div>
+                    {isSettingsAdmin ? (
+                      <div className="button-row">
+                        <button
+                          onClick={async () => {
+                            try {
+                              const savedClientName = await saveClientDirectoryName(clientOnlyDraft, {
+                                statusKey: "loginClient",
+                                progressMessage: "Creating client...",
+                                successMessage: "Client created without portal login."
+                              });
+                              if (savedClientName) setClientOnlyDraft("");
+                            } catch (error) {
+                              setStatus("loginClient", String(error?.message || error), "error");
+                            }
+                          }}
+                        >
+                          Create client only
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                   {statuses.loginClient ? <div className={`status ${statuses.loginClientKind || ""}`}>{statuses.loginClient}</div> : null}
                 </details>
