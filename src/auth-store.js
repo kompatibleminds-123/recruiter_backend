@@ -740,6 +740,40 @@ async function countCompanyWorkspaceUsers(companyId) {
   const recruiterUsers = (usersRows || []).filter((u) => String(u?.role || "").toLowerCase() !== "client").length;
   return recruiterUsers + (Array.isArray(payrollRows) ? payrollRows.length : 0);
 }
+
+function sanitizeClientDirectoryEntry(rawEntry, index = 0) {
+  const source =
+    rawEntry && typeof rawEntry === "object" && !Array.isArray(rawEntry)
+      ? rawEntry
+      : { name: rawEntry };
+  const name = String(
+    source.name
+    || source.clientName
+    || source.client_name
+    || source.label
+    || source.value
+    || ""
+  ).trim();
+  if (!name || name.startsWith("__")) return null;
+  return {
+    id: String(source.id || `client_directory_${index + 1}`).trim() || `client_directory_${index + 1}`,
+    name,
+    archived: source.archived === true || String(source.status || "").trim().toLowerCase() === "archived",
+    updatedAt: String(source.updatedAt || source.updated_at || "").trim(),
+    updatedBy: String(source.updatedBy || source.updated_by || "").trim()
+  };
+}
+
+function sanitizeClientDirectoryList(rawList = []) {
+  const byKey = new Map();
+  (Array.isArray(rawList) ? rawList : []).forEach((item, index) => {
+    const normalized = sanitizeClientDirectoryEntry(item, index);
+    if (!normalized) return;
+    byKey.set(normalized.name.toLowerCase(), normalized);
+  });
+  return Array.from(byKey.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function sanitizeSharedExportPresetSettings(raw) {
   const source = raw && typeof raw === "object" ? raw : {};
   const rawJobBoard =
@@ -770,6 +804,11 @@ function sanitizeSharedExportPresetSettings(raw) {
     source.recruiterCampaignTemplatesByUser && typeof source.recruiterCampaignTemplatesByUser === "object"
       ? source.recruiterCampaignTemplatesByUser
       : {};
+  const rawClientDirectory = Array.isArray(source.clientDirectory)
+    ? source.clientDirectory
+    : Array.isArray(source.client_directory)
+      ? source.client_directory
+      : [];
   const rawSheetImportLearnedAliases =
     source.sheetImportLearnedAliases && typeof source.sheetImportLearnedAliases === "object"
       ? source.sheetImportLearnedAliases
@@ -978,6 +1017,7 @@ function sanitizeSharedExportPresetSettings(raw) {
     recruiterCampaignTemplatesByUser,
     companyWideShortcuts,
     personalShortcutsByUser,
+    clientDirectory: sanitizeClientDirectoryList(rawClientDirectory),
     updatedAt: String(source.updatedAt || "").trim(),
     updatedBy: String(source.updatedBy || "").trim()
   };
@@ -3650,6 +3690,148 @@ async function deleteClientUser({ actorUserId, companyId, clientUserId }) {
   await sbDel("client_portal_users", `id=eq.${enc(clientUserId)}&company_id=eq.${enc(companyId)}`);
   return { deleted: true, clientUserId: String(clientUserId || "").trim() };
 }
+
+function patchClientNameInLocalRecord(item, previousName, nextName) {
+  const currentClientName = String(item?.clientName || item?.client_name || "").trim();
+  if (currentClientName !== previousName) return item;
+  const next = { ...(item || {}) };
+  if (Object.prototype.hasOwnProperty.call(next, "clientName")) next.clientName = nextName;
+  if (Object.prototype.hasOwnProperty.call(next, "client_name")) next.client_name = nextName;
+  if (next.payload && typeof next.payload === "object") {
+    next.payload = { ...next.payload };
+    if (String(next.payload.clientName || next.payload.client_name || "").trim() === previousName) {
+      if (Object.prototype.hasOwnProperty.call(next.payload, "clientName")) next.payload.clientName = nextName;
+      if (Object.prototype.hasOwnProperty.call(next.payload, "client_name")) next.payload.client_name = nextName;
+    }
+  }
+  return next;
+}
+
+async function renameCompanyClientGlobal({ actorUserId, companyId, previousName, nextName }) {
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor || actor.role !== "admin") throw new Error("Only an admin can rename clients.");
+  const scopedCompanyId = String(companyId || "").trim();
+  const previous = String(previousName || "").trim();
+  const next = String(nextName || "").trim();
+  if (!scopedCompanyId || !previous || !next) throw new Error("companyId, previousName, and nextName are required.");
+  if (previous === next) return getCompanySharedExportPresets(scopedCompanyId);
+  const now = new Date().toISOString();
+  const settings = await getCompanySharedExportPresets(scopedCompanyId).catch(() => ({}));
+  const clientDirectory = sanitizeClientDirectoryList(
+    [
+      ...(Array.isArray(settings?.clientDirectory) ? settings.clientDirectory : []),
+      { name: next, archived: false, updatedAt: now, updatedBy: actor.email }
+    ].map((item) => {
+      const safe = sanitizeClientDirectoryEntry(item);
+      if (!safe) return null;
+      if (String(safe.name || "").trim() === previous) {
+        return { ...safe, name: next, archived: false, updatedAt: now, updatedBy: actor.email };
+      }
+      return safe;
+    }).filter(Boolean)
+  );
+  await saveCompanySharedExportPresets({
+    actorUserId,
+    companyId: scopedCompanyId,
+    settings: {
+      ...settings,
+      clientDirectory
+    }
+  });
+
+  if (!cfg().on) {
+    const store = readStore();
+    store.jobs = Array.isArray(store.jobs)
+      ? store.jobs.map((item) => {
+        const nextItem = patchClientNameInLocalRecord(item, previous, next);
+        if (String(nextItem?.companyId || nextItem?.company_id || "").trim() !== scopedCompanyId) return nextItem;
+        return nextItem;
+      })
+      : [];
+    store.clientUsers = Array.isArray(store.clientUsers)
+      ? store.clientUsers.map((item) => {
+        if (String(item?.companyId || item?.company_id || "").trim() !== scopedCompanyId) return item;
+        return patchClientNameInLocalRecord(item, previous, next);
+      })
+      : [];
+    store.assessments = Array.isArray(store.assessments)
+      ? store.assessments.map((item) => {
+        if (String(item?.companyId || item?.company_id || "").trim() !== scopedCompanyId) return item;
+        return patchClientNameInLocalRecord(item, previous, next);
+      })
+      : [];
+    store.candidates = Array.isArray(store.candidates)
+      ? store.candidates.map((item) => {
+        if (String(item?.companyId || item?.company_id || "").trim() !== scopedCompanyId) return item;
+        return patchClientNameInLocalRecord(item, previous, next);
+      })
+      : [];
+    writeStore(store);
+    return getCompanySharedExportPresets(scopedCompanyId);
+  }
+
+  await Promise.all([
+    sbPatch("company_jobs", `company_id=eq.${enc(scopedCompanyId)}&client_name=eq.${enc(previous)}`, {
+      client_name: next,
+      updated_at: now,
+      updated_by: String(actor.email || "").trim()
+    }).catch(() => []),
+    sbPatch("client_portal_users", `company_id=eq.${enc(scopedCompanyId)}&client_name=eq.${enc(previous)}`, {
+      client_name: next,
+      updated_at: now,
+      updated_by: String(actor.email || "").trim()
+    }).catch(() => []),
+    sbPatch("assessments", `company_id=eq.${enc(scopedCompanyId)}&client_name=eq.${enc(previous)}`, {
+      client_name: next,
+      updated_at: now,
+      updated_by: String(actor.email || "").trim()
+    }).catch(() => []),
+    sbPatch("candidates", `company_id=eq.${enc(scopedCompanyId)}&client_name=eq.${enc(previous)}`, {
+      client_name: next,
+      updated_at: now,
+      recruiter_name: String(actor.name || "").trim() || undefined
+    }).catch(() => []),
+    sbPatch("applicants", `company_id=eq.${enc(scopedCompanyId)}&client_name=eq.${enc(previous)}`, {
+      client_name: next,
+      updated_at: now
+    }).catch(() => [])
+  ]);
+  return getCompanySharedExportPresets(scopedCompanyId);
+}
+
+async function setCompanyClientArchived({ actorUserId, companyId, clientName, archived = true }) {
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor || actor.role !== "admin") throw new Error("Only an admin can update clients.");
+  const scopedCompanyId = String(companyId || "").trim();
+  const scopedClientName = String(clientName || "").trim();
+  if (!scopedCompanyId || !scopedClientName) throw new Error("companyId and clientName are required.");
+  const now = new Date().toISOString();
+  const settings = await getCompanySharedExportPresets(scopedCompanyId).catch(() => ({}));
+  const currentDirectory = Array.isArray(settings?.clientDirectory) ? settings.clientDirectory : [];
+  const found = currentDirectory.some((item) => String(item?.name || "").trim().toLowerCase() === scopedClientName.toLowerCase());
+  const nextDirectory = sanitizeClientDirectoryList([
+    ...currentDirectory,
+    ...(found ? [] : [{ name: scopedClientName }])
+  ].map((item) => {
+    const safe = sanitizeClientDirectoryEntry(item);
+    if (!safe) return null;
+    if (String(safe.name || "").trim().toLowerCase() !== scopedClientName.toLowerCase()) return safe;
+    return {
+      ...safe,
+      archived: archived === true,
+      updatedAt: now,
+      updatedBy: String(actor.email || "").trim()
+    };
+  }).filter(Boolean));
+  return saveCompanySharedExportPresets({
+    actorUserId,
+    companyId: scopedCompanyId,
+    settings: {
+      ...settings,
+      clientDirectory: nextDirectory
+    }
+  });
+}
 async function updatePlatformCompany({ companyId, companyName }) {
   const scopedCompanyId = String(companyId || "").trim();
   const nextName = String(companyName || "").trim();
@@ -6139,6 +6321,8 @@ module.exports = {
   assertCanCreatePlatformCompany,
   bootstrapAdmin,
   createClientUser,
+  renameCompanyClientGlobal,
+  setCompanyClientArchived,
   updateClientUser,
   deleteClientUser,
   createEmployeeUser,

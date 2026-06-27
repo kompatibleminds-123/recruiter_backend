@@ -35,6 +35,8 @@ const {
   createClientUser,
   deleteClientUser,
   createEmployeeUser,
+  renameCompanyClientGlobal,
+  setCompanyClientArchived,
   createCompanyWithAdmin,
   createTrialCompanyWithAdmin,
   createUser,
@@ -15269,6 +15271,42 @@ const server = http.createServer(async (req, res) => {
         clientUserId: String(body.clientUserId || "").trim()
       });
       sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/client-master/rename") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      await requireSuiteModulesAccess(actor, "Client module");
+      const body = await readJsonBody(req);
+      const settings = await renameCompanyClientGlobal({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        previousName: String(body.previousName || body.previous_name || "").trim(),
+        nextName: String(body.nextName || body.next_name || "").trim()
+      });
+      sendJson(res, 200, { ok: true, result: settings });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/client-master/archive") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      await requireSuiteModulesAccess(actor, "Client module");
+      const body = await readJsonBody(req);
+      const settings = await setCompanyClientArchived({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        clientName: String(body.clientName || body.client_name || "").trim(),
+        archived: body.archived !== false
+      });
+      sendJson(res, 200, { ok: true, result: settings });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

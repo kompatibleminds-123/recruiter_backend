@@ -341,7 +341,20 @@ function normalizeJobApplyField(field, index = 0) {
 function migrateCopySettings(settings = {}) {
   const next = { ...DEFAULT_COPY_SETTINGS, ...(settings || {}) };
   next.clientDirectory = Array.isArray(next.clientDirectory)
-    ? next.clientDirectory.map((item) => String(item || "").trim()).filter(Boolean)
+    ? next.clientDirectory
+      .map((item, index) => {
+        const source = item && typeof item === "object" && !Array.isArray(item) ? item : { name: item };
+        const name = String(source?.name || source?.clientName || source?.client_name || source?.label || source?.value || "").trim();
+        if (!name) return null;
+        return {
+          id: String(source?.id || `client_directory_${index + 1}`).trim() || `client_directory_${index + 1}`,
+          name,
+          archived: source?.archived === true || String(source?.status || "").trim().toLowerCase() === "archived",
+          updatedAt: String(source?.updatedAt || source?.updated_at || "").trim(),
+          updatedBy: String(source?.updatedBy || source?.updated_by || "").trim()
+        };
+      })
+      .filter(Boolean)
     : [];
   next.deletedSuggestedShortcuts = (Array.isArray(next.deletedSuggestedShortcuts) ? next.deletedSuggestedShortcuts : [])
     .map((item) => normalizeShortcutKey(item))
@@ -9481,6 +9494,8 @@ function PortalApp({ token, onLogout }) {
   const [clientUsers, setClientUsers] = useState([]);
   const [clientUserEditDrafts, setClientUserEditDrafts] = useState({});
   const [clientOnlyDraft, setClientOnlyDraft] = useState("");
+  const [selectedClientMasterName, setSelectedClientMasterName] = useState("");
+  const [clientMasterRenameDraft, setClientMasterRenameDraft] = useState("");
   const [jobClientQuickCreateOpen, setJobClientQuickCreateOpen] = useState(false);
   const [jobClientQuickCreateName, setJobClientQuickCreateName] = useState("");
   const [jobClientQuickCreateBusy, setJobClientQuickCreateBusy] = useState(false);
@@ -9546,7 +9561,7 @@ function PortalApp({ token, onLogout }) {
       if (!byKey.has(key)) byKey.set(key, { value: cleaned || original, ts: 0 });
     });
     (Array.isArray(copySettings?.clientDirectory) ? copySettings.clientDirectory : []).forEach((item) => {
-      const original = String(item || "").trim();
+      const original = String(item?.name || item?.clientName || item?.client_name || item || "").trim();
       if (!original || original.startsWith("__")) return;
       const cleaned = sanitizeClientNameInput(original);
       const key = normalizeClientIdentityKey(cleaned || original);
@@ -9565,26 +9580,65 @@ function PortalApp({ token, onLogout }) {
     if (!key) return cleaned;
     return String(canonicalClientNameByKey.get(key) || cleaned).trim();
   }, [canonicalClientNameByKey, normalizeClientIdentityKey, sanitizeClientNameInput]);
+  const archivedClientNameKeys = useMemo(() => {
+    const keys = new Set();
+    (Array.isArray(copySettings?.clientDirectory) ? copySettings.clientDirectory : []).forEach((item) => {
+      if (!item?.archived) return;
+      const name = String(item?.name || item?.clientName || item?.client_name || "").trim();
+      const canonical = canonicalizeClientName(name);
+      const key = normalizeClientIdentityKey(canonical || name);
+      if (key) keys.add(key);
+    });
+    return keys;
+  }, [copySettings?.clientDirectory, canonicalizeClientName, normalizeClientIdentityKey]);
   const availablePresetClients = useMemo(() => {
     const values = new Set();
     jobClientUniverse.forEach((job) => {
       const clientName = canonicalizeClientName(String(job?.client_name || job?.clientName || "").trim());
       if (!clientName) return;
       if (clientName.startsWith("__")) return;
+      if (archivedClientNameKeys.has(normalizeClientIdentityKey(clientName))) return;
       values.add(clientName);
     });
     (Array.isArray(clientUsers) ? clientUsers : []).forEach((item) => {
       const clientName = canonicalizeClientName(String(item?.clientName || "").trim());
       if (!clientName || clientName.startsWith("__")) return;
+      if (archivedClientNameKeys.has(normalizeClientIdentityKey(clientName))) return;
       values.add(clientName);
     });
     (Array.isArray(copySettings?.clientDirectory) ? copySettings.clientDirectory : []).forEach((item) => {
-      const clientName = canonicalizeClientName(String(item || "").trim());
+      const clientName = canonicalizeClientName(String(item?.name || item?.clientName || item?.client_name || item || "").trim());
       if (!clientName || clientName.startsWith("__")) return;
+      if (archivedClientNameKeys.has(normalizeClientIdentityKey(clientName))) return;
       values.add(clientName);
     });
     return Array.from(values).sort((a, b) => a.localeCompare(b));
-  }, [jobClientUniverse, clientUsers, copySettings?.clientDirectory, canonicalizeClientName]);
+  }, [jobClientUniverse, clientUsers, copySettings?.clientDirectory, canonicalizeClientName, archivedClientNameKeys, normalizeClientIdentityKey]);
+  const clientMasterOptions = useMemo(() => {
+    const byKey = new Map();
+    (Array.isArray(copySettings?.clientDirectory) ? copySettings.clientDirectory : []).forEach((item, index) => {
+      const name = canonicalizeClientName(String(item?.name || item?.clientName || item?.client_name || "").trim());
+      const key = normalizeClientIdentityKey(name);
+      if (!key) return;
+      byKey.set(key, {
+        id: String(item?.id || `client_master_${index + 1}`).trim() || `client_master_${index + 1}`,
+        name,
+        archived: item?.archived === true,
+        source: "directory"
+      });
+    });
+    availablePresetClients.forEach((name, index) => {
+      const key = normalizeClientIdentityKey(name);
+      if (!key || byKey.has(key)) return;
+      byKey.set(key, {
+        id: `client_master_available_${index + 1}`,
+        name,
+        archived: false,
+        source: "in_use"
+      });
+    });
+    return Array.from(byKey.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [copySettings?.clientDirectory, availablePresetClients, canonicalizeClientName, normalizeClientIdentityKey]);
   const clientRoleOptionsByClient = useMemo(() => {
     const byClient = new Map();
     jobClientUniverse.forEach((job) => {
@@ -21258,17 +21312,33 @@ function PortalApp({ token, onLogout }) {
       return "";
     }
     const existingClients = Array.isArray(copySettings?.clientDirectory) ? copySettings.clientDirectory : [];
-    const alreadyExists = existingClients.some((item) => normalizeClientIdentityKey(item) === normalizeClientIdentityKey(normalizedClientName))
+    const alreadyExists = existingClients.some((item) => normalizeClientIdentityKey(String(item?.name || item?.clientName || item?.client_name || "").trim()) === normalizeClientIdentityKey(normalizedClientName))
       || availablePresetClients.some((item) => normalizeClientIdentityKey(item) === normalizeClientIdentityKey(normalizedClientName));
     if (alreadyExists) {
       if (!skipStatus && !options?.silentIfExists) setStatus(statusKey, "Client already exists.", "warning");
       return normalizedClientName;
     }
-    const nextClientDirectory = [...existingClients, normalizedClientName]
-      .map((item) => canonicalizeClientName(String(item || "").trim()))
+    const nextClientDirectory = [...existingClients, {
+      id: `client_directory_${Date.now()}`,
+      name: normalizedClientName,
+      archived: false,
+      updatedAt: new Date().toISOString(),
+      updatedBy: String(user?.email || "").trim()
+    }]
+      .map((item, index) => {
+        const name = canonicalizeClientName(String(item?.name || item?.clientName || item?.client_name || item || "").trim());
+        if (!name) return null;
+        return {
+          id: String(item?.id || `client_directory_${index + 1}`).trim() || `client_directory_${index + 1}`,
+          name,
+          archived: item?.archived === true,
+          updatedAt: String(item?.updatedAt || item?.updated_at || "").trim(),
+          updatedBy: String(item?.updatedBy || item?.updated_by || "").trim()
+        };
+      })
       .filter(Boolean)
-      .filter((item, index, arr) => arr.findIndex((entry) => normalizeClientIdentityKey(entry) === normalizeClientIdentityKey(item)) === index)
-      .sort((a, b) => a.localeCompare(b));
+      .filter((item, index, arr) => arr.findIndex((entry) => normalizeClientIdentityKey(entry?.name) === normalizeClientIdentityKey(item?.name)) === index)
+      .sort((a, b) => a.name.localeCompare(b.name));
     const payload = migrateCopySettings({
       ...copySettings,
       clientDirectory: nextClientDirectory
@@ -21278,6 +21348,93 @@ function PortalApp({ token, onLogout }) {
     setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
     if (!skipStatus) setStatus(statusKey, options?.successMessage || "Client saved.", "ok");
     return normalizedClientName;
+  }
+
+  const selectedClientMaster = useMemo(() => {
+    const match = clientMasterOptions.find((item) => item.name === selectedClientMasterName);
+    return match || null;
+  }, [clientMasterOptions, selectedClientMasterName]);
+
+  useEffect(() => {
+    if (!selectedClientMasterName && clientMasterOptions.length) {
+      setSelectedClientMasterName(clientMasterOptions[0].name);
+      return;
+    }
+    if (selectedClientMasterName && !clientMasterOptions.some((item) => item.name === selectedClientMasterName)) {
+      setSelectedClientMasterName(clientMasterOptions[0]?.name || "");
+      return;
+    }
+    if (selectedClientMaster && clientMasterRenameDraft !== selectedClientMaster.name) {
+      setClientMasterRenameDraft(selectedClientMaster.name);
+    }
+  }, [clientMasterOptions, selectedClientMasterName, selectedClientMaster, clientMasterRenameDraft]);
+
+  async function renameClientMasterSelection() {
+    if (!isSettingsAdmin) {
+      setStatus("loginClient", "Only admin can rename clients.", "error");
+      return;
+    }
+    if (!selectedClientMaster?.name) {
+      setStatus("loginClient", "Select a client first.", "error");
+      return;
+    }
+    const previousName = String(selectedClientMaster.name || "").trim();
+    const nextName = canonicalizeClientName(String(clientMasterRenameDraft || "").trim());
+    if (!nextName) {
+      setStatus("loginClient", "New client name is required.", "error");
+      return;
+    }
+    try {
+      setStatus("loginClient", "Renaming client globally...");
+      const result = await api("/company/client-master/rename", token, "POST", { previousName, nextName });
+      setCopySettings((current) => migrateCopySettings({ ...current, ...result }));
+      setClientUsers((current) => current.map((item) => (
+        normalizeClientIdentityKey(String(item?.clientName || "").trim()) === normalizeClientIdentityKey(previousName)
+          ? { ...item, clientName: nextName }
+          : item
+      )));
+      setJobsCatalog((current) => current.map((job) => (
+        normalizeClientIdentityKey(String(job?.client_name || job?.clientName || "").trim()) === normalizeClientIdentityKey(previousName)
+          ? { ...job, client_name: nextName, clientName: nextName }
+          : job
+      )));
+      setState((current) => ({
+        ...current,
+        jobs: (Array.isArray(current.jobs) ? current.jobs : []).map((job) => (
+          normalizeClientIdentityKey(String(job?.client_name || job?.clientName || "").trim()) === normalizeClientIdentityKey(previousName)
+            ? { ...job, client_name: nextName, clientName: nextName }
+            : job
+        ))
+      }));
+      setSelectedClientMasterName(nextName);
+      setClientMasterRenameDraft(nextName);
+      await reloadLoginSettingsWorkspace();
+      setStatus("loginClient", "Client renamed globally.", "ok");
+    } catch (error) {
+      setStatus("loginClient", String(error?.message || error), "error");
+    }
+  }
+
+  async function setClientMasterArchived(nextArchived = true) {
+    if (!isSettingsAdmin) {
+      setStatus("loginClient", "Only admin can update clients.", "error");
+      return;
+    }
+    if (!selectedClientMaster?.name) {
+      setStatus("loginClient", "Select a client first.", "error");
+      return;
+    }
+    try {
+      setStatus("loginClient", nextArchived ? "Archiving client..." : "Restoring client...");
+      const result = await api("/company/client-master/archive", token, "POST", {
+        clientName: selectedClientMaster.name,
+        archived: nextArchived
+      });
+      setCopySettings((current) => migrateCopySettings({ ...current, ...result }));
+      setStatus("loginClient", nextArchived ? "Client archived. It is hidden from dropdowns." : "Client restored to dropdowns.", "ok");
+    } catch (error) {
+      setStatus("loginClient", String(error?.message || error), "error");
+    }
   }
 
   function getClientUserEditDraft(item) {
@@ -28750,6 +28907,47 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </div>
                   </summary>
                   <p className="muted">Create client usernames for the separate client portal. Client will see all current and future positions for their client name.</p>
+                  <div className="settings-subsection">
+                    <div className="section-kicker">Client Master</div>
+                    <p className="muted">Rename client globally across jobs, candidates, assessments, and portal mapping. Archive hides it from dropdowns while keeping history intact.</p>
+                    <div className="form-grid two-col">
+                      <label>
+                        <span>Existing client</span>
+                        <select
+                          disabled={!isSettingsAdmin || !clientMasterOptions.length}
+                          value={selectedClientMasterName}
+                          onChange={(e) => setSelectedClientMasterName(e.target.value)}
+                        >
+                          <option value="">Select client</option>
+                          {clientMasterOptions.map((item) => (
+                            <option key={item.id} value={item.name}>
+                              {item.archived ? `${item.name} (Archived)` : item.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <span>Rename client</span>
+                        <input
+                          autoComplete="off"
+                          disabled={!isSettingsAdmin || !selectedClientMaster}
+                          value={clientMasterRenameDraft}
+                          onChange={(e) => setClientMasterRenameDraft(e.target.value)}
+                          placeholder="Enter new client name"
+                        />
+                      </label>
+                    </div>
+                    {selectedClientMaster ? (
+                      <div className="button-row tight" style={{ marginTop: 10 }}>
+                        <button onClick={() => void renameClientMasterSelection()} disabled={!isSettingsAdmin}>Save rename globally</button>
+                        <button className="ghost-btn" onClick={() => void setClientMasterArchived(selectedClientMaster.archived !== true)} disabled={!isSettingsAdmin}>
+                          {selectedClientMaster.archived ? "Restore client" : "Archive client"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="empty-state">No client master entries yet. Create one below or from Jobs.</div>
+                    )}
+                  </div>
                   <div className="settings-subsection">
                     <div className="section-kicker">Edit Existing</div>
                     <div className="stack-list compact">
