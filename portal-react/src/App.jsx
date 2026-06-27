@@ -28969,12 +28969,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             </button>
                           </div>
                         </div>
-                        {statuses.loginClientRename ? <div className={`status ${statuses.loginClientRenameKind || ""}`} style={{ marginTop: 8 }}>{statuses.loginClientRename}</div> : null}
-                        {!statuses.loginClientRename && statuses.loginClientArchive ? <div className={`status ${statuses.loginClientArchiveKind || ""}`} style={{ marginTop: 8 }}>{statuses.loginClientArchive}</div> : null}
                       </div>
                     ) : (
                       <div className="empty-state">No client master entries yet. Create one below or from Jobs.</div>
                     )}
+                    {statuses.loginClientRename ? <div className={`status ${statuses.loginClientRenameKind || ""}`} style={{ marginTop: 8 }}>{statuses.loginClientRename}</div> : null}
+                    {!statuses.loginClientRename && statuses.loginClientArchive ? <div className={`status ${statuses.loginClientArchiveKind || ""}`} style={{ marginTop: 8 }}>{statuses.loginClientArchive}</div> : null}
                   </div>
                   <div className="settings-subsection">
                     <div className="section-kicker">Edit Existing</div>

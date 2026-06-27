@@ -3839,7 +3839,18 @@ async function getCompanyClients(companyId) {
   } catch (error) {
     tableReady = false;
   }
-  const merged = mergeCompanyClientEntries([...tableEntries, ...legacyEntries]);
+  const tableKeys = new Set(
+    tableEntries
+      .map((item) => normalizeClientIdentityKey(item?.name || ""))
+      .filter(Boolean)
+  );
+  const merged = mergeCompanyClientEntries([
+    ...tableEntries,
+    ...legacyEntries.filter((item) => {
+      const key = normalizeClientIdentityKey(item?.name || "");
+      return key ? !tableKeys.has(key) : true;
+    })
+  ]);
   if (tableReady && merged.length) {
     await saveCompanyClientsRow({ companyId: scopedCompanyId, clients: merged }).catch(() => null);
   }
