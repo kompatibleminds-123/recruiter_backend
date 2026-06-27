@@ -9646,6 +9646,10 @@ function PortalApp({ token, onLogout }) {
       publicPostingTitle: item.publicPostingTitle || ""
     }));
   }, [clientRecords, mergeClientRecordsByIdentity, canonicalizeClientName]);
+  const activeClientMasterOptions = useMemo(
+    () => clientMasterOptions.filter((item) => item.archived !== true),
+    [clientMasterOptions]
+  );
   const clientRoleOptionsByClient = useMemo(() => {
     const byClient = new Map();
     jobClientUniverse.forEach((job) => {
@@ -21344,23 +21348,23 @@ function PortalApp({ token, onLogout }) {
   }
 
   const selectedClientMaster = useMemo(() => {
-    const match = clientMasterOptions.find((item) => item.name === selectedClientMasterName);
+    const match = activeClientMasterOptions.find((item) => item.name === selectedClientMasterName);
     return match || null;
-  }, [clientMasterOptions, selectedClientMasterName]);
+  }, [activeClientMasterOptions, selectedClientMasterName]);
 
   useEffect(() => {
-    if (!selectedClientMasterName && clientMasterOptions.length) {
-      setSelectedClientMasterName(clientMasterOptions[0].name);
+    if (!selectedClientMasterName && activeClientMasterOptions.length) {
+      setSelectedClientMasterName(activeClientMasterOptions[0].name);
       return;
     }
-    if (selectedClientMasterName && !clientMasterOptions.some((item) => item.name === selectedClientMasterName)) {
-      setSelectedClientMasterName(clientMasterOptions[0]?.name || "");
+    if (selectedClientMasterName && !activeClientMasterOptions.some((item) => item.name === selectedClientMasterName)) {
+      setSelectedClientMasterName(activeClientMasterOptions[0]?.name || "");
       return;
     }
     if (selectedClientMaster && clientMasterRenameDraft !== selectedClientMaster.name) {
       setClientMasterRenameDraft(selectedClientMaster.name);
     }
-  }, [clientMasterOptions, selectedClientMasterName, selectedClientMaster, clientMasterRenameDraft]);
+  }, [activeClientMasterOptions, selectedClientMasterName, selectedClientMaster, clientMasterRenameDraft]);
 
   async function renameClientMasterSelection() {
     if (!isSettingsAdmin) {
@@ -21436,6 +21440,10 @@ function PortalApp({ token, onLogout }) {
           ? { ...item, archived: nextArchived, status: nextArchived ? "archived" : "active" }
           : item
       ))));
+      if (nextArchived) {
+        setSelectedClientMasterName("");
+        setClientMasterRenameDraft("");
+      }
       setStatus("loginClientArchive", nextArchived ? "Client archived. It is hidden from dropdowns." : "Client restored to dropdowns.", "ok");
     } catch (error) {
       setStatus("loginClientArchive", String(error?.message || error), "error");
@@ -28918,14 +28926,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <label>
                         <span>Existing client</span>
                         <select
-                          disabled={!isSettingsAdmin || !clientMasterOptions.length}
+                          disabled={!isSettingsAdmin || !activeClientMasterOptions.length}
                           value={selectedClientMasterName}
                           onChange={(e) => setSelectedClientMasterName(e.target.value)}
                         >
                           <option value="">Select client</option>
-                          {clientMasterOptions.map((item) => (
+                          {activeClientMasterOptions.map((item) => (
                             <option key={item.id} value={item.name}>
-                              {item.archived ? `${item.name} (Archived)` : item.name}
+                              {item.name}
                             </option>
                           ))}
                         </select>
@@ -28944,13 +28952,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     {selectedClientMaster ? (
                       <div style={{ marginTop: 10 }}>
                         <div className="button-row tight">
-                          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
-                            <button onClick={() => void renameClientMasterSelection()} disabled={!isSettingsAdmin || !!clientMasterActionBusy}>
-                              {clientMasterActionBusy === "rename" ? "Saving..." : "Save rename globally"}
-                            </button>
-                            {statuses.loginClientRename ? <div className={`status ${statuses.loginClientRenameKind || ""}`} style={{ marginTop: 8 }}>{statuses.loginClientRename}</div> : null}
-                          </div>
-                          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+                          <button onClick={() => void renameClientMasterSelection()} disabled={!isSettingsAdmin || !!clientMasterActionBusy}>
+                            {clientMasterActionBusy === "rename" ? "Saving..." : "Save rename globally"}
+                          </button>
+                          <div>
                             <button
                               className="ghost-btn"
                               onClick={() => void setClientMasterArchived(selectedClientMaster.archived !== true)}
@@ -28962,9 +28967,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                   ? "Restoring..."
                                   : (selectedClientMaster.archived ? "Restore client" : "Archive client")}
                             </button>
-                            {statuses.loginClientArchive ? <div className={`status ${statuses.loginClientArchiveKind || ""}`} style={{ marginTop: 8 }}>{statuses.loginClientArchive}</div> : null}
                           </div>
                         </div>
+                        {statuses.loginClientRename ? <div className={`status ${statuses.loginClientRenameKind || ""}`} style={{ marginTop: 8 }}>{statuses.loginClientRename}</div> : null}
+                        {!statuses.loginClientRename && statuses.loginClientArchive ? <div className={`status ${statuses.loginClientArchiveKind || ""}`} style={{ marginTop: 8 }}>{statuses.loginClientArchive}</div> : null}
                       </div>
                     ) : (
                       <div className="empty-state">No client master entries yet. Create one below or from Jobs.</div>
