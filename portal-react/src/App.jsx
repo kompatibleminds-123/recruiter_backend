@@ -21452,10 +21452,9 @@ function PortalApp({ token, onLogout }) {
           ? { ...item, archived: nextArchived, status: nextArchived ? "archived" : "active" }
           : item
       ))));
-      if (nextArchived) {
-        setSelectedClientMasterName("");
-        setClientMasterRenameDraft("");
-      }
+      setClientMasterViewFilter(nextArchived ? "archived" : "active");
+      setSelectedClientMasterName(selectedClientMaster.name);
+      setClientMasterRenameDraft(selectedClientMaster.name);
       setStatus("loginClientArchive", nextArchived ? "Client archived. It is hidden from dropdowns." : "Client restored to dropdowns.", "ok");
     } catch (error) {
       setStatus("loginClientArchive", String(error?.message || error), "error");
