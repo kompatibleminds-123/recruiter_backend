@@ -9711,7 +9711,9 @@ function PortalApp({ token, onLogout }) {
   const capturedSingleCvInputRef = useRef(null);
   const draftCvInputRef = useRef(null);
   const assessmentStatusSaveLockRef = useRef(new Set());
+  const assessmentInlineStatusTimersRef = useRef({});
   const [assessmentActionBusyIds, setAssessmentActionBusyIds] = useState({});
+  const [assessmentInlineStatuses, setAssessmentInlineStatuses] = useState({});
   const [notesCandidateId, setNotesCandidateId] = useState("");
   const [notesCandidateSnapshot, setNotesCandidateSnapshot] = useState(null);
   const [attemptsCandidateId, setAttemptsCandidateId] = useState("");
@@ -10534,6 +10536,30 @@ function PortalApp({ token, onLogout }) {
 	  }, timeoutMs);
 	}
 
+  function setAssessmentInlineStatus(assessmentId, message, kind = "") {
+    const scopedKey = String(assessmentId || "").trim();
+    if (!scopedKey) return;
+    const safeMessage = normalizeMojibakeSymbols(String(message || ""));
+    if (assessmentInlineStatusTimersRef.current[scopedKey]) {
+      clearTimeout(assessmentInlineStatusTimersRef.current[scopedKey]);
+      delete assessmentInlineStatusTimersRef.current[scopedKey];
+    }
+    setAssessmentInlineStatuses((current) => ({
+      ...current,
+      [scopedKey]: { message: safeMessage, kind }
+    }));
+    if (!String(safeMessage || "").trim()) return;
+    const timeoutMs = kind === "error" ? 7000 : 4000;
+    assessmentInlineStatusTimersRef.current[scopedKey] = setTimeout(() => {
+      setAssessmentInlineStatuses((current) => {
+        const next = { ...current };
+        delete next[scopedKey];
+        return next;
+      });
+      delete assessmentInlineStatusTimersRef.current[scopedKey];
+    }, timeoutMs);
+  }
+
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
@@ -10595,6 +10621,10 @@ function PortalApp({ token, onLogout }) {
       try { clearTimeout(timerId); } catch { /* ignore */ }
     });
     statusTimersRef.current = {};
+    Object.values(assessmentInlineStatusTimersRef.current || {}).forEach((timerId) => {
+      try { clearTimeout(timerId); } catch { /* ignore */ }
+    });
+    assessmentInlineStatusTimersRef.current = {};
   }, []);
 
   useEffect(() => {
@@ -22420,7 +22450,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     });
     void syncPostAssessmentMutation({ candidateId: assessment?.candidateId }).catch(() => {});
     void refreshDashboardAfterAssessmentChange().catch(() => {});
-    setStatus("assessments", "Assessment deleted.", "ok");
+    setAssessmentInlineStatus(assessment?.id, "Assessment deleted.", "ok");
   }
 
   function upsertAssessmentInState(saved) {
@@ -22798,7 +22828,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         archived_by: archived ? String(state.user?.name || "").trim() : ""
       }
     };
-    setStatus("assessments", archived ? "Archiving assessment..." : "Restoring assessment...");
+    setAssessmentInlineStatus(safeAssessment.id, archived ? "Archiving assessment..." : "Restoring assessment...");
     applyAssessmentChange({
       type: "ARCHIVE_ROW",
       scope: "all",
@@ -22820,7 +22850,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         visibleMode: laneMatchesNewState ? "upsert" : "delete",
         source: "MUTATION_SUCCESS"
       });
-      setStatus("assessments", archived ? "Assessment archived." : "Assessment restored.", "ok");
+      setAssessmentInlineStatus(safeAssessment.id, archived ? "Assessment archived." : "Assessment restored.", "ok");
       void syncPostAssessmentMutation({ candidateId }).catch(() => {});
       if (shouldRefreshDashboard) void refreshDashboardAfterAssessmentChange().catch(() => {});
       if (shouldReloadLists) {
@@ -22842,12 +22872,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             visibleMode: Boolean(isAssessmentArchived(restored)) === (assessmentLane === "archived") ? "upsert" : "delete",
             source: "MUTATION_SUCCESS"
           });
-          setStatus("assessments", "Assessment restored.", "ok");
+          setAssessmentInlineStatus(safeAssessment.id, "Assessment restored.", "ok");
           void refreshAssessmentFallback({ candidateId }).catch(() => {});
           if (shouldRefreshDashboard) void refreshDashboardAfterAssessmentChange().catch(() => {});
           return restored;
         } catch (restoreError) {
-          setStatus("assessments", String(restoreError?.message || restoreError), "error");
+          setAssessmentInlineStatus(safeAssessment.id, String(restoreError?.message || restoreError), "error");
           return null;
         }
       }
@@ -22867,7 +22897,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         void reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, safeAssessmentFiltersApplied, assessmentLane, assessmentSortBy).catch(() => {});
         void reloadAssessmentStats(safeAssessmentFiltersApplied).catch(() => {});
       }
-      setStatus("assessments", message, "error");
+      setAssessmentInlineStatus(safeAssessment.id, message, "error");
       return null;
     } finally {
       if (lockKey) {
@@ -23286,7 +23316,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         loading: false
       });
       await copyText(text);
-      setStatus("assessments", "Journey copied.", "ok");
+      setAssessmentInlineStatus(assessment?.id, "Journey copied.", "ok");
     })();
   }
 
@@ -25714,9 +25744,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
           <Route path="/assessments" element={
             <Section kicker="Structured Workflow" title="Assessments">
-              <div className={`status status-fixed ${statuses.assessments ? "" : "status-fixed--empty"} ${statuses.assessmentsKind || ""}`} aria-live="polite">
-                <span className="status-fixed__text">{statuses.assessments || "\u00A0"}</span>
-              </div>
               <div className="form-grid three-col">
                 <label className="full"><span>Search</span><input placeholder="Search by candidate, phone, email, JD..." value={assessmentFilters.q} onChange={(e) => setAssessmentFilters((current) => ({ ...current, q: e.target.value }))} /></label>
               </div>
@@ -25803,6 +25830,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <button onClick={() => void copyAssessmentsEmail()}>Copy Email</button>
               </div>
               <div className="status-note">Selected for client share: {selectedAssessmentIds.length}</div>
+              {statuses.assessments ? <div className={`status ${statuses.assessmentsKind || ""}`} aria-live="polite" style={{ marginTop: 10 }}>{statuses.assessments}</div> : null}
               <div className="button-row tight" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, marginTop: 10 }}>
                 <div className="muted">
                   {Number(assessmentListMeta?.total || 0)
@@ -26144,6 +26172,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         </>
                       )}
                     </div>
+                    {assessmentInlineStatuses[String(item.id || "")]?.message ? (
+                      <div
+                        className={`status ${assessmentInlineStatuses[String(item.id || "")]?.kind || ""}`}
+                        aria-live="polite"
+                        style={{ marginTop: 10 }}
+                      >
+                        {assessmentInlineStatuses[String(item.id || "")]?.message}
+                      </div>
+                    ) : null}
                         </>
                       );
                     })()}
