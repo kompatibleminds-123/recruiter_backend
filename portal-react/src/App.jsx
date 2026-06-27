@@ -21364,22 +21364,22 @@ function PortalApp({ token, onLogout }) {
 
   async function renameClientMasterSelection() {
     if (!isSettingsAdmin) {
-      setStatus("loginClient", "Only admin can rename clients.", "error");
+      setStatus("loginClientRename", "Only admin can rename clients.", "error");
       return;
     }
     if (!selectedClientMaster?.name) {
-      setStatus("loginClient", "Select a client first.", "error");
+      setStatus("loginClientRename", "Select a client first.", "error");
       return;
     }
     const previousName = String(selectedClientMaster.name || "").trim();
     const nextName = canonicalizeClientName(String(clientMasterRenameDraft || "").trim());
     if (!nextName) {
-      setStatus("loginClient", "New client name is required.", "error");
+      setStatus("loginClientRename", "New client name is required.", "error");
       return;
     }
     try {
       setClientMasterActionBusy("rename");
-      setStatus("loginClient", "Renaming client globally...");
+      setStatus("loginClientRename", "Renaming client globally...");
       const result = await api("/company/client-master/rename", token, "POST", { previousName, nextName });
       setClientRecords((current) => mergeClientRecordsByIdentity([], result || current.map((item) => (
         normalizeClientIdentityKey(String(item?.name || "").trim()) === normalizeClientIdentityKey(previousName)
@@ -21407,9 +21407,9 @@ function PortalApp({ token, onLogout }) {
       setSelectedClientMasterName(nextName);
       setClientMasterRenameDraft(nextName);
       await reloadLoginSettingsWorkspace();
-      setStatus("loginClient", "Client renamed globally.", "ok");
+      setStatus("loginClientRename", "Client renamed globally.", "ok");
     } catch (error) {
-      setStatus("loginClient", String(error?.message || error), "error");
+      setStatus("loginClientRename", String(error?.message || error), "error");
     } finally {
       setClientMasterActionBusy("");
     }
@@ -21417,16 +21417,16 @@ function PortalApp({ token, onLogout }) {
 
   async function setClientMasterArchived(nextArchived = true) {
     if (!isSettingsAdmin) {
-      setStatus("loginClient", "Only admin can update clients.", "error");
+      setStatus("loginClientArchive", "Only admin can update clients.", "error");
       return;
     }
     if (!selectedClientMaster?.name) {
-      setStatus("loginClient", "Select a client first.", "error");
+      setStatus("loginClientArchive", "Select a client first.", "error");
       return;
     }
     try {
       setClientMasterActionBusy(nextArchived ? "archive" : "restore");
-      setStatus("loginClient", nextArchived ? "Archiving client..." : "Restoring client...");
+      setStatus("loginClientArchive", nextArchived ? "Archiving client..." : "Restoring client...");
       const result = await api("/company/client-master/archive", token, "POST", {
         clientName: selectedClientMaster.name,
         archived: nextArchived
@@ -21436,9 +21436,9 @@ function PortalApp({ token, onLogout }) {
           ? { ...item, archived: nextArchived, status: nextArchived ? "archived" : "active" }
           : item
       ))));
-      setStatus("loginClient", nextArchived ? "Client archived. It is hidden from dropdowns." : "Client restored to dropdowns.", "ok");
+      setStatus("loginClientArchive", nextArchived ? "Client archived. It is hidden from dropdowns." : "Client restored to dropdowns.", "ok");
     } catch (error) {
-      setStatus("loginClient", String(error?.message || error), "error");
+      setStatus("loginClientArchive", String(error?.message || error), "error");
     } finally {
       setClientMasterActionBusy("");
     }
@@ -28944,9 +28944,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     {selectedClientMaster ? (
                       <div style={{ marginTop: 10 }}>
                         <div className="button-row tight">
-                          <button onClick={() => void renameClientMasterSelection()} disabled={!isSettingsAdmin || !!clientMasterActionBusy}>
-                            {clientMasterActionBusy === "rename" ? "Saving..." : "Save rename globally"}
-                          </button>
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+                            <button onClick={() => void renameClientMasterSelection()} disabled={!isSettingsAdmin || !!clientMasterActionBusy}>
+                              {clientMasterActionBusy === "rename" ? "Saving..." : "Save rename globally"}
+                            </button>
+                            {statuses.loginClientRename ? <div className={`status ${statuses.loginClientRenameKind || ""}`} style={{ marginTop: 8 }}>{statuses.loginClientRename}</div> : null}
+                          </div>
                           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
                             <button
                               className="ghost-btn"
@@ -28959,7 +28962,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                   ? "Restoring..."
                                   : (selectedClientMaster.archived ? "Restore client" : "Archive client")}
                             </button>
-                            {statuses.loginClient ? <div className={`status ${statuses.loginClientKind || ""}`} style={{ marginTop: 8 }}>{statuses.loginClient}</div> : null}
+                            {statuses.loginClientArchive ? <div className={`status ${statuses.loginClientArchiveKind || ""}`} style={{ marginTop: 8 }}>{statuses.loginClientArchive}</div> : null}
                           </div>
                         </div>
                       </div>
