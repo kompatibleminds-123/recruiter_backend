@@ -27612,6 +27612,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <Section kicker="Admin Settings" title="Email Templates">
                   {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
                   <div className="settings-subsection">
+                    <div className="section-kicker">JD Share Template</div>
+                    <div className="form-grid">
+                      <label className="full"><span>Subject template</span><input ref={jdEmailSubjectTemplateTextareaRef} value={copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailSubjectTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{JD_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`jd-subject-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(jdEmailSubjectTemplateTextareaRef, copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate, (next) => setCopySettings((current) => ({ ...current, jdEmailSubjectTemplate: next })), token)}>{token}</button>))}</div></label>
+                      <label className="full"><span>Body template</span><textarea ref={jdEmailBodyTemplateTextareaRef} rows={8} value={copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailIntroTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{JD_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`jd-body-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(jdEmailBodyTemplateTextareaRef, copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate, (next) => setCopySettings((current) => ({ ...current, jdEmailIntroTemplate: next })), token)}>{token}</button>))}</div></label>
+                    </div>
+                    <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("JD share template saved.")}>Save JD share template</button></div>
+                  </div>
+                  <div className="settings-subsection">
                     <div className="section-kicker">Bulk Mail Template</div>
                     <div className="form-grid">
                       <label className="full">
@@ -27669,14 +27677,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </label>
                     </div>
                     <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("Bulk mail template saved.")}>Save bulk mail template</button></div>
-                  </div>
-                  <div className="settings-subsection">
-                    <div className="section-kicker">JD Share Template</div>
-                    <div className="form-grid">
-                      <label className="full"><span>Subject template</span><input ref={jdEmailSubjectTemplateTextareaRef} value={copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailSubjectTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{JD_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`jd-subject-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(jdEmailSubjectTemplateTextareaRef, copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate, (next) => setCopySettings((current) => ({ ...current, jdEmailSubjectTemplate: next })), token)}>{token}</button>))}</div></label>
-                      <label className="full"><span>Body template</span><textarea ref={jdEmailBodyTemplateTextareaRef} rows={8} value={copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailIntroTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{JD_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`jd-body-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(jdEmailBodyTemplateTextareaRef, copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate, (next) => setCopySettings((current) => ({ ...current, jdEmailIntroTemplate: next })), token)}>{token}</button>))}</div></label>
-                    </div>
-                    <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("JD share template saved.")}>Save JD share template</button></div>
                   </div>
                   <div className="settings-subsection">
                     <div className="section-kicker">Direct Share Template</div>
