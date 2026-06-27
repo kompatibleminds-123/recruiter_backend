@@ -3242,6 +3242,23 @@ textarea { min-height: 92px; resize: vertical; }
   position: relative;
   overflow: visible;
 }
+.shortcuts-section > .muted {
+  margin: 0.25rem 0 0.9rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  max-width: 72ch;
+}
+.shortcuts-section .empty-state {
+  margin-top: 0.75rem;
+}
+.shortcuts-section .item-card.compact-card {
+  border-color: #dbe7f7;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+}
+.shortcuts-section .button-row.tight {
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
 .panel.shortcuts-section {
   border-width: 1px;
   border-style: solid;
@@ -3289,7 +3306,7 @@ textarea { min-height: 92px; resize: vertical; }
 .placeholder-chip {
   padding: 0.32rem 0.62rem;
   border-radius: 999px;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   line-height: 1.2;
   border-color: #cbd8ee;
   background: #f5f9ff;

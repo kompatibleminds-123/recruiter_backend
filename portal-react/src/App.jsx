@@ -22582,16 +22582,22 @@ function PortalApp({ token, onLogout }) {
       setStatus("shortcuts", "Enter personal shortcut key and template text.", "error");
       return;
     }
+    const previousShortcuts = normalizeShortcutMapKeys(personalShortcuts || {});
+    const nextShortcuts = { ...previousShortcuts, [key]: value };
+    setPersonalShortcuts(nextShortcuts);
+    setShortcutPersonalKey("");
+    setShortcutPersonalValue("");
+    setStatus("shortcuts", `Saving ${formatShortcutLabel(key)}...`, "info");
     try {
-      const next = { ...normalizeShortcutMapKeys(personalShortcuts || {}), [key]: value };
-      const result = await api("/company/personal-shortcuts", token, "POST", { shortcuts: next });
-      const savedRaw = result?.shortcuts && typeof result.shortcuts === "object" ? result.shortcuts : next;
+      const result = await api("/company/personal-shortcuts", token, "POST", { shortcuts: nextShortcuts });
+      const savedRaw = result?.shortcuts && typeof result.shortcuts === "object" ? result.shortcuts : nextShortcuts;
       const saved = normalizeShortcutMapKeys(savedRaw);
       setPersonalShortcuts(saved);
-      setShortcutPersonalKey("");
-      setShortcutPersonalValue("");
       setStatus("shortcuts", `Saved personal shortcut ${formatShortcutLabel(key)}.`, "ok");
     } catch (error) {
+      setPersonalShortcuts(previousShortcuts);
+      setShortcutPersonalKey(key);
+      setShortcutPersonalValue(value);
       setStatus("shortcuts", String(error?.message || error), "error");
     }
   }
@@ -22599,19 +22605,23 @@ function PortalApp({ token, onLogout }) {
   async function deletePersonalShortcutTemplate(key) {
     const normalized = normalizeShortcutKey(key);
     if (!normalized) return;
+    const previousShortcuts = normalizeShortcutMapKeys(personalShortcuts || {});
+    const nextShortcuts = { ...previousShortcuts };
+    delete nextShortcuts[normalized];
+    setPersonalShortcuts(nextShortcuts);
+    if (normalizeShortcutKey(shortcutPersonalKey) === normalized) {
+      setShortcutPersonalKey("");
+      setShortcutPersonalValue("");
+    }
+    setStatus("shortcuts", `Deleting ${formatShortcutLabel(normalized)}...`, "info");
     try {
-      const next = { ...normalizeShortcutMapKeys(personalShortcuts || {}) };
-      delete next[normalized];
-      const result = await api("/company/personal-shortcuts", token, "POST", { shortcuts: next });
-      const savedRaw = result?.shortcuts && typeof result.shortcuts === "object" ? result.shortcuts : next;
+      const result = await api("/company/personal-shortcuts", token, "POST", { shortcuts: nextShortcuts });
+      const savedRaw = result?.shortcuts && typeof result.shortcuts === "object" ? result.shortcuts : nextShortcuts;
       const saved = normalizeShortcutMapKeys(savedRaw);
       setPersonalShortcuts(saved);
-      if (normalizeShortcutKey(shortcutPersonalKey) === normalized) {
-        setShortcutPersonalKey("");
-        setShortcutPersonalValue("");
-      }
       setStatus("shortcuts", `Deleted personal shortcut ${formatShortcutLabel(normalized)}.`, "ok");
     } catch (error) {
+      setPersonalShortcuts(previousShortcuts);
       setStatus("shortcuts", String(error?.message || error), "error");
     }
   }
@@ -22628,10 +22638,25 @@ function PortalApp({ token, onLogout }) {
       setStatus("shortcuts", "Enter job shortcut key and template text.", "error");
       return;
     }
+    const previousJob = (state.jobs || []).find((item) => String(item?.id || "") === jobId) || null;
+    const previousCatalogJob = (jobsCatalog || []).find((item) => String(item?.id || "") === jobId) || null;
+    const currentMap = normalizeShortcutMapKeys(parseShortcutMap(selectedShortcutJob?.jdShortcuts || previousJob?.jdShortcuts || ""));
+    currentMap[key] = value;
+    const optimisticShortcuts = stringifyShortcutMap(currentMap);
+    setState((current) => ({
+      ...current,
+      jobs: Array.isArray(current.jobs)
+        ? current.jobs.map((item) => String(item?.id || "") === jobId ? { ...item, jdShortcuts: optimisticShortcuts } : item)
+        : current.jobs
+    }));
+    setJobsCatalog((current) => Array.isArray(current)
+      ? current.map((item) => String(item?.id || "") === jobId ? { ...item, jdShortcuts: optimisticShortcuts } : item)
+      : current);
+    setShortcutJobKey("");
+    setShortcutJobValue("");
+    setStatus("shortcuts", `Saving job shortcut ${formatShortcutLabel(key)}...`, "info");
     try {
-      const currentMap = normalizeShortcutMapKeys(parseShortcutMap(selectedShortcutJob?.jdShortcuts || ""));
-      currentMap[key] = value;
-      const payload = stringifyShortcutMap(currentMap);
+      const payload = optimisticShortcuts;
       const result = await api("/company/jds/shortcuts", token, "POST", { jobId, shortcuts: payload });
       const savedShortcuts = String(result?.jdShortcuts || payload);
       setState((current) => ({
@@ -22643,10 +22668,23 @@ function PortalApp({ token, onLogout }) {
       setJobsCatalog((current) => Array.isArray(current)
         ? current.map((item) => String(item?.id || "") === jobId ? { ...item, jdShortcuts: savedShortcuts } : item)
         : current);
-      setShortcutJobKey("");
-      setShortcutJobValue("");
       setStatus("shortcuts", `Saved job shortcut ${formatShortcutLabel(key)}.`, "ok");
     } catch (error) {
+      if (previousJob) {
+        setState((current) => ({
+          ...current,
+          jobs: Array.isArray(current.jobs)
+            ? current.jobs.map((item) => String(item?.id || "") === jobId ? { ...item, jdShortcuts: String(previousJob.jdShortcuts || "") } : item)
+            : current.jobs
+        }));
+      }
+      if (previousCatalogJob) {
+        setJobsCatalog((current) => Array.isArray(current)
+          ? current.map((item) => String(item?.id || "") === jobId ? { ...item, jdShortcuts: String(previousCatalogJob.jdShortcuts || "") } : item)
+          : current);
+      }
+      setShortcutJobKey(key);
+      setShortcutJobValue(value);
       setStatus("shortcuts", String(error?.message || error), "error");
     }
   }
@@ -22655,10 +22693,27 @@ function PortalApp({ token, onLogout }) {
     const jobId = String(shortcutJobId || "").trim();
     const normalized = normalizeShortcutKey(key);
     if (!jobId || !normalized) return;
+    const previousJob = (state.jobs || []).find((item) => String(item?.id || "") === jobId) || null;
+    const previousCatalogJob = (jobsCatalog || []).find((item) => String(item?.id || "") === jobId) || null;
+    const currentMap = normalizeShortcutMapKeys(parseShortcutMap(selectedShortcutJob?.jdShortcuts || previousJob?.jdShortcuts || ""));
+    delete currentMap[normalized];
+    const optimisticShortcuts = stringifyShortcutMap(currentMap);
+    setState((current) => ({
+      ...current,
+      jobs: Array.isArray(current.jobs)
+        ? current.jobs.map((item) => String(item?.id || "") === jobId ? { ...item, jdShortcuts: optimisticShortcuts } : item)
+        : current.jobs
+    }));
+    setJobsCatalog((current) => Array.isArray(current)
+      ? current.map((item) => String(item?.id || "") === jobId ? { ...item, jdShortcuts: optimisticShortcuts } : item)
+      : current);
+    if (normalizeShortcutKey(shortcutJobKey) === normalized) {
+      setShortcutJobKey("");
+      setShortcutJobValue("");
+    }
+    setStatus("shortcuts", `Deleting job shortcut ${formatShortcutLabel(normalized)}...`, "info");
     try {
-      const currentMap = normalizeShortcutMapKeys(parseShortcutMap(selectedShortcutJob?.jdShortcuts || ""));
-      delete currentMap[normalized];
-      const payload = stringifyShortcutMap(currentMap);
+      const payload = optimisticShortcuts;
       const result = await api("/company/jds/shortcuts", token, "POST", { jobId, shortcuts: payload });
       const savedShortcuts = String(result?.jdShortcuts || payload);
       setState((current) => ({
@@ -22670,12 +22725,21 @@ function PortalApp({ token, onLogout }) {
       setJobsCatalog((current) => Array.isArray(current)
         ? current.map((item) => String(item?.id || "") === jobId ? { ...item, jdShortcuts: savedShortcuts } : item)
         : current);
-      if (normalizeShortcutKey(shortcutJobKey) === normalized) {
-        setShortcutJobKey("");
-        setShortcutJobValue("");
-      }
       setStatus("shortcuts", `Deleted job shortcut ${formatShortcutLabel(normalized)}.`, "ok");
     } catch (error) {
+      if (previousJob) {
+        setState((current) => ({
+          ...current,
+          jobs: Array.isArray(current.jobs)
+            ? current.jobs.map((item) => String(item?.id || "") === jobId ? { ...item, jdShortcuts: String(previousJob.jdShortcuts || "") } : item)
+            : current.jobs
+        }));
+      }
+      if (previousCatalogJob) {
+        setJobsCatalog((current) => Array.isArray(current)
+          ? current.map((item) => String(item?.id || "") === jobId ? { ...item, jdShortcuts: String(previousCatalogJob.jdShortcuts || "") } : item)
+          : current);
+      }
       setStatus("shortcuts", String(error?.message || error), "error");
     }
   }
@@ -22691,19 +22755,26 @@ function PortalApp({ token, onLogout }) {
       setStatus("shortcuts", "Enter company shortcut key and template text.", "error");
       return;
     }
+    const previousShortcuts = normalizeShortcutMapKeys(
+      copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
+        ? copySettings.companyWideShortcuts
+        : {}
+    );
+    const nextShortcuts = { ...previousShortcuts, [key]: value };
+    const optimisticSettings = { ...copySettings, companyWideShortcuts: nextShortcuts };
+    setCopySettings((current) => ({ ...current, companyWideShortcuts: nextShortcuts }));
+    setShortcutCompanyKey("");
+    setShortcutCompanyValue("");
+    setStatus("shortcuts", `Saving company shortcut ${formatShortcutLabel(key)}...`, "info");
     try {
-      const existing = normalizeShortcutMapKeys(
-        copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
-          ? copySettings.companyWideShortcuts
-          : {}
-      );
-      const payload = { ...copySettings, companyWideShortcuts: { ...existing, [key]: value } };
+      const payload = optimisticSettings;
       const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
       setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
-      setShortcutCompanyKey("");
-      setShortcutCompanyValue("");
       setStatus("shortcuts", `Saved company shortcut ${formatShortcutLabel(key)}.`, "ok");
     } catch (error) {
+      setCopySettings((current) => ({ ...current, companyWideShortcuts: previousShortcuts }));
+      setShortcutCompanyKey(key);
+      setShortcutCompanyValue(value);
       setStatus("shortcuts", String(error?.message || error), "error");
     }
   }
@@ -22715,18 +22786,23 @@ function PortalApp({ token, onLogout }) {
     }
     const normalized = normalizeShortcutKey(key);
     if (!normalized) return;
+    const previousShortcuts = normalizeShortcutMapKeys(
+      copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
+        ? copySettings.companyWideShortcuts
+        : {}
+    );
+    const nextShortcuts = { ...previousShortcuts };
+    delete nextShortcuts[normalized];
+    const optimisticSettings = { ...copySettings, companyWideShortcuts: nextShortcuts };
+    setCopySettings((current) => ({ ...current, companyWideShortcuts: nextShortcuts }));
+    setStatus("shortcuts", `Deleting company shortcut ${formatShortcutLabel(normalized)}...`, "info");
     try {
-      const existing = normalizeShortcutMapKeys(
-        copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
-          ? { ...copySettings.companyWideShortcuts }
-          : {}
-      );
-      delete existing[normalized];
-      const payload = { ...copySettings, companyWideShortcuts: existing };
+      const payload = optimisticSettings;
       const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
       setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
       setStatus("shortcuts", `Deleted company shortcut ${formatShortcutLabel(normalized)}.`, "ok");
     } catch (error) {
+      setCopySettings((current) => ({ ...current, companyWideShortcuts: previousShortcuts }));
       setStatus("shortcuts", String(error?.message || error), "error");
     }
   }
@@ -28337,7 +28413,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   {statuses.shortcuts ? <div className={`status ${statuses.shortcutsKind || ""}`}>{statuses.shortcuts}</div> : null}
                 </Section>
 
-                <Section kicker="Personal" title="Personal Shortcuts (All Jobs)" className="shortcuts-section shortcuts-section--personal">
+                <Section kicker="Personal" title="General Template (All Jobs)" className="shortcuts-section shortcuts-section--personal">
+                  <p className="muted">Private to the recruiter. Syncs instantly for all jobs.</p>
                   <div className="form-grid two-col">
                     <label>
                       <span>Shortcut key</span>
@@ -28379,6 +28456,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 </Section>
 
                 <Section kicker="Job" title="Job-Specific Shortcuts" className="shortcuts-section shortcuts-section--job">
+                  <p className="muted">Tied to the selected JD. Private to the recruiter.</p>
                   <div className="form-grid two-col">
                     <label>
                       <span>Select JD</span>
@@ -28427,8 +28505,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 </Section>
 
                 <Section kicker="Company" title="Company Shortcuts" className="shortcuts-section shortcuts-section--company">
-                  <p className="muted">This list contains company shortcuts only.</p>
-                  <p className="muted">Company shortcuts stay within your workspace and do not leak into other companies.</p>
+                  <p className="muted">Shared across the workspace for everyone on the team.</p>
                   {!isSettingsAdmin ? <p className="muted">Read-only for recruiters. Admin-defined shortcuts appear automatically in your template pickers.</p> : null}
                   {isSettingsAdmin ? (
                     <>
