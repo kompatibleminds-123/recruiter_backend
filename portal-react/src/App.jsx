@@ -9490,6 +9490,7 @@ function PortalApp({ token, onLogout }) {
   const [employeeEditDrafts, setEmployeeEditDrafts] = useState({});
   const [companyDraft, setCompanyDraft] = useState({ companyName: "", adminName: "", email: "", password: "", platformSecret: "" });
   const [companyRecords, setCompanyRecords] = useState([]);
+  const [clientRecords, setClientRecords] = useState([]);
   const [companyEditDrafts, setCompanyEditDrafts] = useState({});
   const [clientUsers, setClientUsers] = useState([]);
   const [clientUserEditDrafts, setClientUserEditDrafts] = useState({});
@@ -9534,46 +9535,78 @@ function PortalApp({ token, onLogout }) {
     const firstPart = raw.split(/[|/\\]/).map((part) => String(part || "").trim()).filter(Boolean)[0] || raw;
     return firstPart.trim();
   }, []);
-  const canonicalClientNameByKey = useMemo(() => {
-    const rowTs = (job) => new Date(job?.updatedAt || job?.updated_at || job?.createdAt || job?.created_at || 0).getTime() || 0;
+  const mergeClientRecordsByIdentity = useCallback((current = [], incoming = []) => {
     const byKey = new Map();
-    jobClientUniverse.forEach((job) => {
-      const original = String(job?.client_name || job?.clientName || "").trim();
+    const normalizeRecord = (item = {}, index = 0) => {
+      const name = sanitizeClientNameInput(String(item?.name || item?.clientName || item?.client_name || "").trim());
+      if (!name || name.startsWith("__")) return null;
+      return {
+        id: String(item?.id || `client_${index + 1}`).trim() || `client_${index + 1}`,
+        name,
+        archived: item?.archived === true || String(item?.status || "").trim().toLowerCase() === "archived",
+        status: item?.archived === true || String(item?.status || "").trim().toLowerCase() === "archived" ? "archived" : "active",
+        aboutCompany: String(item?.aboutCompany || item?.about_company || "").trim(),
+        publicCompanyLine: String(item?.publicCompanyLine || item?.public_company_line || "").trim(),
+        publicPostingTitle: String(item?.publicPostingTitle || item?.public_posting_title || item?.publicTitle || item?.public_title || "").trim(),
+        createdAt: String(item?.createdAt || item?.created_at || "").trim(),
+        updatedAt: String(item?.updatedAt || item?.updated_at || "").trim(),
+        updatedBy: String(item?.updatedBy || item?.updated_by || "").trim()
+      };
+    };
+    const rank = (item) => ({
+      activeBoost: item.archived ? 0 : 100,
+      richness: (item.aboutCompany ? 1 : 0) + (item.publicCompanyLine ? 1 : 0) + (item.publicPostingTitle ? 1 : 0),
+      freshness: new Date(item.updatedAt || item.createdAt || 0).getTime() || 0
+    });
+    [...(Array.isArray(current) ? current : []), ...(Array.isArray(incoming) ? incoming : [])]
+      .map((item, index) => normalizeRecord(item, index))
+      .filter(Boolean)
+      .forEach((item) => {
+        const key = normalizeClientIdentityKey(item.name);
+        if (!key) return;
+        const existing = byKey.get(key);
+        if (!existing) {
+          byKey.set(key, item);
+          return;
+        }
+        const currentRank = rank(existing);
+        const nextRank = rank(item);
+        const takeNext =
+          nextRank.activeBoost > currentRank.activeBoost
+          || (nextRank.activeBoost === currentRank.activeBoost && nextRank.richness > currentRank.richness)
+          || (nextRank.activeBoost === currentRank.activeBoost && nextRank.richness === currentRank.richness && nextRank.freshness >= currentRank.freshness);
+        byKey.set(key, takeNext ? {
+          ...existing,
+          ...item,
+          id: item.id || existing.id,
+          name: item.name || existing.name,
+          archived: item.archived,
+          status: item.archived ? "archived" : "active",
+          aboutCompany: item.aboutCompany || existing.aboutCompany || "",
+          publicCompanyLine: item.publicCompanyLine || existing.publicCompanyLine || "",
+          publicPostingTitle: item.publicPostingTitle || existing.publicPostingTitle || "",
+          createdAt: existing.createdAt || item.createdAt || "",
+          updatedAt: item.updatedAt || existing.updatedAt || "",
+          updatedBy: item.updatedBy || existing.updatedBy || ""
+        } : {
+          ...item,
+          ...existing
+        });
+      });
+    return Array.from(byKey.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [normalizeClientIdentityKey, sanitizeClientNameInput]);
+  const canonicalClientNameByKey = useMemo(() => {
+    const byKey = new Map();
+    (Array.isArray(clientRecords) ? clientRecords : []).forEach((item) => {
+      const original = String(item?.name || item?.clientName || item?.client_name || "").trim();
       if (!original || original.startsWith("__")) return;
       const cleaned = sanitizeClientNameInput(original);
       const key = normalizeClientIdentityKey(cleaned || original);
       if (!key) return;
-      const candidate = cleaned || original;
-      const existing = byKey.get(key);
-      if (!existing) {
-        byKey.set(key, { value: candidate, ts: rowTs(job) });
-        return;
-      }
-      const nextTs = rowTs(job);
-      if (nextTs >= Number(existing?.ts || 0)) byKey.set(key, { value: candidate, ts: nextTs });
+      byKey.set(key, String(cleaned || original).trim());
     });
-    (Array.isArray(clientUsers) ? clientUsers : []).forEach((item) => {
-      const original = String(item?.clientName || "").trim();
-      if (!original || original.startsWith("__")) return;
-      const cleaned = sanitizeClientNameInput(original);
-      const key = normalizeClientIdentityKey(cleaned || original);
-      if (!key) return;
-      if (!byKey.has(key)) byKey.set(key, { value: cleaned || original, ts: 0 });
-    });
-    (Array.isArray(copySettings?.clientDirectory) ? copySettings.clientDirectory : []).forEach((item) => {
-      const original = String(item?.name || item?.clientName || item?.client_name || item || "").trim();
-      if (!original || original.startsWith("__")) return;
-      const cleaned = sanitizeClientNameInput(original);
-      const key = normalizeClientIdentityKey(cleaned || original);
-      if (!key) return;
-      if (!byKey.has(key)) byKey.set(key, { value: cleaned || original, ts: 0 });
-    });
-    const output = new Map();
-    byKey.forEach((entry, key) => {
-      output.set(key, String(entry?.value || "").trim());
-    });
-    return output;
-  }, [jobClientUniverse, clientUsers, copySettings?.clientDirectory, normalizeClientIdentityKey, sanitizeClientNameInput]);
+    return byKey;
+  }, [clientRecords, normalizeClientIdentityKey, sanitizeClientNameInput]);
   const canonicalizeClientName = useCallback((value = "") => {
     const cleaned = sanitizeClientNameInput(value);
     const key = normalizeClientIdentityKey(cleaned);
@@ -9582,63 +9615,36 @@ function PortalApp({ token, onLogout }) {
   }, [canonicalClientNameByKey, normalizeClientIdentityKey, sanitizeClientNameInput]);
   const archivedClientNameKeys = useMemo(() => {
     const keys = new Set();
-    (Array.isArray(copySettings?.clientDirectory) ? copySettings.clientDirectory : []).forEach((item) => {
+    (Array.isArray(clientRecords) ? clientRecords : []).forEach((item) => {
       if (!item?.archived) return;
-      const name = String(item?.name || item?.clientName || item?.client_name || "").trim();
+      const name = String(item?.name || "").trim();
       const canonical = canonicalizeClientName(name);
       const key = normalizeClientIdentityKey(canonical || name);
       if (key) keys.add(key);
     });
     return keys;
-  }, [copySettings?.clientDirectory, canonicalizeClientName, normalizeClientIdentityKey]);
+  }, [clientRecords, canonicalizeClientName, normalizeClientIdentityKey]);
   const availablePresetClients = useMemo(() => {
     const values = new Set();
-    jobClientUniverse.forEach((job) => {
-      const clientName = canonicalizeClientName(String(job?.client_name || job?.clientName || "").trim());
-      if (!clientName) return;
-      if (clientName.startsWith("__")) return;
-      if (archivedClientNameKeys.has(normalizeClientIdentityKey(clientName))) return;
-      values.add(clientName);
-    });
-    (Array.isArray(clientUsers) ? clientUsers : []).forEach((item) => {
-      const clientName = canonicalizeClientName(String(item?.clientName || "").trim());
-      if (!clientName || clientName.startsWith("__")) return;
-      if (archivedClientNameKeys.has(normalizeClientIdentityKey(clientName))) return;
-      values.add(clientName);
-    });
-    (Array.isArray(copySettings?.clientDirectory) ? copySettings.clientDirectory : []).forEach((item) => {
-      const clientName = canonicalizeClientName(String(item?.name || item?.clientName || item?.client_name || item || "").trim());
+    (Array.isArray(clientRecords) ? clientRecords : []).forEach((item) => {
+      const clientName = canonicalizeClientName(String(item?.name || "").trim());
       if (!clientName || clientName.startsWith("__")) return;
       if (archivedClientNameKeys.has(normalizeClientIdentityKey(clientName))) return;
       values.add(clientName);
     });
     return Array.from(values).sort((a, b) => a.localeCompare(b));
-  }, [jobClientUniverse, clientUsers, copySettings?.clientDirectory, canonicalizeClientName, archivedClientNameKeys, normalizeClientIdentityKey]);
+  }, [clientRecords, canonicalizeClientName, archivedClientNameKeys, normalizeClientIdentityKey]);
   const clientMasterOptions = useMemo(() => {
-    const byKey = new Map();
-    (Array.isArray(copySettings?.clientDirectory) ? copySettings.clientDirectory : []).forEach((item, index) => {
-      const name = canonicalizeClientName(String(item?.name || item?.clientName || item?.client_name || "").trim());
-      const key = normalizeClientIdentityKey(name);
-      if (!key) return;
-      byKey.set(key, {
-        id: String(item?.id || `client_master_${index + 1}`).trim() || `client_master_${index + 1}`,
-        name,
-        archived: item?.archived === true,
-        source: "directory"
-      });
-    });
-    availablePresetClients.forEach((name, index) => {
-      const key = normalizeClientIdentityKey(name);
-      if (!key || byKey.has(key)) return;
-      byKey.set(key, {
-        id: `client_master_available_${index + 1}`,
-        name,
-        archived: false,
-        source: "in_use"
-      });
-    });
-    return Array.from(byKey.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [copySettings?.clientDirectory, availablePresetClients, canonicalizeClientName, normalizeClientIdentityKey]);
+    return mergeClientRecordsByIdentity(clientRecords, []).map((item) => ({
+      id: item.id,
+      name: canonicalizeClientName(item.name),
+      archived: item.archived === true,
+      source: "client_master",
+      aboutCompany: item.aboutCompany || "",
+      publicCompanyLine: item.publicCompanyLine || "",
+      publicPostingTitle: item.publicPostingTitle || ""
+    }));
+  }, [clientRecords, mergeClientRecordsByIdentity, canonicalizeClientName]);
   const clientRoleOptionsByClient = useMemo(() => {
     const byClient = new Map();
     jobClientUniverse.forEach((job) => {
@@ -9659,6 +9665,16 @@ function PortalApp({ token, onLogout }) {
     [clientRoleOptionsByClient, clientShareDraft.clientLabel, canonicalizeClientName]
   );
   const clientJobContentDefaults = useMemo(() => {
+    const defaults = {};
+    (Array.isArray(clientRecords) ? clientRecords : []).forEach((item) => {
+      const clientName = canonicalizeClientName(String(item?.name || "").trim());
+      if (!clientName || clientName.startsWith("__")) return;
+      defaults[clientName] = {
+        aboutCompany: String(item?.aboutCompany || item?.about_company || "").trim(),
+        publicCompanyLine: String(item?.publicCompanyLine || item?.public_company_line || "").trim(),
+        publicTitle: String(item?.publicPostingTitle || item?.public_posting_title || "").trim()
+      };
+    });
     const scoreRow = (job) => {
       const aboutCompany = String(job?.aboutCompany || "").trim();
       const publicCompanyLine = String(job?.publicCompanyLine || job?.public_company_line || "").trim();
@@ -9686,8 +9702,8 @@ function PortalApp({ token, onLogout }) {
         if (nextTime > currentTime) byClient.set(clientName, job);
       }
     });
-    const defaults = {};
     byClient.forEach((job, clientName) => {
+      if (defaults[clientName]?.aboutCompany || defaults[clientName]?.publicCompanyLine || defaults[clientName]?.publicTitle) return;
       defaults[clientName] = {
         aboutCompany: String(job?.aboutCompany || "").trim(),
         publicCompanyLine: String(job?.publicCompanyLine || job?.public_company_line || "").trim(),
@@ -9695,7 +9711,7 @@ function PortalApp({ token, onLogout }) {
       };
     });
     return defaults;
-  }, [state.jobs, canonicalizeClientName]);
+  }, [clientRecords, state.jobs, canonicalizeClientName]);
   const [clientUserDraft, setClientUserDraft] = useState({ username: "", password: "", clientName: "", allowedPositions: "" });
   const [clientPasswordDrafts, setClientPasswordDrafts] = useState({});
   const [loginSettingsPanel, setLoginSettingsPanel] = useState("team");
@@ -11460,7 +11476,7 @@ function PortalApp({ token, onLogout }) {
     const dashboardAgendaParams = new URLSearchParams();
     dashboardAgendaParams.set("range", String(agendaRange || "today"));
 
-    const [userResult, dashboardAgendaResult, dashboardFunnelResult, applicantsResult, intakeResult, jobsResult, usersResult, clientUsersResult, employeeUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, assessmentEventsResult, sharedPresetResult, smtpSettingsResult, licenseResult, billingOverviewResult, billingPlansResult] = await Promise.all([
+    const [userResult, dashboardAgendaResult, dashboardFunnelResult, applicantsResult, intakeResult, jobsResult, usersResult, clientsResult, clientUsersResult, employeeUsersResult, candidatesResult, databaseCandidatesResult, assessmentsResult, assessmentEventsResult, sharedPresetResult, smtpSettingsResult, licenseResult, billingOverviewResult, billingPlansResult] = await Promise.all([
       api("/auth/me", token),
       needsDashboard
         ? api(`/company/dashboard/agenda${dashboardAgendaParams.toString() ? `?${dashboardAgendaParams.toString()}` : ""}`, token)
@@ -11477,6 +11493,7 @@ function PortalApp({ token, onLogout }) {
       needsIntake ? api("/company/applicant-intake-secret", token).catch(() => null) : Promise.resolve(null),
       needsJobs ? api(jobsApiPath, token).catch(() => ({ jobs: [] })) : Promise.resolve(null),
       needsUsers ? api("/company/users", token).catch(() => ({ users: [] })) : Promise.resolve(null),
+      api("/company/clients", token).catch(() => ({ clients: [] })),
       includeClientUsers
         ? api("/company/client-users", token).catch(() => ({ clientUsers: [] }))
         : Promise.resolve(null),
@@ -11604,6 +11621,10 @@ function PortalApp({ token, onLogout }) {
     if (needsJobs) {
       archivedJobsLoadedRef.current = false;
       setJobsCatalog((current) => mergeJobsCatalog(current, jobsResult?.jobs || [], []));
+    }
+    if (seq !== workspaceLoadSeqRef.current) return;
+    if (clientsResult) {
+      setClientRecords((current) => mergeClientRecordsByIdentity(current, clientsResult?.clients || []));
     }
     if (seq !== workspaceLoadSeqRef.current) return;
     if (includeClientUsers && clientUsersResult) {
@@ -12057,8 +12078,9 @@ function PortalApp({ token, onLogout }) {
 
   async function reloadLoginSettingsWorkspace() {
     if (!token) return;
-    const [usersResult, clientUsersResult, licenseResult, companiesResult] = await Promise.all([
+    const [usersResult, clientsResult, clientUsersResult, licenseResult, companiesResult] = await Promise.all([
       api("/company/users", token).catch(() => ({ users: [] })),
+      api("/company/clients", token).catch(() => ({ clients: [] })),
       api("/company/client-users", token).catch(() => ({ clientUsers: [] })),
       api("/license/me", token).catch(() => null),
       canAddCompany ? api("/platform/companies", token).catch(() => ({ companies: [] })) : Promise.resolve({ companies: [] })
@@ -12070,6 +12092,7 @@ function PortalApp({ token, onLogout }) {
       ...current,
       users: usersResult?.users || []
     }));
+    setClientRecords((current) => mergeClientRecordsByIdentity(current, clientsResult?.clients || []));
     setClientUsers(clientUsersResult?.clientUsers || []);
     setCompanyRecords(companiesResult?.companies || []);
     setCompanyLicense(licenseResult?.license || null);
@@ -21284,13 +21307,6 @@ function PortalApp({ token, onLogout }) {
         allowedPositions: []
       };
       await api("/company/client-users", token, "POST", payload);
-      if (normalizedClientName) {
-        await saveClientDirectoryName(normalizedClientName, {
-          statusKey: "loginClient",
-          silentIfExists: true,
-          skipStatus: true
-        });
-      }
       await reloadLoginSettingsWorkspace();
       setClientUserDraft({ username: "", password: "", clientName: "", allowedPositions: "" });
       setStatus("loginClient", "Client login created.", "ok");
@@ -21311,41 +21327,17 @@ function PortalApp({ token, onLogout }) {
       if (!skipStatus) setStatus(statusKey, "Client name is required.", "error");
       return "";
     }
-    const existingClients = Array.isArray(copySettings?.clientDirectory) ? copySettings.clientDirectory : [];
-    const alreadyExists = existingClients.some((item) => normalizeClientIdentityKey(String(item?.name || item?.clientName || item?.client_name || "").trim()) === normalizeClientIdentityKey(normalizedClientName))
-      || availablePresetClients.some((item) => normalizeClientIdentityKey(item) === normalizeClientIdentityKey(normalizedClientName));
-    if (alreadyExists) {
+    const existingClients = Array.isArray(clientRecords) ? clientRecords : [];
+    const existingClient = existingClients.find((item) => normalizeClientIdentityKey(String(item?.name || "").trim()) === normalizeClientIdentityKey(normalizedClientName)) || null;
+    if (existingClient) {
       if (!skipStatus && !options?.silentIfExists) setStatus(statusKey, "Client already exists.", "warning");
-      return normalizedClientName;
+      return existingClient.name;
     }
-    const nextClientDirectory = [...existingClients, {
-      id: `client_directory_${Date.now()}`,
-      name: normalizedClientName,
-      archived: false,
-      updatedAt: new Date().toISOString(),
-      updatedBy: String(user?.email || "").trim()
-    }]
-      .map((item, index) => {
-        const name = canonicalizeClientName(String(item?.name || item?.clientName || item?.client_name || item || "").trim());
-        if (!name) return null;
-        return {
-          id: String(item?.id || `client_directory_${index + 1}`).trim() || `client_directory_${index + 1}`,
-          name,
-          archived: item?.archived === true,
-          updatedAt: String(item?.updatedAt || item?.updated_at || "").trim(),
-          updatedBy: String(item?.updatedBy || item?.updated_by || "").trim()
-        };
-      })
-      .filter(Boolean)
-      .filter((item, index, arr) => arr.findIndex((entry) => normalizeClientIdentityKey(entry?.name) === normalizeClientIdentityKey(item?.name)) === index)
-      .sort((a, b) => a.name.localeCompare(b.name));
-    const payload = migrateCopySettings({
-      ...copySettings,
-      clientDirectory: nextClientDirectory
-    });
     if (!skipStatus) setStatus(statusKey, options?.progressMessage || "Saving client...");
-    const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
-    setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
+    const result = await api("/company/clients", token, "POST", {
+      name: normalizedClientName
+    });
+    setClientRecords((current) => mergeClientRecordsByIdentity(current, [result]));
     if (!skipStatus) setStatus(statusKey, options?.successMessage || "Client saved.", "ok");
     return normalizedClientName;
   }
@@ -21387,7 +21379,11 @@ function PortalApp({ token, onLogout }) {
     try {
       setStatus("loginClient", "Renaming client globally...");
       const result = await api("/company/client-master/rename", token, "POST", { previousName, nextName });
-      setCopySettings((current) => migrateCopySettings({ ...current, ...result }));
+      setClientRecords((current) => mergeClientRecordsByIdentity([], result || current.map((item) => (
+        normalizeClientIdentityKey(String(item?.name || "").trim()) === normalizeClientIdentityKey(previousName)
+          ? { ...item, name: nextName, archived: false }
+          : item
+      ))));
       setClientUsers((current) => current.map((item) => (
         normalizeClientIdentityKey(String(item?.clientName || "").trim()) === normalizeClientIdentityKey(previousName)
           ? { ...item, clientName: nextName }
@@ -21430,7 +21426,11 @@ function PortalApp({ token, onLogout }) {
         clientName: selectedClientMaster.name,
         archived: nextArchived
       });
-      setCopySettings((current) => migrateCopySettings({ ...current, ...result }));
+      setClientRecords((current) => mergeClientRecordsByIdentity([], result || current.map((item) => (
+        normalizeClientIdentityKey(String(item?.name || "").trim()) === normalizeClientIdentityKey(selectedClientMaster.name)
+          ? { ...item, archived: nextArchived, status: nextArchived ? "archived" : "active" }
+          : item
+      ))));
       setStatus("loginClient", nextArchived ? "Client archived. It is hidden from dropdowns." : "Client restored to dropdowns.", "ok");
     } catch (error) {
       setStatus("loginClient", String(error?.message || error), "error");
@@ -27558,9 +27558,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     >
                       <option value="">Select client</option>
                       <option value="__create_new_client__">+ Create new client</option>
-                      {jobDraft.clientName && !availablePresetClients.includes(jobDraft.clientName) ? (
-                        <option value={jobDraft.clientName}>{jobDraft.clientName}</option>
-                      ) : null}
                       {availablePresetClients.map((clientName) => (
                         <option key={`job-client-${clientName}`} value={clientName}>{clientName}</option>
                       ))}

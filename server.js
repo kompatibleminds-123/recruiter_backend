@@ -32,9 +32,11 @@ const {
 const {
   assertCanCreatePlatformCompany,
   bootstrapAdmin,
+  createCompanyClient,
   createClientUser,
   deleteClientUser,
   createEmployeeUser,
+  getCompanyClients,
   renameCompanyClientGlobal,
   setCompanyClientArchived,
   createCompanyWithAdmin,
@@ -78,6 +80,7 @@ const {
   listPlatformCompaniesDetailed,
   listAssessments,
   listEmployeeAttendance,
+  updateCompanyClientRecord,
   getAssessmentById,
   searchAssessments,
   listCompanyJobs,
@@ -15199,6 +15202,61 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, result: { companyId: actor.companyId, clientUsers } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/company/clients") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      await requireSuiteModulesAccess(actor, "Client module");
+      const clients = await getCompanyClients(actor.companyId);
+      sendJson(res, 200, { ok: true, result: { companyId: actor.companyId, clients } });
+    } catch (error) {
+      sendJson(res, 401, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/clients") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      await requireSuiteModulesAccess(actor, "Client module");
+      const body = await readJsonBody(req);
+      const client = await createCompanyClient({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        name: String(body.name || body.clientName || "").trim(),
+        aboutCompany: String(body.aboutCompany || body.about_company || "").trim(),
+        publicCompanyLine: String(body.publicCompanyLine || body.public_company_line || "").trim(),
+        publicPostingTitle: String(body.publicPostingTitle || body.public_posting_title || "").trim()
+      });
+      sendJson(res, 200, { ok: true, result: client });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "PATCH" && req.url === "/company/clients") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      await requireSuiteModulesAccess(actor, "Client module");
+      const body = await readJsonBody(req);
+      const client = await updateCompanyClientRecord({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        clientId: String(body.clientId || body.id || "").trim(),
+        currentName: String(body.currentName || body.clientName || body.name || "").trim(),
+        nextName: String(body.nextName || body.name || "").trim(),
+        archived: typeof body.archived === "boolean" ? body.archived : undefined,
+        aboutCompany: body.aboutCompany,
+        publicCompanyLine: body.publicCompanyLine,
+        publicPostingTitle: body.publicPostingTitle
+      });
+      sendJson(res, 200, { ok: true, result: client });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
     return;
   }

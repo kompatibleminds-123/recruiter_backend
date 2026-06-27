@@ -9,7 +9,7 @@ const STORE_PATH = path.join(DATA_DIR, "store.json");
 function ensureStore() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(STORE_PATH)) {
-    fs.writeFileSync(STORE_PATH, JSON.stringify({ companies: [], users: [], sessions: [], jobs: [], assessments: [], clientUsers: [], emailThreads: [] }, null, 2), "utf8");
+    fs.writeFileSync(STORE_PATH, JSON.stringify({ companies: [], users: [], sessions: [], jobs: [], assessments: [], clientUsers: [], companyClients: [], emailThreads: [] }, null, 2), "utf8");
   }
 }
 function readStore() { ensureStore(); return JSON.parse(fs.readFileSync(STORE_PATH, "utf8")); }
@@ -456,6 +456,90 @@ function sanitizeCompany(company) {
     createdAt: company.createdAt ?? company.created_at ?? null,
     applicantIntakeSecret: company.applicantIntakeSecret ?? company.applicant_intake_secret ?? ""
   };
+}
+function normalizeClientIdentityKey(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/\.(ai|com|in|co|io|org|net)\b/g, "")
+    .replace(/[|/\\]+/g, " ")
+    .replace(/[^a-z0-9]+/g, "")
+    .trim();
+}
+function sanitizeCompanyClient(client) {
+  if (!client) return null;
+  const name = String(client.name || client.clientName || client.client_name || "").trim();
+  if (!name) return null;
+  const archived = Boolean(client.archived === true || String(client.status || "").trim().toLowerCase() === "archived");
+  return {
+    id: String(client.id || crypto.randomUUID()).trim(),
+    companyId: client.companyId ?? client.company_id ?? null,
+    name,
+    status: archived ? "archived" : "active",
+    archived,
+    aboutCompany: String(client.aboutCompany ?? client.about_company ?? "").trim(),
+    publicCompanyLine: String(client.publicCompanyLine ?? client.public_company_line ?? "").trim(),
+    publicPostingTitle: String(client.publicPostingTitle ?? client.public_posting_title ?? client.publicTitle ?? client.public_title ?? "").trim(),
+    createdAt: client.createdAt ?? client.created_at ?? null,
+    updatedAt: client.updatedAt ?? client.updated_at ?? null,
+    updatedBy: String(client.updatedBy ?? client.updated_by ?? "").trim()
+  };
+}
+function mergeCompanyClientEntries(entries = []) {
+  const byKey = new Map();
+  const scoreClient = (item) => {
+    const richness = (item.aboutCompany ? 1 : 0) + (item.publicCompanyLine ? 1 : 0) + (item.publicPostingTitle ? 1 : 0);
+    const freshness = new Date(item.updatedAt || item.createdAt || 0).getTime() || 0;
+    const activeBoost = item.archived ? 0 : 100;
+    return { richness, freshness, activeBoost };
+  };
+  (Array.isArray(entries) ? entries : []).map((item) => sanitizeCompanyClient(item)).filter(Boolean).forEach((item) => {
+    const key = normalizeClientIdentityKey(item.name);
+    if (!key) return;
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, item);
+      return;
+    }
+    const currentScore = scoreClient(existing);
+    const nextScore = scoreClient(item);
+    const takeNext =
+      nextScore.activeBoost > currentScore.activeBoost
+      || (nextScore.activeBoost === currentScore.activeBoost && nextScore.richness > currentScore.richness)
+      || (nextScore.activeBoost === currentScore.activeBoost && nextScore.richness === currentScore.richness && nextScore.freshness >= currentScore.freshness);
+    byKey.set(key, takeNext ? {
+      ...existing,
+      ...item,
+      id: String(item.id || existing.id || "").trim() || existing.id,
+      companyId: item.companyId || existing.companyId || null,
+      name: item.name || existing.name,
+      archived: item.archived,
+      status: item.archived ? "archived" : "active",
+      aboutCompany: item.aboutCompany || existing.aboutCompany || "",
+      publicCompanyLine: item.publicCompanyLine || existing.publicCompanyLine || "",
+      publicPostingTitle: item.publicPostingTitle || existing.publicPostingTitle || "",
+      createdAt: existing.createdAt || item.createdAt || null,
+      updatedAt: item.updatedAt || existing.updatedAt || null,
+      updatedBy: item.updatedBy || existing.updatedBy || ""
+    } : {
+      ...item,
+      ...existing,
+      id: String(existing.id || item.id || "").trim() || item.id,
+      companyId: existing.companyId || item.companyId || null,
+      name: existing.name || item.name,
+      archived: existing.archived,
+      status: existing.archived ? "archived" : "active",
+      aboutCompany: existing.aboutCompany || item.aboutCompany || "",
+      publicCompanyLine: existing.publicCompanyLine || item.publicCompanyLine || "",
+      publicPostingTitle: existing.publicPostingTitle || item.publicPostingTitle || "",
+      createdAt: existing.createdAt || item.createdAt || null,
+      updatedAt: existing.updatedAt || item.updatedAt || null,
+      updatedBy: existing.updatedBy || item.updatedBy || ""
+    });
+  });
+  return Array.from(byKey.values()).sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
 }
 function sanitizeJob(job) {
   if (!job) return null;
@@ -3098,6 +3182,16 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
     if (shortcutIx >= 0) store.jobShortcuts[shortcutIx] = shortcutRow; else store.jobShortcuts.push(shortcutRow);
 
     writeStore(store);
+    if (String(next.clientName || "").trim()) {
+      await createCompanyClient({
+        actorUserId,
+        companyId,
+        name: next.clientName,
+        aboutCompany: next.aboutCompany,
+        publicCompanyLine: next.publicCompanyLine,
+        publicPostingTitle: next.publicTitle
+      }).catch(() => null);
+    }
     return { ...sanitizeJob(next), jdShortcuts: incomingRecruiterShortcuts };
   }
   await ensureSeeded();
@@ -3141,6 +3235,16 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
     { conflict: "job_id,recruiter_id", upsert: true, returning: "minimal" }
   );
 
+  if (String(job.clientName || "").trim()) {
+    await createCompanyClient({
+      actorUserId,
+      companyId,
+      name: String(job.clientName || "").trim(),
+      aboutCompany: String(job.aboutCompany || "").trim(),
+      publicCompanyLine: String(job.publicCompanyLine || job.public_company_line || "").trim(),
+      publicPostingTitle: String(job.publicTitle || job.public_title || "").trim()
+    }).catch(() => null);
+  }
   return { ...sanitizeJob(rows[0]), jdShortcuts: incomingRecruiterShortcuts };
 }
 async function saveCompanyJobRecruiterShortcuts({ actorUserId, companyId, jobId, shortcuts }) {
@@ -3586,6 +3690,244 @@ async function getCompanyClientUsers(companyId) {
   const rows = await sbSel("client_portal_users", `select=*&company_id=eq.${enc(companyId)}&order=created_at.asc`);
   return (rows || []).map(sanitizeClientUser).filter(Boolean);
 }
+async function getCompanyLegacyClientEntries(companyId) {
+  const scopedCompanyId = String(companyId || "").trim();
+  if (!scopedCompanyId) return [];
+  const settings = await getCompanySharedExportPresets(scopedCompanyId).catch(() => ({}));
+  const sharedDirectoryEntries = (Array.isArray(settings?.clientDirectory) ? settings.clientDirectory : [])
+    .map((item) => sanitizeCompanyClient({
+      id: item?.id,
+      companyId: scopedCompanyId,
+      name: item?.name || item?.clientName || item?.client_name || item,
+      archived: item?.archived === true,
+      aboutCompany: item?.aboutCompany || item?.about_company || "",
+      publicCompanyLine: item?.publicCompanyLine || item?.public_company_line || "",
+      publicPostingTitle: item?.publicPostingTitle || item?.public_posting_title || "",
+      updatedAt: item?.updatedAt || item?.updated_at || "",
+      updatedBy: item?.updatedBy || item?.updated_by || ""
+    }))
+    .filter(Boolean);
+  const clientUsers = await getCompanyClientUsers(scopedCompanyId).catch(() => []);
+  const clientUserEntries = clientUsers.map((item) => sanitizeCompanyClient({
+    companyId: scopedCompanyId,
+    name: item?.clientName || "",
+    archived: false,
+    updatedAt: item?.updatedAt || item?.updated_at || item?.createdAt || item?.created_at || "",
+    updatedBy: item?.updatedBy || item?.updated_by || ""
+  })).filter(Boolean);
+  let jobs = [];
+  if (!cfg().on) {
+    const store = readStore();
+    jobs = (Array.isArray(store.jobs) ? store.jobs : [])
+      .filter((item) => String(item?.companyId || item?.company_id || "").trim() === scopedCompanyId && !isSystemJobRow(item))
+      .map((item) => sanitizeJob(item))
+      .filter(Boolean);
+  } else {
+    const rows = await sbSel("company_jobs", `select=*&company_id=eq.${enc(scopedCompanyId)}&order=updated_at.desc&limit=5000`).catch(() => []);
+    jobs = (Array.isArray(rows) ? rows : [])
+      .filter((item) => !isSystemJobRow(item))
+      .map((item) => sanitizeJob(item))
+      .filter(Boolean);
+  }
+  const jobEntries = jobs.map((job) => sanitizeCompanyClient({
+    companyId: scopedCompanyId,
+    name: job?.clientName || "",
+    archived: false,
+    aboutCompany: job?.aboutCompany || "",
+    publicCompanyLine: job?.publicCompanyLine || "",
+    publicPostingTitle: job?.publicTitle || "",
+    updatedAt: job?.updatedAt || job?.createdAt || "",
+    updatedBy: job?.updatedBy || ""
+  })).filter(Boolean);
+  return mergeCompanyClientEntries([...sharedDirectoryEntries, ...clientUserEntries, ...jobEntries]);
+}
+async function saveCompanyClientDirectoryFallback({ actorUserId, companyId, client }) {
+  const scopedCompanyId = String(companyId || "").trim();
+  const safeClient = sanitizeCompanyClient({ ...client, companyId: scopedCompanyId });
+  if (!safeClient) throw new Error("Client name is required.");
+  const settings = await getCompanySharedExportPresets(scopedCompanyId).catch(() => ({}));
+  const existingDirectory = Array.isArray(settings?.clientDirectory) ? settings.clientDirectory : [];
+  const nextDirectory = mergeCompanyClientEntries([
+    ...existingDirectory,
+    safeClient
+  ]).map((item) => ({
+    id: item.id,
+    name: item.name,
+    archived: item.archived === true,
+    aboutCompany: item.aboutCompany || "",
+    publicCompanyLine: item.publicCompanyLine || "",
+    publicPostingTitle: item.publicPostingTitle || "",
+    updatedAt: item.updatedAt || new Date().toISOString(),
+    updatedBy: item.updatedBy || ""
+  }));
+  await saveCompanySharedExportPresets({
+    actorUserId,
+    companyId: scopedCompanyId,
+    settings: {
+      ...settings,
+      clientDirectory: nextDirectory
+    }
+  });
+  return safeClient;
+}
+async function saveCompanyClientsRow({ companyId, clients, actorEmail = "" }) {
+  const scopedCompanyId = String(companyId || "").trim();
+  const sanitizedClients = mergeCompanyClientEntries(
+    (Array.isArray(clients) ? clients : []).map((item) => ({
+      ...item,
+      companyId: scopedCompanyId
+    }))
+  );
+  if (!cfg().on) {
+    const store = readStore();
+    store.companyClients = Array.isArray(store.companyClients) ? store.companyClients : [];
+    const keep = store.companyClients.filter((item) => String(item.companyId || item.company_id || "").trim() !== scopedCompanyId);
+    store.companyClients = [
+      ...keep,
+      ...sanitizedClients.map((item) => ({
+        id: item.id,
+        companyId: scopedCompanyId,
+        name: item.name,
+        status: item.archived ? "archived" : "active",
+        archived: item.archived === true,
+        aboutCompany: item.aboutCompany || "",
+        publicCompanyLine: item.publicCompanyLine || "",
+        publicPostingTitle: item.publicPostingTitle || "",
+        createdAt: item.createdAt || new Date().toISOString(),
+        updatedAt: item.updatedAt || new Date().toISOString(),
+        updatedBy: item.updatedBy || String(actorEmail || "").trim()
+      }))
+    ];
+    writeStore(store);
+    return sanitizedClients;
+  }
+  const rows = await sbIns("company_clients", sanitizedClients.map((item) => ({
+    id: item.id,
+    company_id: scopedCompanyId,
+    name: item.name,
+    status: item.archived ? "archived" : "active",
+    about_company: item.aboutCompany || "",
+    public_company_line: item.publicCompanyLine || "",
+    public_posting_title: item.publicPostingTitle || "",
+    created_at: item.createdAt || new Date().toISOString(),
+    updated_at: item.updatedAt || new Date().toISOString(),
+    updated_by: item.updatedBy || String(actorEmail || "").trim()
+  })), { conflict: "id", upsert: true });
+  return (rows || []).map(sanitizeCompanyClient).filter(Boolean);
+}
+async function getCompanyClients(companyId) {
+  const scopedCompanyId = String(companyId || "").trim();
+  if (!scopedCompanyId) throw new Error("companyId is required.");
+  const legacyEntries = await getCompanyLegacyClientEntries(scopedCompanyId).catch(() => []);
+  if (!cfg().on) {
+    const store = readStore();
+    const tableEntries = (Array.isArray(store.companyClients) ? store.companyClients : [])
+      .filter((item) => String(item.companyId || item.company_id || "").trim() === scopedCompanyId)
+      .map((item) => sanitizeCompanyClient(item))
+      .filter(Boolean);
+    const merged = mergeCompanyClientEntries([...tableEntries, ...legacyEntries]);
+    if (merged.length) {
+      await saveCompanyClientsRow({ companyId: scopedCompanyId, clients: merged }).catch(() => null);
+    }
+    return merged;
+  }
+  let tableEntries = [];
+  let tableReady = true;
+  try {
+    const rows = await sbSel("company_clients", `select=*&company_id=eq.${enc(scopedCompanyId)}&order=name.asc&limit=5000`);
+    tableEntries = (rows || []).map((item) => sanitizeCompanyClient(item)).filter(Boolean);
+  } catch (error) {
+    tableReady = false;
+  }
+  const merged = mergeCompanyClientEntries([...tableEntries, ...legacyEntries]);
+  if (tableReady && merged.length) {
+    await saveCompanyClientsRow({ companyId: scopedCompanyId, clients: merged }).catch(() => null);
+  }
+  return merged;
+}
+async function createCompanyClient({ actorUserId, companyId, name, aboutCompany = "", publicCompanyLine = "", publicPostingTitle = "" }) {
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor || String(actor.role || "").toLowerCase() !== "admin") throw new Error("Only an admin can create clients.");
+  const scopedCompanyId = String(companyId || "").trim();
+  const safeName = String(name || "").trim();
+  if (!scopedCompanyId || !safeName) throw new Error("companyId and name are required.");
+  const currentClients = await getCompanyClients(scopedCompanyId).catch(() => []);
+  const matchKey = normalizeClientIdentityKey(safeName);
+  const existing = currentClients.find((item) => normalizeClientIdentityKey(item?.name || "") === matchKey) || null;
+  const now = new Date().toISOString();
+  const nextClient = sanitizeCompanyClient({
+    id: existing?.id || crypto.randomUUID(),
+    companyId: scopedCompanyId,
+    name: existing?.name || safeName,
+    archived: false,
+    aboutCompany: String(aboutCompany || existing?.aboutCompany || "").trim(),
+    publicCompanyLine: String(publicCompanyLine || existing?.publicCompanyLine || "").trim(),
+    publicPostingTitle: String(publicPostingTitle || existing?.publicPostingTitle || "").trim(),
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+    updatedBy: actor.email || ""
+  });
+  if (!cfg().on) {
+    const nextClients = mergeCompanyClientEntries([
+      ...currentClients.filter((item) => normalizeClientIdentityKey(item?.name || "") !== matchKey),
+      nextClient
+    ]);
+    await saveCompanyClientsRow({ companyId: scopedCompanyId, clients: nextClients, actorEmail: actor.email || "" });
+    await saveCompanyClientDirectoryFallback({ actorUserId, companyId: scopedCompanyId, client: nextClient }).catch(() => null);
+    return nextClient;
+  }
+  try {
+    const nextClients = mergeCompanyClientEntries([
+      ...currentClients.filter((item) => normalizeClientIdentityKey(item?.name || "") !== matchKey),
+      nextClient
+    ]);
+    await saveCompanyClientsRow({ companyId: scopedCompanyId, clients: nextClients, actorEmail: actor.email || "" });
+  } catch (error) {
+    await saveCompanyClientDirectoryFallback({ actorUserId, companyId: scopedCompanyId, client: nextClient });
+  }
+  return nextClient;
+}
+async function updateCompanyClientRecord({ actorUserId, companyId, clientId = "", currentName = "", nextName = "", archived, aboutCompany, publicCompanyLine, publicPostingTitle }) {
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor || String(actor.role || "").toLowerCase() !== "admin") throw new Error("Only an admin can update clients.");
+  const scopedCompanyId = String(companyId || "").trim();
+  const scopedClientId = String(clientId || "").trim();
+  const scopedCurrentName = String(currentName || "").trim();
+  const clients = await getCompanyClients(scopedCompanyId).catch(() => []);
+  const matched = clients.find((item) =>
+    (scopedClientId && String(item?.id || "").trim() === scopedClientId)
+    || (scopedCurrentName && normalizeClientIdentityKey(item?.name || "") === normalizeClientIdentityKey(scopedCurrentName))
+  );
+  if (!matched) throw new Error("Client not found.");
+  const safeNextName = String(nextName || matched.name || "").trim();
+  if (!safeNextName) throw new Error("Client name is required.");
+  const now = new Date().toISOString();
+  const nextClient = sanitizeCompanyClient({
+    ...matched,
+    name: safeNextName,
+    archived: typeof archived === "boolean" ? archived : matched.archived,
+    aboutCompany: aboutCompany !== undefined ? String(aboutCompany || "").trim() : matched.aboutCompany,
+    publicCompanyLine: publicCompanyLine !== undefined ? String(publicCompanyLine || "").trim() : matched.publicCompanyLine,
+    publicPostingTitle: publicPostingTitle !== undefined ? String(publicPostingTitle || "").trim() : matched.publicPostingTitle,
+    updatedAt: now,
+    updatedBy: actor.email || ""
+  });
+  const nextClients = mergeCompanyClientEntries([
+    ...clients.filter((item) => normalizeClientIdentityKey(item?.name || "") !== normalizeClientIdentityKey(matched.name || "")),
+    nextClient
+  ]);
+  if (!cfg().on) {
+    await saveCompanyClientsRow({ companyId: scopedCompanyId, clients: nextClients, actorEmail: actor.email || "" });
+    await saveCompanyClientDirectoryFallback({ actorUserId, companyId: scopedCompanyId, client: nextClient }).catch(() => null);
+    return nextClient;
+  }
+  try {
+    await saveCompanyClientsRow({ companyId: scopedCompanyId, clients: nextClients, actorEmail: actor.email || "" });
+  } catch (error) {
+    await saveCompanyClientDirectoryFallback({ actorUserId, companyId: scopedCompanyId, client: nextClient });
+  }
+  return nextClient;
+}
 async function getAllClientUsers() {
   if (!cfg().on) {
     return (readStore().clientUsers || []).map(sanitizeClientUserForStorage).filter(Boolean);
@@ -3639,6 +3981,11 @@ async function createClientUser({ actorUserId, companyId, username, password, cl
     updatedAt: new Date().toISOString(),
     passwordHash: hashPassword(password)
   };
+  await createCompanyClient({
+    actorUserId,
+    companyId,
+    name: normalizedClientName
+  }).catch(() => null);
   await saveCompanyClientUsersRow({ companyId, clientUsers: [...currentUsers, nextUser], actorEmail: actor.email || "" });
   return sanitizeClientUser(nextUser);
 }
@@ -3714,30 +4061,15 @@ async function renameCompanyClientGlobal({ actorUserId, companyId, previousName,
   const previous = String(previousName || "").trim();
   const next = String(nextName || "").trim();
   if (!scopedCompanyId || !previous || !next) throw new Error("companyId, previousName, and nextName are required.");
-  if (previous === next) return getCompanySharedExportPresets(scopedCompanyId);
+  if (previous === next) return getCompanyClients(scopedCompanyId);
   const now = new Date().toISOString();
-  const settings = await getCompanySharedExportPresets(scopedCompanyId).catch(() => ({}));
-  const clientDirectory = sanitizeClientDirectoryList(
-    [
-      ...(Array.isArray(settings?.clientDirectory) ? settings.clientDirectory : []),
-      { name: next, archived: false, updatedAt: now, updatedBy: actor.email }
-    ].map((item) => {
-      const safe = sanitizeClientDirectoryEntry(item);
-      if (!safe) return null;
-      if (String(safe.name || "").trim() === previous) {
-        return { ...safe, name: next, archived: false, updatedAt: now, updatedBy: actor.email };
-      }
-      return safe;
-    }).filter(Boolean)
-  );
-  await saveCompanySharedExportPresets({
+  await updateCompanyClientRecord({
     actorUserId,
     companyId: scopedCompanyId,
-    settings: {
-      ...settings,
-      clientDirectory
-    }
-  });
+    currentName: previous,
+    nextName: next,
+    archived: false
+  }).catch(() => null);
 
   if (!cfg().on) {
     const store = readStore();
@@ -3767,10 +4099,16 @@ async function renameCompanyClientGlobal({ actorUserId, companyId, previousName,
       })
       : [];
     writeStore(store);
-    return getCompanySharedExportPresets(scopedCompanyId);
+    return getCompanyClients(scopedCompanyId);
   }
 
   await Promise.all([
+    sbPatch("company_clients", `company_id=eq.${enc(scopedCompanyId)}&name=eq.${enc(previous)}`, {
+      name: next,
+      status: "active",
+      updated_at: now,
+      updated_by: String(actor.email || "").trim()
+    }).catch(() => []),
     sbPatch("company_jobs", `company_id=eq.${enc(scopedCompanyId)}&client_name=eq.${enc(previous)}`, {
       client_name: next,
       updated_at: now,
@@ -3796,7 +4134,7 @@ async function renameCompanyClientGlobal({ actorUserId, companyId, previousName,
       updated_at: now
     }).catch(() => [])
   ]);
-  return getCompanySharedExportPresets(scopedCompanyId);
+  return getCompanyClients(scopedCompanyId);
 }
 
 async function setCompanyClientArchived({ actorUserId, companyId, clientName, archived = true }) {
@@ -3805,32 +4143,13 @@ async function setCompanyClientArchived({ actorUserId, companyId, clientName, ar
   const scopedCompanyId = String(companyId || "").trim();
   const scopedClientName = String(clientName || "").trim();
   if (!scopedCompanyId || !scopedClientName) throw new Error("companyId and clientName are required.");
-  const now = new Date().toISOString();
-  const settings = await getCompanySharedExportPresets(scopedCompanyId).catch(() => ({}));
-  const currentDirectory = Array.isArray(settings?.clientDirectory) ? settings.clientDirectory : [];
-  const found = currentDirectory.some((item) => String(item?.name || "").trim().toLowerCase() === scopedClientName.toLowerCase());
-  const nextDirectory = sanitizeClientDirectoryList([
-    ...currentDirectory,
-    ...(found ? [] : [{ name: scopedClientName }])
-  ].map((item) => {
-    const safe = sanitizeClientDirectoryEntry(item);
-    if (!safe) return null;
-    if (String(safe.name || "").trim().toLowerCase() !== scopedClientName.toLowerCase()) return safe;
-    return {
-      ...safe,
-      archived: archived === true,
-      updatedAt: now,
-      updatedBy: String(actor.email || "").trim()
-    };
-  }).filter(Boolean));
-  return saveCompanySharedExportPresets({
+  await updateCompanyClientRecord({
     actorUserId,
     companyId: scopedCompanyId,
-    settings: {
-      ...settings,
-      clientDirectory: nextDirectory
-    }
-  });
+    currentName: scopedClientName,
+    archived: archived === true
+  }).catch(() => null);
+  return getCompanyClients(scopedCompanyId);
 }
 async function updatePlatformCompany({ companyId, companyName }) {
   const scopedCompanyId = String(companyId || "").trim();
@@ -6320,6 +6639,7 @@ async function listCompanyAuditLogs({ companyId, limit = 200 }) {
 module.exports = {
   assertCanCreatePlatformCompany,
   bootstrapAdmin,
+  createCompanyClient,
   createClientUser,
   renameCompanyClientGlobal,
   setCompanyClientArchived,
@@ -6329,6 +6649,7 @@ module.exports = {
   createTrialCompanyWithAdmin,
   getPlatformSessionUser,
   getCompanyClientUsers,
+  getCompanyClients,
   getCompanyPayrollSettings,
   getCompanyPayrollAccessControl,
   getCompanyEmployeeProfiles,
@@ -6400,6 +6721,7 @@ module.exports = {
   saveCompanySalaryTemplate,
   saveCompanyPayrollSettings,
   saveCompanyPayrollAccessControl,
+  updateCompanyClientRecord,
   savePayrollInput,
   saveEmployeeCompensationStructure,
   updateEmployeeProfileAndWorkSite,
