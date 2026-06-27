@@ -293,6 +293,7 @@ function FeatureLockedSection({ title = "Feature locked" }) {
     pageSubtitle: "Explore active openings and apply directly.",
     logoDataUrl: "",
     faviconDataUrl: "",
+    posterTemplateId: "dark_blue_laptop",
     primaryColor: "#2485a5",
     buttonColor: "#2485a5",
     backgroundColor: "#ffffff",
@@ -431,6 +432,7 @@ function migrateCopySettings(settings = {}) {
   next.jobBoard.pageSubtitle = String(next.jobBoard.pageSubtitle || DEFAULT_COPY_SETTINGS.jobBoard.pageSubtitle || "").trim();
   next.jobBoard.logoDataUrl = String(next.jobBoard.logoDataUrl || "").trim();
   next.jobBoard.faviconDataUrl = String(next.jobBoard.faviconDataUrl || "").trim();
+  next.jobBoard.posterTemplateId = String(next.jobBoard.posterTemplateId || DEFAULT_COPY_SETTINGS.jobBoard.posterTemplateId || "dark_blue_laptop").trim() || "dark_blue_laptop";
   next.jobBoard.primaryColor = String(next.jobBoard.primaryColor || DEFAULT_COPY_SETTINGS.jobBoard.primaryColor || "#2485a5").trim();
   next.jobBoard.buttonColor = String(next.jobBoard.buttonColor || next.jobBoard.primaryColor || "#2485a5").trim();
   next.jobBoard.backgroundColor = String(next.jobBoard.backgroundColor || DEFAULT_COPY_SETTINGS.jobBoard.backgroundColor || "#ffffff").trim();
@@ -5011,6 +5013,191 @@ function getPublicJobsEmbedCode(copySettings, companyName, mode = "anonymous") {
   const url = getPublicJobsCompanyLink(copySettings, companyName, mode);
   const height = Math.max(480, Math.min(1400, Number(copySettings?.jobBoard?.embedHeightPx || 900) || 900));
   return `<iframe src="${url}" style="width:100%;height:${height}px;border:0;border-radius:12px;" loading="lazy"></iframe>`;
+}
+
+const JOB_POSTER_TEMPLATES = [
+  {
+    id: "dark_blue_laptop",
+    name: "Dark Blue Hiring",
+    topColor: "#04122d",
+    bottomColor: "#0c2f74",
+    accent: "#2f7bff",
+    accent2: "#7dc7ff",
+    shape: "laptop"
+  },
+  {
+    id: "teal_monitor",
+    name: "Teal Hiring",
+    topColor: "#f5fbfb",
+    bottomColor: "#dff5f2",
+    accent: "#1a9b8f",
+    accent2: "#8fe3d8",
+    shape: "monitor"
+  },
+  {
+    id: "amber_megaphone",
+    name: "Amber Hiring",
+    topColor: "#fff9ef",
+    bottomColor: "#ffe7a6",
+    accent: "#f2a900",
+    accent2: "#ffcc4d",
+    shape: "megaphone"
+  },
+  {
+    id: "purple_rocket",
+    name: "Purple Hiring",
+    topColor: "#130821",
+    bottomColor: "#3c0f67",
+    accent: "#8f4bff",
+    accent2: "#f04fff",
+    shape: "rocket"
+  }
+];
+
+function getJobPosterTemplate(templateId) {
+  const key = String(templateId || "").trim();
+  return JOB_POSTER_TEMPLATES.find((template) => template.id === key) || JOB_POSTER_TEMPLATES[0];
+}
+
+function getJobPosterBulletPoints(job) {
+  const sourceText = [
+    job?.mustHaveSkills,
+    job?.recruiterNotes,
+    job?.standardQuestions,
+    job?.jobDescription
+  ].map((value) => String(value || "").trim()).find(Boolean) || "";
+  return String(sourceText || "")
+    .split(/\r?\n|•|·|;|,/)
+    .map((item) => String(item || "").replace(/^\s*[-*]\s*/g, "").trim())
+    .filter(Boolean)
+    .slice(0, 4);
+}
+
+function drawRoundedRect(ctx, x, y, width, height, radius) {
+  const r = Math.max(0, Math.min(radius, Math.min(width, height) / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
+}
+
+function drawPosterTextBlock(ctx, text, x, y, width, lineHeight, maxLines, fillStyle, font, weight = "700") {
+  ctx.save();
+  ctx.fillStyle = fillStyle;
+  ctx.font = `${weight} ${font}`;
+  ctx.textBaseline = "top";
+  const words = String(text || "").trim().split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+  words.forEach((word) => {
+    const next = line ? `${line} ${word}` : word;
+    if (ctx.measureText(next).width > width && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = next;
+    }
+  });
+  if (line) lines.push(line);
+  lines.slice(0, maxLines).forEach((entry, index) => {
+    ctx.fillText(entry, x, y + index * lineHeight);
+  });
+  ctx.restore();
+}
+
+async function downloadJobPoster(job, copySettings, companyName, senderEmail = "") {
+  if (!job) throw new Error("Select a JD first.");
+  const template = getJobPosterTemplate(copySettings?.jobBoard?.posterTemplateId);
+  const canvas = document.createElement("canvas");
+  const width = 1080;
+  const height = 1350;
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Poster canvas unavailable.");
+  const gradient = ctx.createLinearGradient(0, 0, width, height);
+  gradient.addColorStop(0, template.topColor);
+  gradient.addColorStop(1, template.bottomColor);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+
+  if (template.id === "dark_blue_laptop") {
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    for (let i = 0; i < 12; i += 1) ctx.beginPath(), ctx.arc(760 + i * 6, 140 + i * 4, 180 - i * 10, 0, Math.PI * 2), ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    drawRoundedRect(ctx, 620, 320, 320, 220, 22);
+    ctx.fill();
+  } else if (template.id === "teal_monitor") {
+    ctx.fillStyle = "rgba(20,150,140,0.15)";
+    ctx.beginPath(); ctx.arc(820, 450, 210, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(20,150,140,0.08)";
+    ctx.beginPath(); ctx.arc(760, 250, 120, 0, Math.PI * 2); ctx.fill();
+  } else if (template.id === "amber_megaphone") {
+    ctx.fillStyle = "rgba(255,190,45,0.16)";
+    ctx.beginPath(); ctx.arc(780, 900, 250, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.28)";
+    ctx.beginPath(); ctx.arc(650, 260, 150, 0, Math.PI * 2); ctx.fill();
+  } else if (template.id === "purple_rocket") {
+    ctx.strokeStyle = "rgba(255,120,255,0.28)";
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(840, 520, 190, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(760, 760, 260, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  const companyLine = String(job.publicCompanyLine || "").trim() || "Anonymous company";
+  const title = String(job.publicTitle || job.title || "").trim() || "Hiring";
+  const location = String(job.location || "").trim();
+  const bullets = getJobPosterBulletPoints(job);
+  const applyEmail = String(senderEmail || "").trim();
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "700 36px Arial, sans-serif";
+  ctx.fillText("We Are", 48, 54);
+  ctx.fillStyle = template.accent2;
+  ctx.font = "800 92px Arial, sans-serif";
+  ctx.fillText("Hiring!", 44, 100);
+
+  ctx.fillStyle = template.accent;
+  drawRoundedRect(ctx, 52, 230, 470, 74, 14);
+  ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "800 34px Arial, sans-serif";
+  ctx.fillText(title.toUpperCase().slice(0, 38), 74, 248);
+
+  ctx.fillStyle = template.topColor === "#04122d" ? "#8bd0ff" : "#157f72";
+  ctx.font = "700 28px Arial, sans-serif";
+  ctx.fillText("Key Responsibilities:", 48, 340);
+  ctx.fillStyle = template.topColor === "#04122d" ? "#ffffff" : "#1c2434";
+  bullets.forEach((bullet, index) => {
+    ctx.font = "500 24px Arial, sans-serif";
+    ctx.fillText(`•  ${bullet}`, 58, 388 + (index * 42));
+  });
+
+  ctx.fillStyle = template.topColor === "#04122d" ? "#8bd0ff" : "#267f77";
+  ctx.font = "700 24px Arial, sans-serif";
+  ctx.fillText(companyLine.slice(0, 46), 50, 1100);
+  if (location) {
+    ctx.fillStyle = template.topColor === "#04122d" ? "#ffffff" : "#1c2434";
+    ctx.font = "700 30px Arial, sans-serif";
+    ctx.fillText(location.slice(0, 42), 50, 1140);
+  }
+  if (applyEmail) {
+    ctx.fillStyle = template.accent2;
+    ctx.font = "600 22px Arial, sans-serif";
+    ctx.fillText(`Send your CV to ${applyEmail.slice(0, 46)}`, 50, 1210);
+  }
+
+  const png = canvas.toDataURL("image/png");
+  const link = document.createElement("a");
+  const safeTitle = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "jd-poster";
+  link.href = png;
+  link.download = `${safeTitle}-poster.png`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }
 
 function getRecruiterApplyLink(jobId, recruiterId, sig) {
@@ -27280,6 +27467,40 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <button type="button" className="tiny-link-btn" onClick={() => setCopySettings((current) => ({ ...current, jobBoard: { ...(current.jobBoard || {}), mutedTextColor: DEFAULT_COPY_SETTINGS.jobBoard.mutedTextColor } }))}>Reset</button>
                     </label>
                     <div className="full settings-subsection compact-card">
+                      <div className="section-kicker">JD Poster Templates</div>
+                      <p className="muted">Choose one poster style for sharing JD posts. The company line on posters stays anonymous and uses the public JD line.</p>
+                      <div className="poster-template-grid">
+                        {JOB_POSTER_TEMPLATES.map((template) => {
+                          const active = String(copySettings?.jobBoard?.posterTemplateId || DEFAULT_COPY_SETTINGS.jobBoard.posterTemplateId) === String(template.id);
+                          return (
+                            <button
+                              key={template.id}
+                              type="button"
+                              className={`poster-template-card${active ? " active" : ""}`}
+                              onClick={() => setCopySettings((current) => ({
+                                ...current,
+                                jobBoard: { ...(current.jobBoard || {}), posterTemplateId: template.id }
+                              }))}
+                            >
+                              <span
+                                className="poster-template-thumb"
+                                style={{
+                                  background: `linear-gradient(135deg, ${template.topColor}, ${template.bottomColor})`
+                                }}
+                              >
+                                <span className="poster-template-hiring" style={{ color: template.accent2 }}>Hiring!</span>
+                                <span className="poster-template-role" style={{ backgroundColor: template.accent }}>
+                                  {active ? "Selected" : "Select"}
+                                </span>
+                              </span>
+                              <strong>{template.name}</strong>
+                              <small className="muted">Anonymous company name on poster</small>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="full settings-subsection compact-card">
                       <div className="section-kicker">Job Application Form Fields</div>
                       <p className="muted">Add extra fields for the hosted apply form, like referral name. Responses are saved in applicant metadata and search text.</p>
                       <div className="stack-list compact">
@@ -27561,6 +27782,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <button disabled={jobActionBusy} className="ghost-btn" onClick={() => downloadJobDraftWord()}>Download Word</button>
                     <button disabled={jobActionBusy} className="ghost-btn" onClick={() => void copyJobFormatForShare("linkedin")}>Generate LinkedIn format</button>
                     <button disabled={jobActionBusy} className="ghost-btn" onClick={() => void copyJobFormatForShare("whatsapp")}>Generate WhatsApp format</button>
+                    <button disabled={jobActionBusy || !String(jobDraft.title || "").trim()} className="ghost-btn" onClick={() => void downloadJobPoster(jobDraft, copySettings, String(state.user?.companyName || state.user?.company_name || ""), String(state.user?.email || ""))}>Download JD Poster</button>
                     <button disabled={jobActionBusy || jobDraftReadOnly} onClick={() => void saveJobDraft()}>{jobActionBusy ? "Saving..." : (selectedJobId ? "Update JD" : "Save JD")}</button>
                     <button
                       className="ghost-btn"
@@ -29005,7 +29227,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </summary>
                   <p className="muted">Create client usernames for the separate client portal. Client will see all current and future positions for their client name.</p>
                   <div className="settings-subsection">
-                    <div className="section-kicker">Client Master</div>
+                    <div className="section-kicker">Clients</div>
                     <p className="muted">Rename client globally across jobs, candidates, assessments, and portal mapping. Archive hides it from dropdowns while keeping history intact.</p>
                     <div
                       className="client-master-switch"
@@ -29089,7 +29311,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     {!statuses.loginClientRename && statuses.loginClientArchive ? <div className={`status ${statuses.loginClientArchiveKind || ""}`} style={{ marginTop: 8 }}>{statuses.loginClientArchive}</div> : null}
                   </div>
                   <div className="settings-subsection">
-                    <div className="section-kicker">Edit Existing</div>
+                    <div className="section-kicker">Client with Portal</div>
                     <div className="stack-list compact">
                       {!clientUsers.length ? <div className="empty-state">No client portal accounts created yet.</div> : clientUsers.map((item) => (
                         <article className="item-card compact-card" key={item.id}>
@@ -29117,7 +29339,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </div>
                   </div>
                   <div className="settings-subsection">
-                    <div className="section-kicker">Create New</div>
+                    <div className="section-kicker">Create New Client Portal</div>
                     <div className="form-grid two-col">
                       <label><span>Username</span><input autoComplete="off" disabled={!isSettingsAdmin} value={clientUserDraft.username} onChange={(e) => setClientUserDraft((current) => ({ ...current, username: e.target.value }))} placeholder="client_username" /></label>
                       <label><span>Password</span><input autoComplete="new-password" disabled={!isSettingsAdmin} type="password" value={clientUserDraft.password} onChange={(e) => setClientUserDraft((current) => ({ ...current, password: e.target.value }))} placeholder="Set client password" /></label>
