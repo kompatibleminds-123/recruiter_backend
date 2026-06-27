@@ -22211,8 +22211,16 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   async function saveAssessmentStatusUpdate(assessment, payload, options = {}) {
     const statusTarget = options.statusTarget || "assessments";
     const lockKey = String(assessment?.id || assessment?.candidateId || "").trim();
+    const useInlineAssessmentStatus = String(statusTarget || "").trim() === "assessments";
+    const pushAssessmentStatus = (message, kind = "") => {
+      if (useInlineAssessmentStatus) {
+        setAssessmentInlineStatus(assessment?.id || assessment?.candidateId, message, kind);
+      } else {
+        setStatus(statusTarget, message, kind);
+      }
+    };
     if (lockKey && assessmentStatusSaveLockRef.current.has(lockKey)) {
-      setStatus(statusTarget, "Status update already in progress for this candidate.", "error");
+      pushAssessmentStatus("Status update already in progress for this candidate.", "error");
       return;
     }
     if (lockKey) assessmentStatusSaveLockRef.current.add(lockKey);
@@ -22390,7 +22398,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         };
       });
     }
-    setStatus(statusTarget, `Updated status for ${assessment?.candidateName || "candidate"}.`, "ok");
+    pushAssessmentStatus(`Updated status for ${assessment?.candidateName || "candidate"}.`, "ok");
     if (options.closeModal !== false) setAssessmentStatusId("");
 
     // Persist in background; if fails, surface error and refresh to resync.
@@ -22425,7 +22433,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         void refreshDashboardAfterAssessmentChange().catch(() => {});
         // Skip immediate workspace refresh to keep viewport stable after status update.
       } catch (error) {
-        setStatus(statusTarget, `Status sync failed: ${String(error?.message || error)}`, "error");
+        pushAssessmentStatus(`Status sync failed: ${String(error?.message || error)}`, "error");
         void refreshAssessmentFallback({ candidateId: linkedCandidateId }).catch(() => {});
       }
     })();
