@@ -4154,11 +4154,30 @@ async function setCompanyClientArchived({ actorUserId, companyId, clientName, ar
   const scopedCompanyId = String(companyId || "").trim();
   const scopedClientName = String(clientName || "").trim();
   if (!scopedCompanyId || !scopedClientName) throw new Error("companyId and clientName are required.");
-  await updateCompanyClientRecord({
+  const currentClients = await getCompanyClients(scopedCompanyId).catch(() => []);
+  const matched = currentClients.find((item) => normalizeClientIdentityKey(item?.name || "") === normalizeClientIdentityKey(scopedClientName)) || null;
+  if (!matched) throw new Error("Client not found.");
+  const now = new Date().toISOString();
+  const nextClient = sanitizeCompanyClient({
+    ...matched,
+    archived: archived === true,
+    status: archived === true ? "archived" : "active",
+    updatedAt: now,
+    updatedBy: actor.email || ""
+  });
+  const nextClients = mergeCompanyClientEntries([
+    ...currentClients.filter((item) => normalizeClientIdentityKey(item?.name || "") !== normalizeClientIdentityKey(matched.name || "")),
+    nextClient
+  ]);
+  await saveCompanyClientsRow({
+    companyId: scopedCompanyId,
+    clients: nextClients,
+    actorEmail: actor.email || ""
+  });
+  await saveCompanyClientDirectoryFallback({
     actorUserId,
     companyId: scopedCompanyId,
-    currentName: scopedClientName,
-    archived: archived === true
+    client: nextClient
   }).catch(() => null);
   return getCompanyClients(scopedCompanyId);
 }
