@@ -9484,6 +9484,18 @@ function PortalApp({ token, onLogout }) {
   const [jobClientQuickCreateOpen, setJobClientQuickCreateOpen] = useState(false);
   const [jobClientQuickCreateName, setJobClientQuickCreateName] = useState("");
   const [jobClientQuickCreateBusy, setJobClientQuickCreateBusy] = useState(false);
+  const [selectedJobId, setSelectedJobId] = useState("");
+  const [jobListLane, setJobListLane] = useState("active");
+  const [jobsCatalog, setJobsCatalog] = useState([]);
+  const jobClientUniverse = useMemo(() => {
+    const byId = new Map();
+    [...(Array.isArray(jobsCatalog) ? jobsCatalog : []), ...(Array.isArray(state.jobs) ? state.jobs : [])].forEach((job) => {
+      const key = String(job?.id || `${job?.client_name || job?.clientName || ""}|||${job?.title || ""}|||${job?.updated_at || job?.updatedAt || job?.created_at || job?.createdAt || ""}`).trim();
+      if (!key) return;
+      byId.set(key, job);
+    });
+    return Array.from(byId.values());
+  }, [jobsCatalog, state.jobs]);
   const payrollWorkspaceUsers = useMemo(
     () => (state.users || []).filter((item) => ["payroll_owner", "payroll_manager"].includes(String(item?.role || "").toLowerCase())),
     [state.users]
@@ -9801,18 +9813,6 @@ function PortalApp({ token, onLogout }) {
   const suspendWorkspaceRefreshRef = useRef(false);
 	const loadWorkspaceRef = useRef(null);
 	const linkedinSideWindowRef = useRef(null);
-  const [selectedJobId, setSelectedJobId] = useState("");
-  const [jobListLane, setJobListLane] = useState("active");
-  const [jobsCatalog, setJobsCatalog] = useState([]);
-  const jobClientUniverse = useMemo(() => {
-    const byId = new Map();
-    [...(Array.isArray(jobsCatalog) ? jobsCatalog : []), ...(Array.isArray(state.jobs) ? state.jobs : [])].forEach((job) => {
-      const key = String(job?.id || `${job?.client_name || job?.clientName || ""}|||${job?.title || ""}|||${job?.updated_at || job?.updatedAt || job?.created_at || job?.createdAt || ""}`).trim();
-      if (!key) return;
-      byId.set(key, job);
-    });
-    return Array.from(byId.values());
-  }, [jobsCatalog, state.jobs]);
   const archivedJobsLoadedRef = useRef(false);
   const archivedJobsLoadingRef = useRef(false);
   const [jobShortcutKey, setJobShortcutKey] = useState("");
