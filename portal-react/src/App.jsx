@@ -18372,6 +18372,10 @@ function PortalApp({ token, onLogout }) {
     setJobActionBusy(true);
     setStatus("jobs", nextArchived ? "Closing job..." : "Reactivating JD...");
     try {
+      const previousJobDraft = jobDraft;
+      const previousJobsCatalog = Array.isArray(jobsCatalog) ? jobsCatalog.slice() : [];
+      const previousJobsState = Array.isArray(state.jobs) ? state.jobs.slice() : [];
+      const nowIso = new Date().toISOString();
       const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
       const ownerRecruiterId = isAdmin ? jobDraft.ownerRecruiterId : String(state.user?.id || "");
       const ownerRecruiterName = isAdmin ? jobDraft.ownerRecruiterName : String(state.user?.name || "");
@@ -18389,31 +18393,76 @@ function PortalApp({ token, onLogout }) {
           primary: id === String(ownerRecruiterId || "").trim()
         });
       });
-      await api("/company/jds", token, "POST", {
-        job: {
-          ...jobDraft,
-          id: jobId,
-          isArchived: Boolean(nextArchived),
-          closeReason: nextArchived ? normalizeJobCloseReason(jobDraft.closeReason || JOB_CLOSE_REASONS[0]) : "",
-          closedAt: nextArchived ? (jobDraft.closedAt || new Date().toISOString()) : null,
-          closedBy: nextArchived ? (jobDraft.closedBy || String(state.user?.email || "")) : "",
-          ownerRecruiterId,
-          ownerRecruiterName,
-          assignedRecruiters: Array.from(dedupedRecruiters.values())
+      const optimisticJobRecord = {
+        ...jobDraft,
+        id: jobId,
+        isArchived: Boolean(nextArchived),
+        archivedAt: nextArchived ? (jobDraft.archivedAt || nowIso) : null,
+        archivedBy: nextArchived ? (jobDraft.archivedBy || String(state.user?.email || "")) : "",
+        closeReason: nextArchived ? normalizeJobCloseReason(jobDraft.closeReason || JOB_CLOSE_REASONS[0]) : "",
+        closedAt: nextArchived ? (jobDraft.closedAt || nowIso) : null,
+        closedBy: nextArchived ? (jobDraft.closedBy || String(state.user?.email || "")) : "",
+        ownerRecruiterId,
+        ownerRecruiterName,
+        assignedRecruiters: Array.from(dedupedRecruiters.values())
+      };
+      const applyJobPatch = (items) => {
+        const list = Array.isArray(items) ? items.slice() : [];
+        const index = list.findIndex((item) => String(item?.id || "") === String(jobId));
+        if (index >= 0) {
+          list[index] = { ...list[index], ...optimisticJobRecord };
+          return list;
         }
-      });
+        return [...list, optimisticJobRecord];
+      };
       setJobDraft((current) => ({
         ...current,
         isArchived: Boolean(nextArchived),
-        archivedAt: nextArchived ? (current.archivedAt || new Date().toISOString()) : null,
+        archivedAt: nextArchived ? (current.archivedAt || nowIso) : null,
         archivedBy: nextArchived ? (current.archivedBy || String(state.user?.email || "")) : "",
         closeReason: nextArchived ? normalizeJobCloseReason(current.closeReason || JOB_CLOSE_REASONS[0]) : "",
-        closedAt: nextArchived ? (current.closedAt || new Date().toISOString()) : null,
+        closedAt: nextArchived ? (current.closedAt || nowIso) : null,
         closedBy: nextArchived ? (current.closedBy || String(state.user?.email || "")) : ""
       }));
+      setJobsCatalog((current) => (Array.isArray(current) ? current.map((item) => (
+        String(item?.id || "") === String(jobId)
+          ? {
+            ...item,
+            isArchived: Boolean(nextArchived),
+            archivedAt: nextArchived ? (item.archivedAt || nowIso) : null,
+            archivedBy: nextArchived ? (item.archivedBy || String(state.user?.email || "")) : "",
+            closeReason: nextArchived ? normalizeJobCloseReason(item.closeReason || JOB_CLOSE_REASONS[0]) : "",
+            closedAt: nextArchived ? (item.closedAt || nowIso) : null,
+            closedBy: nextArchived ? (item.closedBy || String(state.user?.email || "")) : ""
+          }
+            : item
+      )) : current));
+      setState((current) => ({
+        ...current,
+        jobs: applyJobPatch(current.jobs)
+      }));
+      setJobsCatalog((current) => applyJobPatch(current));
+      await api("/company/jds", token, "POST", {
+        job: optimisticJobRecord
+      });
+      setJobListLane(nextArchived ? "archived" : "active");
+      await Promise.all([
+        reloadJobsCatalogWorkspace(),
+        loadArchivedJobsCatalogIfNeeded({ force: true })
+      ]).catch(() => {});
+      setState((current) => ({
+        ...current,
+        jobs: applyJobPatch(current.jobs)
+      }));
+      setJobsCatalog((current) => applyJobPatch(current));
       setStatus("jobs", nextArchived ? "Job closed and moved to Archived JDs." : "JD reactivated.", "ok");
-      void reloadJobsCatalogWorkspace().catch(() => {});
     } catch (error) {
+      setJobDraft(previousJobDraft);
+      setJobsCatalog(previousJobsCatalog);
+      setState((current) => ({
+        ...current,
+        jobs: previousJobsState
+      }));
       setStatus("jobs", `${nextArchived ? "Archive" : "Reactivate"} failed: ${String(error?.message || error)}`, "error");
     } finally {
       setJobActionBusy(false);
