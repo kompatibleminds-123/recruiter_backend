@@ -255,6 +255,8 @@ function FeatureLockedSection({ title = "Feature locked" }) {
   exportPresetClientMap: {},
   customExportPresets: [],
   whatsappTemplate: "{{index}}. {{name}}\nRole: {{jd_title}}\nCompany: {{company}}\nOutcome: {{outcome}}\nRecruiter note: {{recruiter_notes}}",
+  linkedinConnectedTemplate: "Hi {{name}},\n\nI came across your profile and wanted to reach out regarding a relevant opportunity for {{jd_title}}.\n\nIf open, I’d be happy to share details.\n\nRegards,\n{{recruiter_name}}\n{{recruiter_email}}",
+  linkedinConnectionRequestTemplate: "Hi {{name}}, came across your profile for {{jd_title}} and would love to connect.",
   emailTemplate: "{{index}}. {{name}}\nCompany: {{company}}\nRole: {{jd_title}}\nLocation: {{location}}\nOutcome: {{outcome}}\nEmail: {{email}}\nPhone: {{phone}}\nNotes: {{recruiter_notes}}",
   bulkMailSubjectTemplate: "Opportunity with {Company}",
   bulkMailBodyTemplate: "Hello {Candidate},\n\nI hope you are doing well.\n\nI came across your profile and wanted to connect regarding a relevant opportunity.\n\nRegards,\n{Recruiter}\n{RecruiterEmail}",
@@ -386,6 +388,8 @@ function migrateCopySettings(settings = {}) {
   }
   // Auto-clean known mojibake from persisted templates/labels so symbols do not reappear.
   next.whatsappTemplate = normalizeMojibakeSymbols(next.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate || "");
+  next.linkedinConnectedTemplate = normalizeMojibakeSymbols(next.linkedinConnectedTemplate || DEFAULT_COPY_SETTINGS.linkedinConnectedTemplate || "");
+  next.linkedinConnectionRequestTemplate = normalizeMojibakeSymbols(next.linkedinConnectionRequestTemplate || DEFAULT_COPY_SETTINGS.linkedinConnectionRequestTemplate || "");
   next.emailTemplate = normalizeMojibakeSymbols(next.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate || "");
   next.bulkMailSubjectTemplate = normalizeMojibakeSymbols(next.bulkMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkMailSubjectTemplate || "");
   next.bulkMailBodyTemplate = normalizeMojibakeSymbols(next.bulkMailBodyTemplate || DEFAULT_COPY_SETTINGS.bulkMailBodyTemplate || "");
@@ -1092,6 +1096,38 @@ function normalizeShortcutMapKeys(map = {}) {
     next[key] = value;
   });
   return next;
+}
+
+const LINKEDIN_CONNECTED_SHORTCUT_KEY = "/LC";
+const LINKEDIN_REQUEST_SHORTCUT_KEY = "/LNC";
+
+function normalizeShortcutKeyLower(raw) {
+  return normalizeShortcutKey(raw).toLowerCase();
+}
+
+function isLinkedinShortcutKey(raw) {
+  const normalized = normalizeShortcutKeyLower(raw);
+  return normalized === LINKEDIN_CONNECTED_SHORTCUT_KEY.toLowerCase()
+    || normalized === LINKEDIN_REQUEST_SHORTCUT_KEY.toLowerCase();
+}
+
+function getLinkedinShortcutMeta(raw) {
+  const normalized = normalizeShortcutKeyLower(raw);
+  if (normalized === LINKEDIN_CONNECTED_SHORTCUT_KEY.toLowerCase()) {
+    return {
+      key: LINKEDIN_CONNECTED_SHORTCUT_KEY,
+      label: "LinkedIn connected",
+      mode: "connected"
+    };
+  }
+  if (normalized === LINKEDIN_REQUEST_SHORTCUT_KEY.toLowerCase()) {
+    return {
+      key: LINKEDIN_REQUEST_SHORTCUT_KEY,
+      label: "LinkedIn connection request",
+      mode: "request"
+    };
+  }
+  return null;
 }
 
 function parseAmountToLpa(value) {
@@ -11039,13 +11075,36 @@ function PortalApp({ token, onLogout }) {
     return String(matchedJob?.id || "").trim();
   }
 
+  function getCompanyWideShortcutMap(settingsOverride = null, options = {}) {
+    const includeLinkedin = options?.includeLinkedin !== false;
+    const sourceSettings = settingsOverride && typeof settingsOverride === "object" ? settingsOverride : copySettings;
+    const sourceMap = sourceSettings?.companyWideShortcuts && typeof sourceSettings.companyWideShortcuts === "object"
+      ? sourceSettings.companyWideShortcuts
+      : {};
+    const normalizedMap = normalizeShortcutMapKeys(sourceMap);
+    const next = { ...normalizedMap };
+    if (includeLinkedin) {
+      const connectedExists = Object.keys(next).some((key) => normalizeShortcutKeyLower(key) === LINKEDIN_CONNECTED_SHORTCUT_KEY.toLowerCase());
+      const requestExists = Object.keys(next).some((key) => normalizeShortcutKeyLower(key) === LINKEDIN_REQUEST_SHORTCUT_KEY.toLowerCase());
+      const connectedFallback = String(sourceSettings?.linkedinConnectedTemplate || DEFAULT_COPY_SETTINGS.linkedinConnectedTemplate || "").trim();
+      const requestFallback = String(sourceSettings?.linkedinConnectionRequestTemplate || DEFAULT_COPY_SETTINGS.linkedinConnectionRequestTemplate || "").trim();
+      if (!connectedExists && connectedFallback) next[LINKEDIN_CONNECTED_SHORTCUT_KEY] = connectedFallback;
+      if (!requestExists && requestFallback) next[LINKEDIN_REQUEST_SHORTCUT_KEY] = requestFallback;
+    }
+    if (includeLinkedin) return next;
+    return Object.fromEntries(
+      Object.entries(next).filter(([key]) => !isLinkedinShortcutKey(key))
+    );
+  }
+
   function getWhatsappTemplateOptions(row = {}, incomingPersonalShortcuts = null, incomingCompanyWideShortcuts = null) {
     const options = [];
-    const companyWideMap = incomingCompanyWideShortcuts && typeof incomingCompanyWideShortcuts === "object"
-      ? incomingCompanyWideShortcuts
-      : copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
-        ? copySettings.companyWideShortcuts
-      : {};
+    const companyWideMap = getCompanyWideShortcutMap(
+      incomingCompanyWideShortcuts && typeof incomingCompanyWideShortcuts === "object"
+        ? { ...copySettings, companyWideShortcuts: incomingCompanyWideShortcuts }
+        : copySettings,
+      { includeLinkedin: false }
+    );
     Object.entries(companyWideMap || {}).forEach(([key, template]) => {
       const safeKey = String(key || "").trim();
       const displayKey = safeKey.replace(/^\/+/, "");
@@ -11107,6 +11166,26 @@ function PortalApp({ token, onLogout }) {
     return options.filter((item, index, arr) => (
       arr.findIndex((entry) => String(entry.template || "").trim() === String(item.template || "").trim()) === index
     ));
+  }
+
+  function getLinkedinTemplateOptions() {
+    const companyWideMap = getCompanyWideShortcutMap(copySettings, { includeLinkedin: true });
+    const connectedEntry = Object.entries(companyWideMap).find(([key]) => normalizeShortcutKeyLower(key) === LINKEDIN_CONNECTED_SHORTCUT_KEY.toLowerCase());
+    const requestEntry = Object.entries(companyWideMap).find(([key]) => normalizeShortcutKeyLower(key) === LINKEDIN_REQUEST_SHORTCUT_KEY.toLowerCase());
+    return [
+      connectedEntry ? {
+        id: "linkedin_connected",
+        label: `${LINKEDIN_CONNECTED_SHORTCUT_KEY} · Connected message`,
+        template: String(connectedEntry[1] || "").trim(),
+        mode: "connected"
+      } : null,
+      requestEntry ? {
+        id: "linkedin_request",
+        label: `${LINKEDIN_REQUEST_SHORTCUT_KEY} · Connection request`,
+        template: String(requestEntry[1] || "").trim(),
+        mode: "request"
+      } : null
+    ].filter((item) => item && String(item.template || "").trim());
   }
 
   async function copyWhatsappDraftAndOpen(row = {}, phoneValue = "", statusKey = "workspace", templateOverride = "") {
@@ -11264,10 +11343,6 @@ function PortalApp({ token, onLogout }) {
       setStatus(statusKey, "LinkedIn link not available for this candidate.", "error");
       return;
     }
-    const cachedCompanyWideShortcuts =
-      copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
-        ? copySettings.companyWideShortcuts
-        : {};
     const rowWithLinks = {
       ...row,
       linkedin: linkedinUrl,
@@ -11275,7 +11350,7 @@ function PortalApp({ token, onLogout }) {
       recruiter_jd_link: "",
       jd_link: resolveRowJobId(row) ? getApplyLink(resolveRowJobId(row)) : ""
     };
-    const options = getWhatsappTemplateOptions(rowWithLinks, personalShortcuts, cachedCompanyWideShortcuts);
+    const options = getLinkedinTemplateOptions();
     const selectedId = String(options[0]?.id || "");
     const selectedTemplate = String(options[0]?.template || "");
     setLinkedinTemplatePicker({
@@ -11292,18 +11367,11 @@ function PortalApp({ token, onLogout }) {
     });
 
     void (async () => {
-      const [latestPersonalShortcuts, sharedPresetResult, recruiterLink] = await Promise.all([
-        loadPersonalShortcuts().catch(() => personalShortcuts || {}),
+      const [sharedPresetResult, recruiterLink] = await Promise.all([
         api("/company/shared-export-presets", token).catch(() => null),
         fetchRecruiterApplyLinkForRow(row).catch(() => "")
       ]);
-      let latestCompanyWideShortcuts = cachedCompanyWideShortcuts;
       if (sharedPresetResult && typeof sharedPresetResult === "object") {
-        const merged = migrateCopySettings({ ...copySettings, ...sharedPresetResult });
-        latestCompanyWideShortcuts =
-          merged?.companyWideShortcuts && typeof merged.companyWideShortcuts === "object"
-            ? merged.companyWideShortcuts
-            : latestCompanyWideShortcuts;
         setCopySettings((current) => migrateCopySettings({ ...current, ...sharedPresetResult }));
       }
       const hydratedRow = {
@@ -11311,14 +11379,20 @@ function PortalApp({ token, onLogout }) {
         recruiter_jd_link: recruiterLink || rowWithLinks.recruiter_jd_link || "",
         jd_link: rowWithLinks.jd_link || (resolveRowJobId(row) ? getApplyLink(resolveRowJobId(row)) : "")
       };
-      const hydratedOptions = getWhatsappTemplateOptions(hydratedRow, latestPersonalShortcuts, latestCompanyWideShortcuts);
-      const hydratedSelectedTemplate = String(hydratedOptions[0]?.template || "");
+      const hydratedOptions = getLinkedinTemplateOptions();
+      const currentMode = String(linkedinTemplatePicker.outreachMode || "connected").trim().toLowerCase();
+      const preferredOption =
+        hydratedOptions.find((item) => String(item.mode || "").trim().toLowerCase() === currentMode)
+        || hydratedOptions[0]
+        || null;
+      const hydratedSelectedTemplate = String(preferredOption?.template || "");
       setLinkedinTemplatePicker((current) => {
         if (!current.open) return current;
         return {
           ...current,
           row: hydratedRow,
           options: hydratedOptions,
+          selectedId: String(preferredOption?.id || current.selectedId || ""),
           customText:
             String(current.customText || "").trim() ||
             (hydratedSelectedTemplate ? renderWhatsappTemplatePreview(hydratedSelectedTemplate, hydratedRow) : "")
@@ -22567,19 +22641,35 @@ function PortalApp({ token, onLogout }) {
         ? copySettings.companyWideShortcuts
         : {}
     );
-    const nextShortcuts = { ...previousShortcuts, [key]: value };
-    const optimisticSettings = { ...copySettings, companyWideShortcuts: nextShortcuts };
-    setCopySettings((current) => ({ ...current, companyWideShortcuts: nextShortcuts }));
+    const linkedinMeta = getLinkedinShortcutMeta(key);
+    const nextShortcuts = { ...previousShortcuts, [linkedinMeta?.key || key]: value };
+    const optimisticSettings = {
+      ...copySettings,
+      companyWideShortcuts: nextShortcuts,
+      ...(linkedinMeta?.mode === "connected" ? { linkedinConnectedTemplate: value } : {}),
+      ...(linkedinMeta?.mode === "request" ? { linkedinConnectionRequestTemplate: value } : {})
+    };
+    setCopySettings((current) => ({
+      ...current,
+      companyWideShortcuts: nextShortcuts,
+      ...(linkedinMeta?.mode === "connected" ? { linkedinConnectedTemplate: value } : {}),
+      ...(linkedinMeta?.mode === "request" ? { linkedinConnectionRequestTemplate: value } : {})
+    }));
     setShortcutCompanyKey("");
     setShortcutCompanyValue("");
-    setStatus("shortcuts", `Saving company shortcut ${formatShortcutLabel(key)}...`, "info");
+    setStatus("shortcuts", `Saving company shortcut ${formatShortcutLabel(linkedinMeta?.key || key)}...`, "info");
     try {
       const payload = optimisticSettings;
       const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
       setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
-      setStatus("shortcuts", `Saved company shortcut ${formatShortcutLabel(key)}.`, "ok");
+      setStatus("shortcuts", `Saved company shortcut ${formatShortcutLabel(linkedinMeta?.key || key)}.`, "ok");
     } catch (error) {
-      setCopySettings((current) => ({ ...current, companyWideShortcuts: previousShortcuts }));
+      setCopySettings((current) => ({
+        ...current,
+        companyWideShortcuts: previousShortcuts,
+        ...(linkedinMeta?.mode === "connected" ? { linkedinConnectedTemplate: copySettings?.linkedinConnectedTemplate || DEFAULT_COPY_SETTINGS.linkedinConnectedTemplate || "" } : {}),
+        ...(linkedinMeta?.mode === "request" ? { linkedinConnectionRequestTemplate: copySettings?.linkedinConnectionRequestTemplate || DEFAULT_COPY_SETTINGS.linkedinConnectionRequestTemplate || "" } : {})
+      }));
       setShortcutCompanyKey(key);
       setShortcutCompanyValue(value);
       setStatus("shortcuts", String(error?.message || error), "error");
@@ -22593,6 +22683,10 @@ function PortalApp({ token, onLogout }) {
     }
     const normalized = normalizeShortcutKey(key);
     if (!normalized) return;
+    if (isLinkedinShortcutKey(normalized)) {
+      setStatus("shortcuts", "LinkedIn shared templates should be edited, not deleted.", "error");
+      return;
+    }
     const previousShortcuts = normalizeShortcutMapKeys(
       copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
         ? copySettings.companyWideShortcuts
@@ -28137,6 +28231,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
                 <Section kicker="Company" title="Company Shortcuts" className="shortcuts-section shortcuts-section--company">
                   <p className="muted">Shared across the workspace for everyone on the team.</p>
+                  <p className="muted">LinkedIn reserved keys: <strong>/LC</strong> for already connected outreach and <strong>/LNC</strong> for first connection request. These stay hidden from WhatsApp and appear only inside LinkedIn outreach.</p>
                   {!isSettingsAdmin ? <p className="muted">Read-only for recruiters. Admin-defined shortcuts appear automatically in your template pickers.</p> : null}
                   {isSettingsAdmin ? (
                     <>
@@ -28162,18 +28257,18 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </>
                   ) : null}
                   <div className="stack-list compact">
-                    {Object.entries(copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object" ? copySettings.companyWideShortcuts : {}).length ? (
-                      Object.entries(copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object" ? copySettings.companyWideShortcuts : {})
+                    {Object.entries(getCompanyWideShortcutMap(copySettings, { includeLinkedin: true })).length ? (
+                      Object.entries(getCompanyWideShortcutMap(copySettings, { includeLinkedin: true }))
                         .sort(([a], [b]) => String(a || "").localeCompare(String(b || "")))
                         .map(([key, value]) => (
                           <article className="item-card compact-card" key={`company-${key}`}>
                             <div className="item-card__top compact-top">
-                              <strong>{formatShortcutLabel(key)}</strong>
+                              <strong>{getLinkedinShortcutMeta(key)?.label ? `${formatShortcutLabel(key)} · ${getLinkedinShortcutMeta(key)?.label}` : formatShortcutLabel(key)}</strong>
                               {isSettingsAdmin ? (
                                 <div className="button-row tight">
                                   <button className="ghost-btn" onClick={() => { setShortcutCompanyKey(String(key || "")); setShortcutCompanyValue(String(value || "")); }}>Edit</button>
                                   <button className="ghost-btn" onClick={() => void copyShortcutTemplateWithValues(String(key || ""), String(value || ""), selectedShortcutJob)}>Copy</button>
-                                  <button className="ghost-btn" onClick={() => void deleteCompanyShortcutTemplate(String(key || ""))}>Delete</button>
+                                  {!isLinkedinShortcutKey(key) ? <button className="ghost-btn" onClick={() => void deleteCompanyShortcutTemplate(String(key || ""))}>Delete</button> : null}
                                 </div>
                               ) : (
                                 <div className="button-row tight">
@@ -29586,21 +29681,37 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         <div className="overlay" onClick={() => setLinkedinTemplatePicker({ open: false, options: [], selectedId: "", row: null, statusKey: "workspace", customText: "", linkedinUrl: "", outreachMode: "connected" })}>
           <div className="overlay-card whatsapp-template-picker" onClick={(event) => event.stopPropagation()}>
             <h3>LinkedIn Outreach</h3>
-            <p className="muted">Choose a saved shortcut, tweak the message, then we’ll open LinkedIn and copy the draft for paste.</p>
+            <p className="muted">Use one of the 2 dedicated LinkedIn templates, tweak the message, then we’ll open LinkedIn and copy the draft for paste.</p>
             <label className="full">
               <span>Outreach mode</span>
               <div className="button-row" style={{ justifyContent: "flex-start", gap: 8 }}>
                 <button
                   type="button"
                   className={linkedinTemplatePicker.outreachMode === "connected" ? "" : "ghost-btn"}
-                  onClick={() => setLinkedinTemplatePicker((current) => ({ ...current, outreachMode: "connected" }))}
+                  onClick={() => setLinkedinTemplatePicker((current) => {
+                    const nextOption = (current.options || []).find((item) => String(item.mode || "") === "connected") || null;
+                    return {
+                      ...current,
+                      outreachMode: "connected",
+                      selectedId: String(nextOption?.id || current.selectedId || ""),
+                      customText: nextOption ? renderWhatsappTemplatePreview(nextOption.template || "", current.row || {}) : current.customText
+                    };
+                  })}
                 >
                   Connected message
                 </button>
                 <button
                   type="button"
                   className={linkedinTemplatePicker.outreachMode === "request" ? "" : "ghost-btn"}
-                  onClick={() => setLinkedinTemplatePicker((current) => ({ ...current, outreachMode: "request" }))}
+                  onClick={() => setLinkedinTemplatePicker((current) => {
+                    const nextOption = (current.options || []).find((item) => String(item.mode || "") === "request") || null;
+                    return {
+                      ...current,
+                      outreachMode: "request",
+                      selectedId: String(nextOption?.id || current.selectedId || ""),
+                      customText: nextOption ? renderWhatsappTemplatePreview(nextOption.template || "", current.row || {}) : current.customText
+                    };
+                  })}
                 >
                   Connection request
                 </button>
@@ -29628,14 +29739,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       type="radio"
                       name="linkedin_template_picker"
                       checked={String(linkedinTemplatePicker.selectedId || "") === String(option.id || "")}
-                      onChange={() => setLinkedinTemplatePicker((current) => ({ ...current, selectedId: option.id, customText: renderWhatsappTemplatePreview(option.template || "", current.row || {}) }))}
+                      onChange={() => setLinkedinTemplatePicker((current) => ({
+                        ...current,
+                        selectedId: option.id,
+                        outreachMode: String(option.mode || current.outreachMode || "connected"),
+                        customText: renderWhatsappTemplatePreview(option.template || "", current.row || {})
+                      }))}
                     />
                     <span>{option.label}</span>
                   </label>
                 ))}
               </div>
             ) : (
-              <div className="status">No saved shortcuts yet. Write your LinkedIn message below and open the profile directly.</div>
+              <div className="status">LinkedIn templates are not available yet. Write your message below and open the profile directly.</div>
             )}
             <label className="full">
               <span>Customize message</span>
