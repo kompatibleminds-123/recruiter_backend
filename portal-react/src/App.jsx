@@ -9987,6 +9987,7 @@ function PortalApp({ token, onLogout }) {
 	const loadWorkspaceRef = useRef(null);
 	const linkedinSideWindowRef = useRef(null);
   const linkedinCompanyShortcutSeedRef = useRef("");
+  const sharedExportPresetsHydratedRef = useRef(false);
   const archivedJobsLoadedRef = useRef(false);
   const archivedJobsLoadingRef = useRef(false);
   const [jobShortcutKey, setJobShortcutKey] = useState("");
@@ -11189,26 +11190,127 @@ function PortalApp({ token, onLogout }) {
     ].filter((item) => item && String(item.template || "").trim());
   }
 
+  function resolveTemplateRecruiterUser(row = {}) {
+    const userRows = Array.isArray(state.users) ? state.users : [];
+    const candidateUserIds = [
+      row?.assigned_to_user_id,
+      row?.assignedToUserId,
+      row?.apply_assigned_to_user_id,
+      row?.applyAssignedToUserId,
+      row?.recruiter_id,
+      row?.recruiterId
+    ]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+    for (const candidateUserId of candidateUserIds) {
+      const hit = userRows.find((user) => String(user?.id || "").trim() === candidateUserId);
+      if (hit) return hit;
+    }
+    const candidateEmails = [
+      row?.recruiter_email,
+      row?.recruiterEmail
+    ]
+      .map((value) => String(value || "").trim().toLowerCase())
+      .filter(Boolean);
+    for (const candidateEmail of candidateEmails) {
+      const hit = userRows.find((user) => String(user?.email || "").trim().toLowerCase() === candidateEmail);
+      if (hit) return hit;
+    }
+    const candidateNames = [
+      row?.assigned_to_name,
+      row?.assignedToName,
+      row?.apply_assigned_to_name,
+      row?.applyAssignedToName,
+      row?.recruiter_name,
+      row?.recruiterName
+    ]
+      .map((value) => String(value || "").trim().toLowerCase())
+      .filter(Boolean);
+    for (const candidateName of candidateNames) {
+      const hit = userRows.find((user) => String(user?.name || "").trim().toLowerCase() === candidateName);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  function getTemplateRecruiterContext(row = {}) {
+    const resolvedUser = resolveTemplateRecruiterUser(row);
+    const recruiterName = String(
+      row?.assigned_to_name
+      || row?.assignedToName
+      || row?.apply_assigned_to_name
+      || row?.applyAssignedToName
+      || row?.recruiter_name
+      || row?.recruiterName
+      || resolvedUser?.name
+      || state.user?.name
+      || ""
+    ).trim();
+    const recruiterEmail = String(
+      row?.recruiter_email
+      || row?.recruiterEmail
+      || resolvedUser?.email
+      || state.user?.email
+      || ""
+    ).trim();
+    const recruiterPhone = String(
+      row?.recruiter_phone
+      || row?.recruiterPhone
+      || row?.recruiter_mobile
+      || row?.recruiterMobile
+      || resolvedUser?.phone
+      || resolvedUser?.phoneNumber
+      || resolvedUser?.mobile
+      || resolvedUser?.mobileNumber
+      || state.user?.phone
+      || state.user?.phoneNumber
+      || state.user?.mobile
+      || state.user?.mobileNumber
+      || ""
+    ).trim();
+    const recruiterId = String(
+      resolvedUser?.id
+      || row?.assigned_to_user_id
+      || row?.assignedToUserId
+      || row?.apply_assigned_to_user_id
+      || row?.applyAssignedToUserId
+      || row?.recruiter_id
+      || row?.recruiterId
+      || state.user?.id
+      || ""
+    ).trim();
+    return {
+      id: recruiterId,
+      name: recruiterName,
+      email: recruiterEmail,
+      phone: recruiterPhone
+    };
+  }
+
+  function enrichTemplateRowWithRecruiter(row = {}) {
+    const recruiterContext = getTemplateRecruiterContext(row);
+    return {
+      ...(row || {}),
+      recruiter_name: recruiterContext.name || String(row?.recruiter_name || row?.recruiterName || "").trim(),
+      recruiter_email: recruiterContext.email || String(row?.recruiter_email || row?.recruiterEmail || "").trim(),
+      recruiter_phone: recruiterContext.phone || String(row?.recruiter_phone || row?.recruiterPhone || row?.recruiter_mobile || row?.recruiterMobile || "").trim()
+    };
+  }
+
   async function copyWhatsappDraftAndOpen(row = {}, phoneValue = "", statusKey = "workspace", templateOverride = "") {
     const activeTemplate = String(templateOverride || "").trim();
     if (!activeTemplate) {
       setStatus(statusKey, "No shortcut template found. Create one first.", "error");
       return;
     }
-    const recruiterEmail = String(state.user?.email || "").trim();
-    const recruiterPhone = String(
-      state.user?.phone
-      || state.user?.phoneNumber
-      || state.user?.mobile
-      || state.user?.mobileNumber
-      || ""
-    ).trim();
+    const recruiterContext = getTemplateRecruiterContext(row);
     const text = fillCandidateTemplate(activeTemplate, {
-      ...row,
+      ...enrichTemplateRowWithRecruiter(row),
       index: 1,
       follow_up_at: formatDateForCopy(row?.follow_up_at || row?.next_follow_up_at || ""),
-      recruiter_email: recruiterEmail,
-      recruiter_phone: recruiterPhone
+      recruiter_name: recruiterContext.name,
+      recruiter_email: recruiterContext.email,
+      recruiter_phone: recruiterContext.phone
     });
     const hasTemplateText = String(text || "").trim().length > 0;
     if (hasTemplateText) {
@@ -11234,22 +11336,16 @@ function PortalApp({ token, onLogout }) {
     const resolvedJobId = resolveRowJobId(row);
     const baseJdLink = resolvedJobId ? getApplyLink(resolvedJobId) : "";
     const recruiterJdLink = String(row?.recruiter_jd_link || row?.recruiterJdLink || "").trim() || baseJdLink;
-    const recruiterEmail = String(state.user?.email || "").trim();
-    const recruiterPhone = String(
-      state.user?.phone
-      || state.user?.phoneNumber
-      || state.user?.mobile
-      || state.user?.mobileNumber
-      || ""
-    ).trim();
+    const recruiterContext = getTemplateRecruiterContext(row);
     return fillCandidateTemplate(String(template || "").trim(), {
-      ...row,
+      ...enrichTemplateRowWithRecruiter(row),
       index: 1,
       follow_up_at: formatDateForCopy(row?.follow_up_at || row?.next_follow_up_at || ""),
       jd_link: baseJdLink,
       recruiter_jd_link: recruiterJdLink,
-      recruiter_email: recruiterEmail,
-      recruiter_phone: recruiterPhone
+      recruiter_name: recruiterContext.name,
+      recruiter_email: recruiterContext.email,
+      recruiter_phone: recruiterContext.phone
     });
   }
 
@@ -11259,8 +11355,9 @@ function PortalApp({ token, onLogout }) {
     try {
       const result = await api(`/company/jobs/${encodeURIComponent(jobId)}/apply-link-signatures`, token);
       const items = Array.isArray(result?.items) ? result.items : [];
-      const selfId = String(state.user?.id || "").trim();
-      const mine = items.find((item) => String(item?.recruiterId || "").trim() === selfId) || items[0] || null;
+      const recruiterContext = getTemplateRecruiterContext(row);
+      const preferredId = String(recruiterContext.id || state.user?.id || "").trim();
+      const mine = items.find((item) => String(item?.recruiterId || "").trim() === preferredId) || items[0] || null;
       if (!mine?.sig) return getApplyLink(jobId);
       return getRecruiterApplyLink(jobId, mine.recruiterId, mine.sig);
     } catch {
@@ -11898,6 +11995,7 @@ function PortalApp({ token, onLogout }) {
     }
     if (seq !== workspaceLoadSeqRef.current) return;
     if (includeSharedPresets && sharedPresetResult) {
+      sharedExportPresetsHydratedRef.current = true;
       setCopySettings((current) => migrateCopySettings({ ...current, ...sharedPresetResult }));
     }
     if (seq !== workspaceLoadSeqRef.current) return;
@@ -12003,6 +12101,9 @@ function PortalApp({ token, onLogout }) {
 
   useEffect(() => {
     if (!token || !isSettingsAdmin) return;
+    const pathname = String(location?.pathname || "").trim();
+    if (pathname !== "/shortcuts") return;
+    if (!sharedExportPresetsHydratedRef.current) return;
     const rawCompanyShortcuts = normalizeShortcutMapKeys(
       copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
         ? copySettings.companyWideShortcuts
@@ -12041,7 +12142,13 @@ function PortalApp({ token, onLogout }) {
         linkedinCompanyShortcutSeedRef.current = "";
       }
     })();
-  }, [token, isSettingsAdmin, copySettings]);
+  }, [token, isSettingsAdmin, copySettings, location?.pathname]);
+
+  useEffect(() => {
+    if (token) return;
+    sharedExportPresetsHydratedRef.current = false;
+    linkedinCompanyShortcutSeedRef.current = "";
+  }, [token]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -12055,6 +12162,7 @@ function PortalApp({ token, onLogout }) {
     const activePath = String(location?.pathname || "").trim();
     const sharedPresetResult = await api("/company/shared-export-presets", token);
     const merged = migrateCopySettings({ ...DEFAULT_COPY_SETTINGS, ...sharedPresetResult });
+    sharedExportPresetsHydratedRef.current = true;
     setCopySettings((current) => migrateCopySettings({ ...current, ...sharedPresetResult }));
     if (!showStatus) return merged;
     if (activePath === "/admin-settings/ai") {
@@ -12853,6 +12961,7 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     if (!token) return;
     if (String(location?.pathname || "") !== "/shortcuts") return;
+    void syncSharedSettingsFromServer().catch(() => {});
     void loadPersonalShortcuts();
     if (!String(shortcutJobId || "").trim()) {
       const firstJobId = String((state.jobs || [])[0]?.id || "").trim();
@@ -19747,14 +19856,14 @@ function PortalApp({ token, onLogout }) {
 
   async function copyCapturedWhatsapp() {
     const rows = buildCapturedCopyRows();
-    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate, { ...item, index: index + 1, follow_up_at: formatDateForCopy(item.next_follow_up_at) })).filter(Boolean).join("\n\n");
+    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate, { ...enrichTemplateRowWithRecruiter(item), index: index + 1, follow_up_at: formatDateForCopy(item.next_follow_up_at) })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("captured", "Filtered candidates copied in WhatsApp format.", "ok");
   }
 
   async function copyCapturedEmail() {
     const rows = buildCapturedCopyRows();
-    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate, { ...item, index: index + 1, follow_up_at: formatDateForCopy(item.next_follow_up_at) })).filter(Boolean).join("\n\n");
+    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate, { ...enrichTemplateRowWithRecruiter(item), index: index + 1, follow_up_at: formatDateForCopy(item.next_follow_up_at) })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("captured", "Filtered candidates copied in email format.", "ok");
   }
@@ -19787,6 +19896,11 @@ function PortalApp({ token, onLogout }) {
         other_pointers: "",
         other_standard_questions: getApplicantRemarksText(item)
       }),
+      assigned_to_name: item.assignedToName || item.assigned_to_name || "",
+      assigned_to_user_id: item.assignedToUserId || item.assigned_to_user_id || "",
+      recruiter_id: item.recruiterId || item.recruiter_id || item.assignedToUserId || item.assigned_to_user_id || "",
+      recruiter_name: item.assignedToName || item.assigned_to_name || item.recruiterName || item.recruiter_name || "",
+      recruiter_email: item.recruiterEmail || item.recruiter_email || "",
       linkedin: item.linkedin || "",
       jd_title: item.jdTitle || "",
       client_name: item.clientName || "",
@@ -19806,14 +19920,14 @@ function PortalApp({ token, onLogout }) {
 
   async function copyApplicantsWhatsapp() {
     const rows = buildApplicantCopyRows();
-    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
+    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate, { ...enrichTemplateRowWithRecruiter(item), index: index + 1 })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("applicants", "Filtered applied candidates copied in WhatsApp format.", "ok");
   }
 
   async function copyApplicantsEmail() {
     const rows = buildApplicantCopyRows();
-    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
+    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate, { ...enrichTemplateRowWithRecruiter(item), index: index + 1 })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("applicants", "Filtered applied candidates copied in email format.", "ok");
   }
@@ -19826,13 +19940,13 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function copyAssessmentsWhatsapp() {
-    const text = normalizedAssessmentCopyRows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
+    const text = normalizedAssessmentCopyRows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate, { ...enrichTemplateRowWithRecruiter(item), index: index + 1 })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("assessments", "Filtered assessments copied in WhatsApp format.", "ok");
   }
 
   async function copyAssessmentsEmail() {
-    const text = normalizedAssessmentCopyRows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
+    const text = normalizedAssessmentCopyRows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate, { ...enrichTemplateRowWithRecruiter(item), index: index + 1 })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("assessments", "Filtered assessments copied in email format.", "ok");
   }
@@ -19990,14 +20104,14 @@ function PortalApp({ token, onLogout }) {
 
   async function copyCandidatesWhatsapp() {
     const rows = await fetchFilteredDatabaseExportRows();
-    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
+    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate, { ...enrichTemplateRowWithRecruiter(item), index: index + 1 })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("workspace", "Candidate search results copied in WhatsApp format.", "ok");
   }
 
   async function copyCandidatesEmail() {
     const rows = await fetchFilteredDatabaseExportRows();
-    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate, { ...item, index: index + 1 })).filter(Boolean).join("\n\n");
+    const text = rows.map((item, index) => fillCandidateTemplate(copySettings.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate, { ...enrichTemplateRowWithRecruiter(item), index: index + 1 })).filter(Boolean).join("\n\n");
     await copyText(text);
     setStatus("workspace", "Candidate search results copied in email format.", "ok");
   }
