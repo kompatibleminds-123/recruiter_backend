@@ -8062,6 +8062,22 @@ function buildDatabaseQuickChipInterviewHistoryRowsFromDashboardUniverse({
     ).trim();
     if (!isDateWithinRange(convertedAt, dateFrom, dateTo)) continue;
     const exactInterviewContext = getAssessmentExactInterviewContext(assessment, eventsByAssessmentId);
+    const statusHistory = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
+    const alignedEvents = [];
+    statusHistory.forEach((entry) => {
+      if (!entry || typeof entry !== "object") return;
+      const statusValue = normalizeAssessmentStatusLabel(String(entry?.status || "")).toLowerCase();
+      if (!SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(statusValue)) return;
+      alignedEvents.push({ status: statusValue });
+    });
+    (eventsByAssessmentId.get(assessmentId) || []).forEach((event) => {
+      const statusValue = normalizeAssessmentStatusLabel(String(event?.status || "")).toLowerCase();
+      if (!SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(statusValue)) return;
+      alignedEvents.push({ status: statusValue });
+    });
+    if (SMART_CHIP_INTERVIEW_ALIGNED_STATUSES.has(normalizeAssessmentStatusLabel(String(assessment?.candidateStatus || assessment?.status || "")).toLowerCase())) {
+      alignedEvents.push({ status: assessment?.candidateStatus || assessment?.status || "" });
+    }
     const dashboardItem = createDashboardDrilldownAssessmentItem(assessment, candidate, exactInterviewContext, historicalRank);
     const universeItem = universeByAssessmentId.get(assessmentId) || {
       id: dashboardItem.candidateId || dashboardItem.assessmentId,
@@ -8081,9 +8097,7 @@ function buildDatabaseQuickChipInterviewHistoryRowsFromDashboardUniverse({
       offerAmount: dashboardItem.offerAmount || "",
       dateOfJoining: dashboardItem.dateOfJoining || "",
       status: dashboardItem.candidateStatus || "",
-      round: exactInterviewContext?.previousStatus
-        ? `${exactInterviewContext.previousStatus} | Current: ${dashboardItem.candidateStatus || "-"}`
-        : `Current: ${dashboardItem.candidateStatus || "-"}`,
+      round: buildDatabaseQuickChipCurrentStatusText(dashboardItem.candidateStatus || "", alignedEvents),
       date: String(
         dashboardItem.interviewAt
         || convertedAt
