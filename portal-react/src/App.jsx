@@ -1,6 +1,8 @@
 import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { FaWhatsapp } from "react-icons/fa";
+import { FaBullhorn, FaLaptopCode, FaQrcode, FaRocket, FaSearch } from "react-icons/fa";
+import { toPng } from "html-to-image";
 import BrandLogo from "./components/branding/BrandLogo";
 import {
   CLIENT_BROWSER_TITLE,
@@ -5241,6 +5243,205 @@ function drawPosterIllustration(ctx, templateId) {
   ctx.restore();
 }
 
+function normalizePosterText(value) {
+  return String(value || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getJobPosterResponsibilities(job) {
+  const sourceText = [
+    job?.keyResponsibilities,
+    job?.mustHaveSkills,
+    job?.recruiterNotes,
+    job?.standardQuestions,
+    job?.jobDescription,
+    job?.aboutCompany
+  ].map((value) => normalizePosterText(htmlToPlainTextFallback(value))).find(Boolean) || "";
+  const candidateLines = String(sourceText || "")
+    .replace(/•/g, "\n")
+    .replace(/·/g, "\n")
+    .replace(/[–—]/g, "-")
+    .split(/\r?\n|(?<=[.!?])\s+/g)
+    .map((item) => normalizePosterText(item).replace(/^\s*[-*•]\s*/g, "").trim())
+    .filter((item) => item.length > 10)
+    .filter((item, index, array) => array.indexOf(item) === index);
+  if (candidateLines.length) return candidateLines.slice(0, 4);
+  const fallback = normalizePosterText(htmlToPlainTextFallback(job?.jobDescription || ""));
+  if (!fallback) return [];
+  return fallback
+    .split(/\r?\n+/g)
+    .map((item) => normalizePosterText(item).replace(/^\s*[-*•]\s*/g, "").trim())
+    .filter((item) => item.length > 10)
+    .slice(0, 4);
+}
+
+function buildJobPosterData(job, senderEmail = "") {
+  const role = normalizePosterText(job?.publicTitle || job?.title || "") || "Hiring";
+  const summary = normalizePosterText(
+    htmlToPlainTextFallback(job?.publicCompanyLine || job?.aboutCompany || job?.jobDescription || "")
+  ) || "Join a high-growth team and help shape the next stage of the business.";
+  const applyLink = normalizePosterText(job?.publicApplyLink || getPublicApplyLink(String(job?.id || job?.jobId || "").trim()) || "");
+  return {
+    role,
+    company: "Anonymous company",
+    location: normalizePosterText(job?.location || "") || "Not specified",
+    mode: normalizePosterText(job?.workMode || "") || "Hybrid",
+    summary,
+    responsibilities: getJobPosterResponsibilities(job),
+    applyLink,
+    email: normalizePosterText(senderEmail || ""),
+    posterLabel: "View / Apply JD"
+  };
+}
+
+function buildPosterQrMatrix(seed = "") {
+  const size = 9;
+  const matrix = Array.from({ length: size }, () => Array.from({ length: size }, () => false));
+  const hash = Array.from(String(seed || "job-poster")).reduce((value, char) => ((value * 31) + char.charCodeAt(0)) >>> 0, 7);
+  const fillFinder = (originX, originY) => {
+    for (let y = 0; y < 3; y += 1) {
+      for (let x = 0; x < 3; x += 1) {
+        matrix[originY + y][originX + x] = true;
+      }
+    }
+    matrix[originY + 1][originX + 1] = false;
+  };
+  fillFinder(0, 0);
+  fillFinder(size - 3, 0);
+  fillFinder(0, size - 3);
+  let cursor = hash;
+  for (let row = 0; row < size; row += 1) {
+    for (let col = 0; col < size; col += 1) {
+      const inFinder =
+        (row < 3 && col < 3) ||
+        (row < 3 && col >= size - 3) ||
+        (row >= size - 3 && col < 3);
+      if (inFinder) continue;
+      cursor = ((cursor * 1103515245) + 12345) >>> 0;
+      matrix[row][col] = (cursor % 3) !== 0;
+    }
+  }
+  return matrix;
+}
+
+function JobPosterQr({ seed }) {
+  const matrix = useMemo(() => buildPosterQrMatrix(seed), [seed]);
+  return (
+    <div className="job-poster-qr" aria-hidden="true">
+      {matrix.map((row, rowIndex) => row.map((filled, colIndex) => (
+        <span
+          key={`${rowIndex}-${colIndex}`}
+          className={`job-poster-qr__cell${filled ? " is-filled" : ""}`}
+        />
+      )))}
+    </div>
+  );
+}
+
+const JOB_POSTER_ILLUSTRATIONS = {
+  dark_blue_laptop: FaLaptopCode,
+  teal_monitor: FaSearch,
+  amber_megaphone: FaBullhorn,
+  purple_rocket: FaRocket
+};
+
+function JobPosterPreview({ data, template, posterRef }) {
+  const Illustration = JOB_POSTER_ILLUSTRATIONS[template?.id] || FaLaptopCode;
+  const bullets = Array.isArray(data?.responsibilities) ? data.responsibilities : [];
+  return (
+    <article
+      ref={posterRef}
+      className={`job-poster job-poster--${template?.id || "dark_blue_laptop"}`}
+      style={{
+        background: `linear-gradient(145deg, ${template?.topColor || "#04122d"} 0%, ${template?.bottomColor || "#0c2f74"} 100%)`
+      }}
+    >
+      <div className="job-poster__orb job-poster__orb--one" />
+      <div className="job-poster__orb job-poster__orb--two" />
+      <div className="job-poster__grid-lines" />
+
+      <header className="job-poster__hero">
+        <div className="job-poster__headline">
+          <div className="job-poster__eyebrow">We Are</div>
+          <h1>Hiring!</h1>
+        </div>
+        <div className="job-poster__brand-chip">
+          <span>Anonymous company</span>
+        </div>
+      </header>
+
+      <div className="job-poster__role-pill">ROLE - {String(data?.role || "Hiring").toUpperCase()}</div>
+
+      <div className="job-poster__chips">
+        <div className="job-poster__chip"><span>Company</span><strong>{data?.company || "Anonymous company"}</strong></div>
+        <div className="job-poster__chip"><span>Mode</span><strong>{data?.mode || "Hybrid"}</strong></div>
+        <div className="job-poster__chip"><span>Location</span><strong>{data?.location || "Not specified"}</strong></div>
+      </div>
+
+      <section className="job-poster__body">
+        <div className="job-poster__left">
+          <article className="job-poster__panel">
+            <div className="job-poster__panel-kicker">About this role</div>
+            <p className="job-poster__summary">{data?.summary || "Join a high-growth team and help shape the next stage of the business."}</p>
+          </article>
+
+          <article className="job-poster__panel job-poster__panel--tight">
+            <div className="job-poster__panel-kicker">Key Responsibilities</div>
+            <ul className="job-poster__bullets">
+              {bullets.length ? bullets.map((bullet, index) => <li key={`poster-bullet-${index}`}>{bullet}</li>) : (
+                <>
+                  <li>Work closely with the team to deliver strong results.</li>
+                  <li>Own responsibilities with clear communication and follow-through.</li>
+                  <li>Contribute to process, quality, and customer impact.</li>
+                </>
+              )}
+            </ul>
+          </article>
+        </div>
+
+        <aside className="job-poster__right">
+          <div className="job-poster__illustration">
+            <div className="job-poster__illustration-ring" />
+            <div className="job-poster__illustration-icon">
+              <Illustration size={128} />
+            </div>
+          </div>
+          <div className="job-poster__cta-card">
+            <a href={data?.applyLink || "#"} target="_blank" rel="noreferrer" className="job-poster__cta-btn">
+              {data?.posterLabel || "View / Apply JD"}
+            </a>
+            <div className="job-poster__cta-help">Tap to open the public JD apply page</div>
+            <div className="job-poster__qr-row">
+              <JobPosterQr seed={data?.applyLink || data?.role || "job-poster"} />
+              <div className="job-poster__qr-copy">
+                <strong><FaQrcode /> Quick apply</strong>
+                <span>Scan to open the JD and application form.</span>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <footer className="job-poster__footer">
+        <div className="job-poster__footer-card">
+          <span>Company</span>
+          <strong>{data?.company || "Anonymous company"}</strong>
+        </div>
+        <div className="job-poster__footer-card">
+          <span>Location</span>
+          <strong>{data?.location || "Not specified"}</strong>
+        </div>
+        <div className="job-poster__footer-card">
+          <span>Send your CV to</span>
+          <strong>{data?.email || "recruiter@email.com"}</strong>
+        </div>
+      </footer>
+    </article>
+  );
+}
+
 async function downloadJobPoster(job, copySettings, companyName, senderEmail = "") {
   if (!job) throw new Error("Select a JD first.");
   const template = getJobPosterTemplate(copySettings?.jobBoard?.posterTemplateId);
@@ -10390,6 +10591,17 @@ function PortalApp({ token, onLogout }) {
   });
   const [jobActionBusy, setJobActionBusy] = useState(false);
   const [jobCloseMenuOpen, setJobCloseMenuOpen] = useState(false);
+  const [jobPosterModalOpen, setJobPosterModalOpen] = useState(false);
+  const [jobPosterExportBusy, setJobPosterExportBusy] = useState(false);
+  const jobPosterPreviewRef = useRef(null);
+  const jobPosterTemplate = useMemo(
+    () => getJobPosterTemplate(copySettings?.jobBoard?.posterTemplateId),
+    [copySettings?.jobBoard?.posterTemplateId]
+  );
+  const jobPosterData = useMemo(
+    () => buildJobPosterData(jobDraft, state.user?.email || ""),
+    [jobDraft, state.user?.email]
+  );
   const [interviewMeta, setInterviewMeta] = useState({ candidateId: "", assessmentId: "" });
   const interviewMetaRef = useRef(interviewMeta);
   useEffect(() => {
@@ -28058,7 +28270,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <button disabled={jobActionBusy} className="ghost-btn" onClick={() => downloadJobDraftWord()}>Download Word</button>
                     <button disabled={jobActionBusy} className="ghost-btn" onClick={() => void copyJobFormatForShare("linkedin")}>Generate LinkedIn format</button>
                     <button disabled={jobActionBusy} className="ghost-btn" onClick={() => void copyJobFormatForShare("whatsapp")}>Generate WhatsApp format</button>
-                    <button disabled={jobActionBusy || !String(jobDraft.title || "").trim()} className="ghost-btn" onClick={() => void downloadJobPoster(jobDraft, copySettings, String(state.user?.companyName || state.user?.company_name || ""), String(state.user?.email || ""))}>Download JD Poster</button>
+                    <button
+                      disabled={jobActionBusy || !String(jobDraft.title || "").trim()}
+                      className="ghost-btn"
+                      onClick={() => setJobPosterModalOpen(true)}
+                    >
+                      Download JD Poster
+                    </button>
                     <button disabled={jobActionBusy || jobDraftReadOnly} onClick={() => void saveJobDraft()}>{jobActionBusy ? "Saving..." : (selectedJobId ? "Update JD" : "Save JD")}</button>
                     <button
                       className="ghost-btn"
@@ -29718,6 +29936,59 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         <footer className="portal-footer portal-footer--content">{PRODUCT_NAME} {COMPANY_ATTRIBUTION} | build-126c8d5</footer>
       </main>
 
+      {jobPosterModalOpen ? (
+        <div className="overlay" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !jobPosterExportBusy) setJobPosterModalOpen(false);
+        }}>
+          <div className="overlay-card overlay-card--wide job-poster-modal">
+            <div className="overlay-header">
+              <div>
+                <h3>JD Poster Preview</h3>
+                <p className="muted" style={{ marginTop: 4 }}>Preview matches the PNG download exactly. Poster size: 1080 × 1350.</p>
+              </div>
+              <button className="ghost-btn" disabled={jobPosterExportBusy} onClick={() => setJobPosterModalOpen(false)}>Close</button>
+            </div>
+            <div className="job-poster-modal__frame">
+              <JobPosterPreview data={jobPosterData} template={jobPosterTemplate} posterRef={jobPosterPreviewRef} />
+            </div>
+            <div className="button-row">
+              <button
+                disabled={jobPosterExportBusy}
+                onClick={async () => {
+                  if (!jobPosterPreviewRef.current) return;
+                  try {
+                    setJobPosterExportBusy(true);
+                    const pngDataUrl = await toPng(jobPosterPreviewRef.current, {
+                      cacheBust: true,
+                      pixelRatio: 2,
+                      backgroundColor: "#ffffff"
+                    });
+                    const link = document.createElement("a");
+                    const safeTitle = String(jobPosterData?.role || "jd-poster")
+                      .toLowerCase()
+                      .replace(/[^a-z0-9]+/g, "-")
+                      .replace(/^-+|-+$/g, "") || "jd-poster";
+                    link.href = pngDataUrl;
+                    link.download = `${safeTitle}-poster.png`;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    setStatus("jobs", "JD poster PNG downloaded.", "ok");
+                  } catch (error) {
+                    setStatus("jobs", String(error?.message || error || "Could not download JD poster."), "error");
+                  } finally {
+                    setJobPosterExportBusy(false);
+                  }
+                }}
+              >
+                {jobPosterExportBusy ? "Preparing PNG..." : "Download PNG"}
+              </button>
+              <button className="ghost-btn" disabled={jobPosterExportBusy} onClick={() => setJobPosterModalOpen(false)}>Done</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {showExtensionPrompt ? (
         <div
           className="item-card compact-card"
@@ -29888,7 +30159,16 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           <div className="overlay-card whatsapp-template-picker" onClick={(event) => event.stopPropagation()}>
             <div className="section-kicker">WhatsApp Template</div>
             <h3>Choose Template to Copy</h3>
-            <div className="muted">Selected template will be copied first, then WhatsApp chat will open.</div>
+            <div className="muted">Pick a saved shortcut, tweak it if needed, then copy and open WhatsApp.</div>
+            {(() => {
+              const selectedOption = (whatsappTemplatePicker.options || []).find((option) => String(option.id || "") === String(whatsappTemplatePicker.selectedId || "")) || null;
+              return selectedOption ? (
+                <div className="whatsapp-template-picker__summary">
+                  <div className="whatsapp-template-picker__summary-title">{selectedOption.label}</div>
+                  <div className="whatsapp-template-picker__summary-subtitle">Template ready to copy with the current candidate / job values.</div>
+                </div>
+              ) : null;
+            })()}
             {(whatsappTemplatePicker.options || []).length ? (
               <div className="whatsapp-template-picker__options">
                 {(whatsappTemplatePicker.options || []).map((option) => (
@@ -29904,12 +30184,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 ))}
               </div>
             ) : (
-              <div className="status">No saved shortcuts yet. Write message below, add shortcut key, then click Save shortcut.</div>
+              <div className="status">No saved shortcuts yet. Write a message below, add a shortcut key, then click Save shortcut.</div>
             )}
             <label className="full">
               <span>Customize message</span>
               <textarea value={whatsappTemplatePicker.customText || ""} onChange={(e) => setWhatsappTemplatePicker((current) => ({ ...current, customText: e.target.value }))} />
-              <span className="field-help">{"Placeholders: {{name}} {{recruiter_name}} {{recruiter_email}} {{recruiter_phone}} {{interview_at}} {{jd_title}} {{client_name}} {{company_name}} {{phone}} {{jd_link}} {{recruiter_jd_link}}"}</span>
+              <span className="field-help">Use placeholders like {`{{name}} {{recruiter_name}} {{recruiter_email}} {{recruiter_phone}} {{interview_at}} {{jd_title}} {{client_name}} {{company_name}} {{phone}} {{jd_link}} {{recruiter_jd_link}}`}</span>
             </label>
             <div className="form-grid two-col">
               <label>
@@ -29919,9 +30199,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               <label>
                 <span>Save scope</span>
                 <select value={whatsappTemplatePicker.saveScope || "all_jobs"} onChange={(e) => setWhatsappTemplatePicker((current) => ({ ...current, saveScope: e.target.value }))}>
-                  {isSettingsAdmin ? <option value="company_wide">Save for all recruiters (company)</option> : null}
-                  <option value="all_jobs">Save for all jobs (personal)</option>
-                  <option value="this_job">Save for this job</option>
+                  {isSettingsAdmin ? <option value="company_wide">Company-wide</option> : null}
+                  <option value="all_jobs">Personal (all jobs)</option>
+                  <option value="this_job">This job only</option>
                 </select>
               </label>
               {whatsappTemplatePicker.saveScope === "this_job" ? (
@@ -29936,8 +30216,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             </div>
             <div className="button-row">
               <button className="ghost-btn" onClick={() => setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace", customText: "", newShortcutKey: "", saveScope: "all_jobs", assignJobId: "" })}>Cancel</button>
-              <button className="ghost-btn" onClick={() => void saveWhatsappTemplateFromPicker()}>Save shortcut</button>
-              <button onClick={() => void applyWhatsappTemplatePickerSelection()}>Copy and open (without saving)</button>
+              <button className="ghost-btn" onClick={() => void saveWhatsappTemplateFromPicker()}>Save as shortcut</button>
+              <button onClick={() => void applyWhatsappTemplatePickerSelection()}>Copy & open WhatsApp</button>
             </div>
           </div>
         </div>
