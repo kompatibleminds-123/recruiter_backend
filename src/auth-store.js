@@ -3298,19 +3298,36 @@ async function saveCompanyJobRecruiterShortcuts({ actorUserId, companyId, jobId,
   if (!actorIsAdmin && ownerRecruiterId !== actorId && !isAssigned) throw new Error("You can only save shortcuts for JDs assigned to you.");
 
   const now = new Date().toISOString();
-  await sbIns(
+  const existingShortcutRows = await sbSel(
     "company_job_shortcuts",
-    [{
-      company_id: companyId,
-      job_id: scopedJobId,
-      recruiter_id: actorId,
-      shortcuts: incomingRecruiterShortcuts,
-      created_at: now,
-      updated_at: now,
-      payload: { updatedBy: actor.email }
-    }],
-    { conflict: "job_id,recruiter_id", upsert: true, returning: "minimal" }
-  );
+    `select=id,created_at&company_id=eq.${enc(companyId)}&job_id=eq.${enc(scopedJobId)}&recruiter_id=eq.${enc(actorId)}&limit=1`
+  ).catch(() => []);
+  const existingShortcut = Array.isArray(existingShortcutRows) && existingShortcutRows.length ? existingShortcutRows[0] : null;
+  if (existingShortcut?.id) {
+    await sbPatch(
+      "company_job_shortcuts",
+      `id=eq.${enc(existingShortcut.id)}&company_id=eq.${enc(companyId)}`,
+      {
+        shortcuts: incomingRecruiterShortcuts,
+        updated_at: now,
+        payload: { updatedBy: actor.email }
+      }
+    );
+  } else {
+    await sbIns(
+      "company_job_shortcuts",
+      [{
+        company_id: companyId,
+        job_id: scopedJobId,
+        recruiter_id: actorId,
+        shortcuts: incomingRecruiterShortcuts,
+        created_at: now,
+        updated_at: now,
+        payload: { updatedBy: actor.email }
+      }],
+      { returning: "minimal" }
+    );
+  }
   return incomingRecruiterShortcuts;
 }
 async function getCompanySharedExportPresets(companyId) {

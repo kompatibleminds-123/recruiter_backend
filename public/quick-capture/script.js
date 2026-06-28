@@ -65,6 +65,7 @@ let latestExistingParsedResult = null;
 let latestExistingMergedResult = null;
 const VOICE_SILENCE_STOP_MS = 5000;
 let voiceLanguage = "en-IN";
+let quickCaptureShortcutStream = null;
 
 function normalizeShortcutKey(raw) {
   const value = String(raw || "").trim();
@@ -184,6 +185,83 @@ function renderMergedShortcuts(cache = null) {
       }
     });
   });
+}
+
+function applyQuickCaptureShortcutEvent(payload = {}) {
+  const eventType = String(payload?.type || payload?.eventType || "").trim();
+  if (!eventType) return;
+  const cache = getQuickCaptureWorkspaceCache() || {};
+  const nextCache = {
+    ...cache,
+    syncedAt: new Date().toISOString(),
+    jobs: Array.isArray(cache?.jobs) ? [...cache.jobs] : [],
+    personalShortcuts: cache?.personalShortcuts && typeof cache.personalShortcuts === "object" ? { ...cache.personalShortcuts } : {},
+    companyWideShortcuts: cache?.companyWideShortcuts && typeof cache.companyWideShortcuts === "object" ? { ...cache.companyWideShortcuts } : {}
+  };
+
+  if (eventType === "company_shortcuts_changed") {
+    const settings = payload?.settings && typeof payload.settings === "object" ? payload.settings : null;
+    if (!settings) return;
+    nextCache.companyWideShortcuts =
+      settings?.companyWideShortcuts && typeof settings.companyWideShortcuts === "object"
+        ? settings.companyWideShortcuts
+        : {};
+  } else if (eventType === "personal_shortcuts_changed") {
+    const eventUserId = String(payload?.userId || payload?.user_id || "").trim();
+    const currentUserId = String(currentQuickCaptureUser?.id || "").trim();
+    if (eventUserId && currentUserId && eventUserId !== currentUserId) return;
+    nextCache.personalShortcuts =
+      payload?.shortcuts && typeof payload.shortcuts === "object"
+        ? payload.shortcuts
+        : {};
+  } else if (eventType === "job_shortcuts_changed") {
+    const jobId = String(payload?.jobId || payload?.job_id || "").trim();
+    const jdShortcuts = String(payload?.jdShortcuts || payload?.jd_shortcuts || "").trim();
+    if (!jobId) return;
+    nextCache.jobs = (nextCache.jobs || []).map((job) => (
+      String(job?.id || "").trim() === jobId
+        ? { ...job, jdShortcuts }
+        : job
+    ));
+  } else {
+    return;
+  }
+
+  setQuickCaptureWorkspaceCache(nextCache);
+  renderMergedShortcuts(nextCache);
+}
+
+function startQuickCaptureShortcutStream() {
+  const token = getQuickCaptureAuthToken();
+  if (!token) return;
+  if (quickCaptureShortcutStream) {
+    try { quickCaptureShortcutStream.close(); } catch {}
+    quickCaptureShortcutStream = null;
+  }
+  const streamUrl = `/company/stream/shortcuts?token=${encodeURIComponent(String(token || "").trim())}`;
+  const source = new EventSource(streamUrl);
+  quickCaptureShortcutStream = source;
+  source.addEventListener("shortcuts", (event) => {
+    const payload = (() => {
+      try {
+        return JSON.parse(String(event?.data || "{}"));
+      } catch {
+        return {};
+      }
+    })();
+    applyQuickCaptureShortcutEvent(payload);
+  });
+  source.onerror = () => {
+    try { source.close(); } catch {}
+    if (quickCaptureShortcutStream === source) {
+      quickCaptureShortcutStream = null;
+      window.setTimeout(() => {
+        if (!quickCaptureShortcutStream && getQuickCaptureAuthToken()) {
+          startQuickCaptureShortcutStream();
+        }
+      }, 3000);
+    }
+  };
 }
 
 function applyVoiceLanguage(recognitionInstance) {
@@ -1846,9 +1924,14 @@ async function bootstrapAuthState() {
   const user = await getQuickCaptureCurrentUser();
   renderAuthState(user);
   if (!user) {
+    if (quickCaptureShortcutStream) {
+      try { quickCaptureShortcutStream.close(); } catch {}
+      quickCaptureShortcutStream = null;
+    }
     window.location.href = "/quick-capture/";
     return;
   }
+  currentQuickCaptureUser = user;
   const candidateId = new URLSearchParams(window.location.search).get("candidateId");
   if (candidateId) {
     try {
@@ -1864,7 +1947,19 @@ async function bootstrapAuthState() {
       return;
     }
   }
-  renderMergedShortcuts();
+  const cachedWorkspace = getQuickCaptureWorkspaceCache();
+  if (cachedWorkspace && String(cachedWorkspace.userId || "").trim() === String(user?.id || "").trim()) {
+    renderMergedShortcuts(cachedWorkspace);
+  } else {
+    setQuickCaptureWorkspaceCache(null);
+    renderMergedShortcuts(null);
+  }
+  refreshQuickCaptureWorkspaceCache()
+    .then((cache) => {
+      window.dispatchEvent(new CustomEvent("quickCaptureWorkspaceRefreshed", { detail: cache }));
+    })
+    .catch(() => {});
+  startQuickCaptureShortcutStream();
   setStatus("Quick capture is ready.", "success");
 }
 

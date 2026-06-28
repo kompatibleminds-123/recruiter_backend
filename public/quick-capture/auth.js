@@ -101,7 +101,11 @@ async function refreshQuickCaptureWorkspaceCache() {
     callQuickCaptureApi("/company/shared-export-presets", { method: "GET" }).catch(() => ({ result: { companyWideShortcuts: {} } }))
   ]);
 
-  const jobs = Array.isArray(jobsPayload?.result?.jobs) ? jobsPayload.result.jobs : [];
+  const jobs = Array.isArray(jobsPayload?.result?.jobs)
+    ? jobsPayload.result.jobs
+    : Array.isArray(jobsPayload?.jobs)
+      ? jobsPayload.jobs
+      : [];
   const candidates = Array.isArray(candidatesPayload?.result) ? candidatesPayload.result : [];
   const assessments = Array.isArray(assessmentsPayload?.result?.assessments)
     ? assessmentsPayload.result.assessments
@@ -111,7 +115,11 @@ async function refreshQuickCaptureWorkspaceCache() {
   const personalShortcuts =
     personalShortcutsPayload?.result?.shortcuts && typeof personalShortcutsPayload.result.shortcuts === "object"
       ? personalShortcutsPayload.result.shortcuts
-      : {};
+      : jobsPayload?.result?.personalShortcuts && typeof jobsPayload.result.personalShortcuts === "object"
+        ? jobsPayload.result.personalShortcuts
+        : jobsPayload?.personalShortcuts && typeof jobsPayload.personalShortcuts === "object"
+          ? jobsPayload.personalShortcuts
+          : {};
   const companyWideShortcuts =
     sharedPresetsPayload?.result?.companyWideShortcuts && typeof sharedPresetsPayload.result.companyWideShortcuts === "object"
       ? sharedPresetsPayload.result.companyWideShortcuts

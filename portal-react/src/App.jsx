@@ -10433,13 +10433,23 @@ function PortalApp({ token, onLogout }) {
     { id: "company", label: "Add Company", visible: canAddCompany }
   ].filter((item) => item.visible);
   const shortcutJobOptions = useMemo(() => {
-    const source = Array.isArray(state.jobs) && state.jobs.length ? state.jobs : jobsCatalog;
-    return (source || []).map((job) => ({
-      id: String(job?.id || "").trim(),
-      title: String(job?.title || "Untitled job").trim(),
-      clientName: String(job?.clientName || job?.client_name || "").trim(),
-      jdShortcuts: String(job?.jdShortcuts || "")
-    })).filter((job) => job.id);
+    const merged = new Map();
+    const pushJob = (job) => {
+      const id = String(job?.id || "").trim();
+      if (!id) return;
+      const previous = merged.get(id) || null;
+      const nextShortcuts = String(job?.jdShortcuts || "").trim();
+      const previousShortcuts = String(previous?.jdShortcuts || "").trim();
+      merged.set(id, {
+        id,
+        title: String(job?.title || previous?.title || "Untitled job").trim(),
+        clientName: String(job?.clientName || job?.client_name || previous?.clientName || "").trim(),
+        jdShortcuts: nextShortcuts || previousShortcuts
+      });
+    };
+    (Array.isArray(jobsCatalog) ? jobsCatalog : []).forEach(pushJob);
+    (Array.isArray(state.jobs) ? state.jobs : []).forEach(pushJob);
+    return Array.from(merged.values());
   }, [state.jobs, jobsCatalog]);
   const selectedShortcutJob = useMemo(
     () => shortcutJobOptions.find((job) => String(job.id) === String(shortcutJobId || "")) || null,
@@ -11633,6 +11643,9 @@ function PortalApp({ token, onLogout }) {
     if (needsJobs) {
       archivedJobsLoadedRef.current = false;
       setJobsCatalog((current) => mergeJobsCatalog(current, jobsResult?.jobs || [], []));
+      if (jobsResult?.personalShortcuts && typeof jobsResult.personalShortcuts === "object") {
+        setPersonalShortcuts(normalizeShortcutMapKeys(jobsResult.personalShortcuts));
+      }
     }
     if (seq !== workspaceLoadSeqRef.current) return;
     if (clientsResult) {
@@ -12068,6 +12081,9 @@ function PortalApp({ token, onLogout }) {
       intake: intakeResult || current.intake
     }));
     setJobsCatalog((current) => mergeJobsCatalog(current, jobsResult?.jobs || [], []));
+    if (jobsResult?.personalShortcuts && typeof jobsResult.personalShortcuts === "object") {
+      setPersonalShortcuts(normalizeShortcutMapKeys(jobsResult.personalShortcuts));
+    }
     if (location?.pathname === "/jobs" || jobListLane === "archived" || archivedJobsLoadedRef.current) {
       await loadArchivedJobsCatalogIfNeeded({ force: true });
     }
