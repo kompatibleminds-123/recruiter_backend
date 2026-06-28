@@ -9986,6 +9986,7 @@ function PortalApp({ token, onLogout }) {
   const suspendWorkspaceRefreshRef = useRef(false);
 	const loadWorkspaceRef = useRef(null);
 	const linkedinSideWindowRef = useRef(null);
+  const linkedinCompanyShortcutSeedRef = useRef("");
   const archivedJobsLoadedRef = useRef(false);
   const archivedJobsLoadingRef = useRef(false);
   const [jobShortcutKey, setJobShortcutKey] = useState("");
@@ -11999,6 +12000,48 @@ function PortalApp({ token, onLogout }) {
     dashboardDatabaseWorkspaceLoadedOnceRef.current = true;
     void loadWorkspaceShellThenBackground();
   }, [token, location?.pathname]);
+
+  useEffect(() => {
+    if (!token || !isSettingsAdmin) return;
+    const rawCompanyShortcuts = normalizeShortcutMapKeys(
+      copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
+        ? copySettings.companyWideShortcuts
+        : {}
+    );
+    const hasConnected = Object.keys(rawCompanyShortcuts).some((key) => normalizeShortcutKeyLower(key) === LINKEDIN_CONNECTED_SHORTCUT_KEY.toLowerCase());
+    const hasRequest = Object.keys(rawCompanyShortcuts).some((key) => normalizeShortcutKeyLower(key) === LINKEDIN_REQUEST_SHORTCUT_KEY.toLowerCase());
+    if (hasConnected && hasRequest) return;
+    const connectedTemplate = String(copySettings?.linkedinConnectedTemplate || DEFAULT_COPY_SETTINGS.linkedinConnectedTemplate || "").trim();
+    const requestTemplate = String(copySettings?.linkedinConnectionRequestTemplate || DEFAULT_COPY_SETTINGS.linkedinConnectionRequestTemplate || "").trim();
+    const nextCompanyWideShortcuts = {
+      ...rawCompanyShortcuts,
+      ...(!hasConnected && connectedTemplate ? { [LINKEDIN_CONNECTED_SHORTCUT_KEY]: connectedTemplate } : {}),
+      ...(!hasRequest && requestTemplate ? { [LINKEDIN_REQUEST_SHORTCUT_KEY]: requestTemplate } : {})
+    };
+    const signature = JSON.stringify({
+      token: String(token || "").trim(),
+      hasConnected,
+      hasRequest,
+      connectedTemplate,
+      requestTemplate
+    });
+    if (linkedinCompanyShortcutSeedRef.current === signature) return;
+    linkedinCompanyShortcutSeedRef.current = signature;
+    void (async () => {
+      try {
+        const payload = {
+          ...copySettings,
+          companyWideShortcuts: nextCompanyWideShortcuts,
+          linkedinConnectedTemplate: connectedTemplate,
+          linkedinConnectionRequestTemplate: requestTemplate
+        };
+        const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
+        setCopySettings((current) => migrateCopySettings({ ...current, ...result }));
+      } catch {
+        linkedinCompanyShortcutSeedRef.current = "";
+      }
+    })();
+  }, [token, isSettingsAdmin, copySettings]);
 
   useEffect(() => {
     if (!token) return undefined;
