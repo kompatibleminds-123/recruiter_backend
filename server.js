@@ -7627,6 +7627,41 @@ function formatDatabaseQuickChipTimelineLabel(statusValue, atValue) {
   return normalizeAssessmentStatusLabel(statusValue);
 }
 
+function getDatabaseQuickChipInterviewStageIndex(value) {
+  const lower = normalizeAssessmentStatusLabel(String(value || "")).toLowerCase();
+  if (lower === "screening call aligned") return 0;
+  if (lower === "l1 aligned") return 1;
+  if (lower === "l2 aligned") return 2;
+  if (lower === "l3 aligned") return 3;
+  if (lower === "hr interview aligned") return 4;
+  return -1;
+}
+
+function getDatabaseQuickChipInterviewStageLabel(index) {
+  if (index === 0) return "Screening";
+  if (index === 1) return "L1";
+  if (index === 2) return "L2";
+  if (index === 3) return "L3";
+  if (index === 4) return "HR";
+  return "";
+}
+
+function buildDatabaseQuickChipCurrentStatusText(currentStatusValue, alignedEvents = []) {
+  const currentStatus = normalizeAssessmentStatusLabel(String(currentStatusValue || "").trim());
+  const currentStageIndex = getDatabaseQuickChipInterviewStageIndex(currentStatus);
+  if (currentStageIndex >= 0) return currentStatus || "-";
+
+  let lastAlignedRound = "";
+  (Array.isArray(alignedEvents) ? alignedEvents : []).forEach((event) => {
+    const statusValue = typeof event === "string" ? event : event?.status;
+    const stageIndex = getDatabaseQuickChipInterviewStageIndex(statusValue);
+    if (stageIndex >= 0) lastAlignedRound = getDatabaseQuickChipInterviewStageLabel(stageIndex);
+  });
+
+  if (currentStatus && lastAlignedRound) return `${currentStatus} | ${lastAlignedRound} done`;
+  return currentStatus || "-";
+}
+
 function isDatabaseQuickChipRejectStatus(value) {
   const normalized = normalizeAssessmentStatusLabel(String(value || "")).toLowerCase();
   return normalized === "screening reject" || normalized === "interview reject";
@@ -7837,19 +7872,13 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
         || convertedAt
         || ""
       ).trim();
-      const timelineText = dedupedTrackEvents.length
-        ? dedupedTrackEvents
-            .map((event) => `${formatDatabaseQuickChipTimelineLabel(event.status, event.effectiveAt)} on ${formatDatabaseQuickChipEventDate(event.effectiveAt)}`)
-            .join(" | ")
-        : "";
       rowsByChip.interview_history.push({
         ...baseRow,
         isAlert: isDatabaseQuickChipRejectStatus(baseRow.status),
-        round: timelineText
-          ? `${timelineText} | Current: ${baseRow.status || "-"}`
-          : exactInterviewContext?.previousStatus
-            ? `${exactInterviewContext.previousStatus} | Current: ${baseRow.status || "-"}`
-            : `Current: ${baseRow.status || "-"}`,
+        round: buildDatabaseQuickChipCurrentStatusText(
+          baseRow.status || exactInterviewContext?.currentStatus || "",
+          dedupedTrackEvents
+        ),
         date: latestInterviewDate || convertedAt || updatedAt || ""
       });
     }
@@ -7872,9 +7901,10 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
           rowsByChip.aligned_interviews.push({
             ...baseRow,
             isAlert: isDatabaseQuickChipRejectStatus(baseRow.status),
-            round: previousAlignedEvent
-              ? `${databaseQuickChipAlignedPhrase(normalizeDatabaseQuickChipAlignedLabel(previousAlignedEvent.status), previousAlignedEvent.effectiveAt || previousAlignedEvent.at)} on ${formatDatabaseQuickChipEventDate(previousAlignedEvent.effectiveAt || previousAlignedEvent.at)} | now ${databaseQuickChipAlignedPhrase(normalizeDatabaseQuickChipAlignedLabel(latestAlignedEvent.status), interviewTimelineDate)} on ${formatDatabaseQuickChipEventDate(interviewTimelineDate)} | Current: ${baseRow.status || "-"}`
-              : `${databaseQuickChipAlignedPhrase(normalizeDatabaseQuickChipAlignedLabel(latestAlignedEvent.status), interviewTimelineDate)} on ${formatDatabaseQuickChipEventDate(interviewTimelineDate)} | Current: ${baseRow.status || "-"}`,
+            round: buildDatabaseQuickChipCurrentStatusText(
+              baseRow.status || "",
+              previousAlignedEvent ? [previousAlignedEvent, latestAlignedEvent] : [latestAlignedEvent]
+            ),
             date: interviewTimelineDate || latestAlignedEvent.at
           });
         }
@@ -7889,7 +7919,7 @@ function buildDatabaseQuickChipRows({ universe = [], assessmentEvents = [], date
       rowsByChip.aligned_interviews.push({
         ...baseRow,
         isAlert: isDatabaseQuickChipRejectStatus(baseRow.status),
-        round: `${databaseQuickChipAlignedPhrase(normalizeDatabaseQuickChipAlignedLabel(assessmentStatus), fallbackInterviewDate)} on ${formatDatabaseQuickChipEventDate(fallbackInterviewDate)} | Current: ${baseRow.status || "-"}`,
+        round: buildDatabaseQuickChipCurrentStatusText(baseRow.status || assessmentStatus || "", [{ status: assessmentStatus }]),
         date: fallbackInterviewDate
       });
     }
