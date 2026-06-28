@@ -25655,12 +25655,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <span className="captured-note-field-value">{item.totalExperience || item.total_experience || "NA"}</span>
                           </div>
                           <div className="captured-note-contact-row captured-note-field">
-                            <span className="captured-note-contact-icon" aria-hidden="true">ðŸ’°</span>
+                            <span className="captured-note-contact-icon" aria-hidden="true">{"\u{1F4B0}"}</span>
                             <span className="captured-note-field-label">CTC</span>
                             <span className="captured-note-field-value">{item.currentCtc || item.current_ctc || "NA"}</span>
                           </div>
                           <div className="captured-note-contact-row captured-note-field">
-                            <span className="captured-note-contact-icon" aria-hidden="true">ðŸ•’</span>
+                            <span className="captured-note-contact-icon" aria-hidden="true">{"\u{1F552}"}</span>
                             <span className="captured-note-field-label">Notice period</span>
                             <span className="captured-note-field-value">{item.noticePeriod || item.notice_period || "NA"}</span>
                           </div>
@@ -25679,7 +25679,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <span className="captured-note-field-value">{item.phone || item.phoneNumber || "NA"}</span>
                           </div>
                           <div className="captured-note-contact-row captured-note-field">
-                            <span className="captured-note-contact-icon" aria-hidden="true">ðŸ”–</span>
+                            <span className="captured-note-contact-icon" aria-hidden="true">{"\u{1F516}"}</span>
                             <span className="captured-note-field-label">Source</span>
                             <span className="captured-note-field-value">{item.sourcePlatform || "NA"}</span>
                           </div>
@@ -25688,17 +25688,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <div className="captured-note-col captured-note-col--ownership">
                         <div className="captured-note-detail-list">
                           <div className="captured-note-contact-row captured-note-field">
-                            <span className="captured-note-contact-icon" aria-hidden="true">ðŸ‘¤</span>
+                            <span className="captured-note-contact-icon" aria-hidden="true">{"\u{1F464}"}</span>
                             <span className="captured-note-field-label">Assigned to</span>
                             <span className="captured-note-field-value">{item.assignedToName || "NA"}</span>
                           </div>
                           <div className="captured-note-contact-row captured-note-field">
-                            <span className="captured-note-contact-icon" aria-hidden="true">ðŸ—“ï¸</span>
+                            <span className="captured-note-contact-icon" aria-hidden="true">{"\u{1F5D3}\uFE0F"}</span>
                             <span className="captured-note-field-label">Updated at</span>
                             <span className="captured-note-field-value">{formatAppliedPlacardDateTime(item.updatedAt || item.updated_at || item.assignedAt || item.assigned_at || item.createdAt || item.created_at)}</span>
                           </div>
                           <div className="captured-note-contact-row captured-note-field">
-                            <span className="captured-note-contact-icon" aria-hidden="true">ðŸ—“ï¸</span>
+                            <span className="captured-note-contact-icon" aria-hidden="true">{"\u{1F5D3}\uFE0F"}</span>
                             <span className="captured-note-field-label">Applied at</span>
                             <span className="captured-note-field-value">{formatAppliedPlacardDateTime(item.createdAt || item.created_at || item.appliedAt || item.applied_at)}</span>
                           </div>
