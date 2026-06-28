@@ -1481,6 +1481,15 @@ textarea { min-height: 92px; resize: vertical; }
   min-width: 44px;
   border-radius: 999px;
 }
+
+.assessment-btn-li {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  height: 44px;
+  width: 44px;
+  min-width: 44px;
+  border-radius: 999px;
+}
 @media (max-width: 1200px) {
   .assessment-placard__main {
     grid-template-columns: 1fr;
@@ -4152,6 +4161,33 @@ button:focus-visible {
   pointer-events: none;
 }
 
+.linkedin-logo-btn {
+  min-width: 44px;
+  width: 44px;
+  height: 40px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.linkedin-logo-btn__badge {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: #0a66c2;
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  font-family: Arial, sans-serif;
+  line-height: 1;
+  text-transform: lowercase;
+  pointer-events: none;
+}
+
 .captured-note-card {
   border-radius: 18px;
   position: relative;
@@ -4374,7 +4410,8 @@ button:focus-visible {
   align-items: center;
 }
 
-.captured-note-actions .whatsapp-logo-btn {
+.captured-note-actions .whatsapp-logo-btn,
+.captured-note-actions .linkedin-logo-btn {
   background: #fff;
   border: 1px solid var(--border);
   box-shadow: none;
@@ -4580,7 +4617,8 @@ button:focus-visible {
   }
 
   .captured-note-actions > button,
-  .captured-note-actions .whatsapp-logo-btn {
+  .captured-note-actions .whatsapp-logo-btn,
+  .captured-note-actions .linkedin-logo-btn {
     flex: 1 1 calc(50% - 0.45rem);
     min-width: 140px;
   }

@@ -10214,6 +10214,16 @@ function PortalApp({ token, onLogout }) {
     saveScope: "all_jobs",
     assignJobId: ""
   });
+  const [linkedinTemplatePicker, setLinkedinTemplatePicker] = useState({
+    open: false,
+    options: [],
+    selectedId: "",
+    row: null,
+    statusKey: "workspace",
+    customText: "",
+    linkedinUrl: "",
+    outreachMode: "connected"
+  });
 
   const isAssessmentArchived = (assessment) => {
     if (!assessment) return false;
@@ -11243,6 +11253,80 @@ function PortalApp({ token, onLogout }) {
     })();
   }
 
+  async function openLinkedinTemplatePicker(row = {}, statusKey = "workspace") {
+    const linkedinUrl = normalizeLinkedinUrl(
+      row?.linkedin
+      || row?.linkedinUrl
+      || row?.linkedin_url
+      || ""
+    );
+    if (!linkedinUrl) {
+      setStatus(statusKey, "LinkedIn link not available for this candidate.", "error");
+      return;
+    }
+    const cachedCompanyWideShortcuts =
+      copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
+        ? copySettings.companyWideShortcuts
+        : {};
+    const rowWithLinks = {
+      ...row,
+      linkedin: linkedinUrl,
+      linkedinUrl,
+      recruiter_jd_link: "",
+      jd_link: resolveRowJobId(row) ? getApplyLink(resolveRowJobId(row)) : ""
+    };
+    const options = getWhatsappTemplateOptions(rowWithLinks, personalShortcuts, cachedCompanyWideShortcuts);
+    const selectedId = String(options[0]?.id || "");
+    const selectedTemplate = String(options[0]?.template || "");
+    setLinkedinTemplatePicker({
+      open: true,
+      options,
+      selectedId,
+      row: rowWithLinks,
+      statusKey,
+      customText: selectedTemplate
+        ? renderWhatsappTemplatePreview(selectedTemplate, rowWithLinks)
+        : "",
+      linkedinUrl,
+      outreachMode: "connected"
+    });
+
+    void (async () => {
+      const [latestPersonalShortcuts, sharedPresetResult, recruiterLink] = await Promise.all([
+        loadPersonalShortcuts().catch(() => personalShortcuts || {}),
+        api("/company/shared-export-presets", token).catch(() => null),
+        fetchRecruiterApplyLinkForRow(row).catch(() => "")
+      ]);
+      let latestCompanyWideShortcuts = cachedCompanyWideShortcuts;
+      if (sharedPresetResult && typeof sharedPresetResult === "object") {
+        const merged = migrateCopySettings({ ...copySettings, ...sharedPresetResult });
+        latestCompanyWideShortcuts =
+          merged?.companyWideShortcuts && typeof merged.companyWideShortcuts === "object"
+            ? merged.companyWideShortcuts
+            : latestCompanyWideShortcuts;
+        setCopySettings((current) => migrateCopySettings({ ...current, ...sharedPresetResult }));
+      }
+      const hydratedRow = {
+        ...rowWithLinks,
+        recruiter_jd_link: recruiterLink || rowWithLinks.recruiter_jd_link || "",
+        jd_link: rowWithLinks.jd_link || (resolveRowJobId(row) ? getApplyLink(resolveRowJobId(row)) : "")
+      };
+      const hydratedOptions = getWhatsappTemplateOptions(hydratedRow, latestPersonalShortcuts, latestCompanyWideShortcuts);
+      const hydratedSelectedTemplate = String(hydratedOptions[0]?.template || "");
+      setLinkedinTemplatePicker((current) => {
+        if (!current.open) return current;
+        return {
+          ...current,
+          row: hydratedRow,
+          options: hydratedOptions,
+          customText:
+            String(current.customText || "").trim() ||
+            (hydratedSelectedTemplate ? renderWhatsappTemplatePreview(hydratedSelectedTemplate, hydratedRow) : "")
+        };
+      });
+    })();
+  }
+
   async function applyWhatsappTemplatePickerSelection() {
     const customText = String(whatsappTemplatePicker.customText || "").trim();
     if (!customText) {
@@ -11259,6 +11343,29 @@ function PortalApp({ token, onLogout }) {
       // ignore clipboard error and still open whatsapp
     }
     setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace", customText: "", newShortcutKey: "", saveScope: "all_jobs", assignJobId: "" });
+  }
+
+  async function applyLinkedinTemplatePickerSelection() {
+    const customText = String(linkedinTemplatePicker.customText || "").trim();
+    if (!customText) {
+      setStatus(linkedinTemplatePicker.statusKey || "workspace", "Template text is empty.", "error");
+      return;
+    }
+    const linkedinUrl = normalizeLinkedinUrl(linkedinTemplatePicker.linkedinUrl || linkedinTemplatePicker.row?.linkedin || "");
+    if (!linkedinUrl) {
+      setStatus(linkedinTemplatePicker.statusKey || "workspace", "LinkedIn link not available for this candidate.", "error");
+      return;
+    }
+    openLinkedinInSideWindow(linkedinUrl);
+    try {
+      await copyText(customText);
+      const modeLabel = linkedinTemplatePicker.outreachMode === "request" ? "connection request" : "LinkedIn message";
+      setStatus(linkedinTemplatePicker.statusKey || "workspace", `${modeLabel} copied. Paste it in LinkedIn (Ctrl+V).`, "ok");
+    } catch {
+      const modeLabel = linkedinTemplatePicker.outreachMode === "request" ? "connection request" : "LinkedIn message";
+      setStatus(linkedinTemplatePicker.statusKey || "workspace", `Opened LinkedIn. Copy the ${modeLabel} manually if clipboard is blocked.`, "ok");
+    }
+    setLinkedinTemplatePicker({ open: false, options: [], selectedId: "", row: null, statusKey: "workspace", customText: "", linkedinUrl: "", outreachMode: "connected" });
   }
 
   async function saveWhatsappTemplateFromPicker() {
@@ -24152,6 +24259,26 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     }, assessment?.phoneNumber || "", "assessments");
   }
 
+  function openAssessmentLinkedin(assessment) {
+    openLinkedinTemplatePicker({
+      name: assessment?.candidateName || "",
+      jd_title: assessment?.jdTitle || "",
+      company: assessment?.currentCompany || "",
+      company_name: state.user?.companyName || "",
+      outcome: normalizeAssessmentStatusLabel(assessment?.candidateStatus || ""),
+      recruiter_name: assessment?.recruiter_name || assessment?.recruiterName || state.user?.name || "",
+      recruiter_notes: assessment?.recruiterNotes || "",
+      location: assessment?.location || "",
+      phone: assessment?.phoneNumber || "",
+      email: assessment?.emailId || "",
+      source: "assessment",
+      interview_at: assessment?.interviewAt || "",
+      client_name: assessment?.clientName || "",
+      jd_id: assessment?.jobId || assessment?.jdId || "",
+      linkedin: assessment?.linkedinUrl || ""
+    }, "assessments");
+  }
+
   const companyId = String(state.user?.companyId || state.intake?.company?.id || "").trim();
   const secret = String(state.intake?.applicantIntakeSecret || "").trim();
   const apiUrl = `${window.location.origin}/public/applicants/intake`;
@@ -25645,6 +25772,29 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       >
                         <FaWhatsapp size={18} color="#25D366" title="WhatsApp" />
                       </button>
+                      <button
+                        className="linkedin-logo-btn"
+                        onClick={() => openLinkedinTemplatePicker({
+                          name: item.name || "",
+                          jd_title: item.jd_title || item.role || "",
+                          company: item.company || "",
+                          company_name: state.user?.companyName || "",
+                          outcome: getCapturedOutcome(item, matchedAssessment),
+                          recruiter_name: item.assigned_to_name || item.recruiter_name || state.user?.name || "",
+                          recruiter_notes: item.recruiter_context_notes || item.notes || "",
+                          location: item.location || "",
+                          phone: item.phone || item.phoneNumber || "",
+                          email: item.email || "",
+                          source: item.source || "",
+                          client_name: item.client_name || "",
+                          jd_id: item.jd_id || item.jdId || item.jobId || "",
+                          linkedin: item.linkedin || item.linkedinUrl || item.linkedin_url || ""
+                        }, "captured")}
+                        title="Open LinkedIn outreach"
+                        aria-label="Open LinkedIn outreach"
+                      >
+                        <span className="linkedin-logo-btn__badge">in</span>
+                      </button>
                       <button className="ghost-btn" onClick={() => void openAttempts(item.id)}>Attempts</button>
                       {!applicantIsHidden ? (
                         <button className="ghost-btn" onClick={() => openJdEmailModalForCandidate(item, item.jdId || "")}>Email JD</button>
@@ -26127,9 +26277,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         ) : null}
                         <button className="ghost-btn" onClick={() => { setBulkAssignCandidateModalOpen(false); setBulkAssignCandidateIds([]); setAssignCandidateId(item.id); }}>{item.assigned_to_name ? "Reassign" : "Assign"}</button>
 	                      <button className="ghost-btn" onClick={() => openRecruiterNotes(item)}>Recruiter note</button>
-                        <button
-                          className="whatsapp-logo-btn"
-                          onClick={() => openWhatsappTemplatePicker({
+                      <button
+                        className="whatsapp-logo-btn"
+                        onClick={() => openWhatsappTemplatePicker({
                             name: item.name || "",
                             jd_title: item.jd_title || item.role || "",
                             company: item.company || "",
@@ -26146,10 +26296,33 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           }, item.phone || item.phoneNumber || "", "captured")}
                           title="Open WhatsApp"
                           aria-label="Open WhatsApp"
-                        >
-                          <FaWhatsapp size={18} color="#25D366" title="WhatsApp" />
-                        </button>
-                        <button className="ghost-btn" onClick={() => void openAttempts(item.id)}>Attempts</button>
+                      >
+                        <FaWhatsapp size={18} color="#25D366" title="WhatsApp" />
+                      </button>
+                      <button
+                        className="linkedin-logo-btn"
+                        onClick={() => openLinkedinTemplatePicker({
+                          name: item.candidateName || "",
+                          jd_title: item.jdTitle || "",
+                          company: item.currentCompany || "",
+                          company_name: state.user?.companyName || "",
+                          outcome: getApplicantOutcome(item),
+                          recruiter_name: item.assigned_to_name || item.assignedToName || state.user?.name || "",
+                          recruiter_notes: getApplicantRecruiterNoteText(item) || "",
+                          location: item.location || "",
+                          phone: item.phone || item.phoneNumber || "",
+                          email: item.email || "",
+                          source: item.sourcePlatform || "",
+                          client_name: item.clientName || "",
+                          jd_id: item.jdId || item.jobId || "",
+                          linkedin: item.linkedin || item.linkedinUrl || item.linkedin_url || ""
+                        }, "applicants")}
+                        title="Open LinkedIn outreach"
+                        aria-label="Open LinkedIn outreach"
+                      >
+                        <span className="linkedin-logo-btn__badge">in</span>
+                      </button>
+                      <button className="ghost-btn" onClick={() => void openAttempts(item.id)}>Attempts</button>
                         {!item.hidden_from_captured ? (
                           <button className="ghost-btn" onClick={() => openJdEmailModalForCandidate(item)}>Email JD</button>
                         ) : null}
@@ -26543,6 +26716,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             aria-label="Open WhatsApp"
                           >
                             <FaWhatsapp size={18} color="#25D366" title="WhatsApp" />
+                          </button>
+                          <button
+                            className="linkedin-logo-btn assessment-btn-li"
+                            onClick={() => { closeAssessmentMoreMenu(); openAssessmentLinkedin(item); }}
+                            title="Open LinkedIn outreach"
+                            aria-label="Open LinkedIn outreach"
+                          >
+                            <span className="linkedin-logo-btn__badge">in</span>
                           </button>
                           <div
                             className={`more-menu ${openAssessmentMoreId === String(item.id) ? "more-menu--open" : ""}`}
@@ -29397,6 +29578,75 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               <button className="ghost-btn" onClick={() => setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace", customText: "", newShortcutKey: "", saveScope: "all_jobs", assignJobId: "" })}>Cancel</button>
               <button className="ghost-btn" onClick={() => void saveWhatsappTemplateFromPicker()}>Save as shortcut</button>
               <button onClick={() => void applyWhatsappTemplatePickerSelection()}>Copy & open WhatsApp</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {linkedinTemplatePicker.open ? (
+        <div className="overlay" onClick={() => setLinkedinTemplatePicker({ open: false, options: [], selectedId: "", row: null, statusKey: "workspace", customText: "", linkedinUrl: "", outreachMode: "connected" })}>
+          <div className="overlay-card whatsapp-template-picker" onClick={(event) => event.stopPropagation()}>
+            <h3>LinkedIn Outreach</h3>
+            <p className="muted">Choose a saved shortcut, tweak the message, then we’ll open LinkedIn and copy the draft for paste.</p>
+            <label className="full">
+              <span>Outreach mode</span>
+              <div className="button-row" style={{ justifyContent: "flex-start", gap: 8 }}>
+                <button
+                  type="button"
+                  className={linkedinTemplatePicker.outreachMode === "connected" ? "" : "ghost-btn"}
+                  onClick={() => setLinkedinTemplatePicker((current) => ({ ...current, outreachMode: "connected" }))}
+                >
+                  Connected message
+                </button>
+                <button
+                  type="button"
+                  className={linkedinTemplatePicker.outreachMode === "request" ? "" : "ghost-btn"}
+                  onClick={() => setLinkedinTemplatePicker((current) => ({ ...current, outreachMode: "request" }))}
+                >
+                  Connection request
+                </button>
+              </div>
+              <span className="field-help">
+                {linkedinTemplatePicker.outreachMode === "request"
+                  ? "Use a short note for connection request. LinkedIn may trim longer text."
+                  : "Best for candidates already connected with you on LinkedIn."}
+              </span>
+            </label>
+            {(() => {
+              const selectedOption = (linkedinTemplatePicker.options || []).find((option) => String(option.id || "") === String(linkedinTemplatePicker.selectedId || "")) || null;
+              return selectedOption ? (
+                <div className="whatsapp-template-picker__summary">
+                  <div className="whatsapp-template-picker__summary-title">{selectedOption.label}</div>
+                  <div className="whatsapp-template-picker__summary-subtitle">Template ready with current candidate placeholders.</div>
+                </div>
+              ) : null;
+            })()}
+            {(linkedinTemplatePicker.options || []).length ? (
+              <div className="whatsapp-template-picker__options">
+                {(linkedinTemplatePicker.options || []).map((option) => (
+                  <label key={option.id} className="whatsapp-template-picker__option">
+                    <input
+                      type="radio"
+                      name="linkedin_template_picker"
+                      checked={String(linkedinTemplatePicker.selectedId || "") === String(option.id || "")}
+                      onChange={() => setLinkedinTemplatePicker((current) => ({ ...current, selectedId: option.id, customText: renderWhatsappTemplatePreview(option.template || "", current.row || {}) }))}
+                    />
+                    <span>{option.label}</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <div className="status">No saved shortcuts yet. Write your LinkedIn message below and open the profile directly.</div>
+            )}
+            <label className="full">
+              <span>Customize message</span>
+              <textarea value={linkedinTemplatePicker.customText || ""} onChange={(e) => setLinkedinTemplatePicker((current) => ({ ...current, customText: e.target.value }))} />
+              <span className="field-help">Use placeholders like {`{{name}} {{recruiter_name}} {{recruiter_email}} {{recruiter_phone}} {{interview_at}} {{jd_title}} {{client_name}} {{company_name}} {{phone}} {{jd_link}} {{recruiter_jd_link}}`}</span>
+            </label>
+            <div className="button-row">
+              <button className="ghost-btn" onClick={() => setLinkedinTemplatePicker({ open: false, options: [], selectedId: "", row: null, statusKey: "workspace", customText: "", linkedinUrl: "", outreachMode: "connected" })}>Cancel</button>
+              <button onClick={() => void applyLinkedinTemplatePickerSelection()}>
+                {linkedinTemplatePicker.outreachMode === "request" ? "Copy & open LinkedIn request" : "Copy & open LinkedIn"}
+              </button>
             </div>
           </div>
         </div>
