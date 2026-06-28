@@ -1,4 +1,4 @@
-const { PDFParse } = require("pdf-parse");
+﻿const { PDFParse } = require("pdf-parse");
 const mammoth = require("mammoth");
 
 const MONTH_INDEX = {
@@ -21,7 +21,7 @@ function sanitizeText(value) {
   return String(value || "")
     .replace(/\r/g, "\n")
     .replace(/\u00a0/g, " ")
-    .replace(/[’‘`´]/g, "'")
+    .replace(/[\u2019\u2018`\u00B4]/g, String.fromCharCode(39))
     .replace(/[\u2013\u2014\u2212]/g, "-")
     .replace(/\s\?\s/g, " - ")
     .replace(/[ \t]+/g, " ")
@@ -155,7 +155,7 @@ function looksLikeCompanyName(value = "") {
 function isProjectNoiseLine(value = "") {
   const text = String(value || "").trim();
   if (!text) return true;
-  if (/^[•\-◆]/.test(text)) return true;
+  if (/^[\u2022\-\u25C6\uF0D8\uF075]/.test(text)) return true;
   if (/\b(projects?\s+involved|project\s+highlights?|job\s+responsibilities|duties\s*&?\s*responsibility|responsibilities?)\b/i.test(text)) return true;
   if (/^(reviewed|prepared|developed|conducted|maintained|supported|coordinated|created|organized|checked|trained|mentored|generated|managed|led|implemented|attending|undertaking|follow-?up|raised|raising)\b/i.test(text)) return true;
   if (/\b(value engineering|cashflow forecasts?|bill of quantities|risk management|measurement standard|client requirement)\b/i.test(text)) return true;
@@ -244,7 +244,7 @@ function looksLikeEducationYearOrScoreLine(value = "") {
 
 function buildEducationHistoryFromSection(educationSectionText = "") {
   const lines = splitLines(educationSectionText)
-    .map((line) => String(line || "").replace(/^[\s\-•◆]+/, "").trim())
+    .map((line) => String(line || "").replace(/^[\s\-\u2022\u25C6\uF0D8\uF075]+/, "").trim())
     .filter(Boolean)
     .filter((line) => !/^--\s*\d+\s+of\s+\d+\s*--$/i.test(line))
     .filter((line) => !isLikelySectionBoundaryLine(line) || isLikelyEducationHeadingLine(line))
@@ -334,8 +334,8 @@ function buildEducationHistoryFromSection(educationSectionText = "") {
 
 function buildEducationHistoryFallback(rawText = "") {
   const lines = splitLines(rawText)
-    .map((line) => String(line || "").replace(/^[\s\-â€¢â—†ïƒ˜ïµ]+/, "").trim())
-    .filter(Boolean);
+    .map((line) => String(line || "").replace(/^[\s\-\u2022\u2023\u25AA\u00B7*]+/, "").trim())
+    .map((line) => String(line || "").replace(/^[\s\-\u2022\u2023\u25AA\u00B7*]+/, "").trim())
   const startIndexes = [];
   for (let i = 0; i < lines.length; i += 1) {
     if (isLikelyEducationHeadingLine(lines[i])) startIndexes.push(i);
@@ -1206,7 +1206,7 @@ function parseInlineHeaderWithDate(line = "") {
   if (!raw) return null;
   const dateMatch = raw.match(/((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s*['.]?\d{2,4}|\d{1,2}[/-]\d{4}|\b\d{4}\b)\s*[-\u2013\u2014\u2212]\s*(present|current|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s*['.]?\d{2,4}|\d{1,2}[/-]\d{4}|\b\d{4}\b)/i);
   if (!dateMatch) return null;
-  const head = normalizeLooseText(raw.slice(0, dateMatch.index)).replace(/[•|,-\s]+$/g, "").trim();
+  const head = normalizeLooseText(raw.slice(0, dateMatch.index)).replace(/[\u2022|,-\s]+$/g, "").trim();
   if (!head) return null;
   const structured = splitStructuredRoleCompanyLine(head);
   if (!structured) return null;
@@ -1818,7 +1818,7 @@ function extractCompanyAlias(value = "") {
 
 function parseExperienceTimelineV2(experienceSectionText = "", rawText = "") {
   const lines = splitLines(experienceSectionText)
-    .map((line) => String(line || "").replace(/^[-•◆]+\s*/, "").trim())
+    .map((line) => String(line || "").replace(/^[-\u2022\u25C6\uF0D8\uF075]+\s*/, "").trim())
     .filter(Boolean)
     .filter((line) => !/^--\s*\d+\s+of\s+\d+\s*--$/i.test(line));
   const rows = [];
@@ -2128,7 +2128,7 @@ function scoreDesignationCandidate(line = "") {
 
 function buildDateAnchoredExperienceBlocks(experienceSectionText = "", rawText = "") {
   const baseLines = splitLines(experienceSectionText || rawText)
-    .map((line) => normalizeLooseText(String(line || "").replace(/^[-•◆]\s*/, "")))
+    .map((line) => normalizeLooseText(String(line || "").replace(/^[-\u2022\u25C6]\s*/, "")))
     .filter(Boolean);
   if (!baseLines.length) return [];
 
