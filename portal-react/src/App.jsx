@@ -14477,15 +14477,6 @@ function PortalApp({ token, onLogout }) {
   }, [candidateSmartChipRowsRemote, candidateSmartChipRows, filterCandidateSmartChipRowsLocally, candidateQuickFiltersApplied]);
   const buildCandidateSmartChipRoundStatusText = useCallback((assessment = {}) => {
     const statusHistory = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
-    const historyLines = statusHistory
-      .map((item) => {
-        const statusValue = String(item?.status || "").trim();
-        if (!statusValue) return "";
-        const atValue = String(item?.statusAt || item?.atValue || item?.at || "").trim();
-        const offerAmount = String(item?.offerAmount || assessment?.offerAmount || "").trim();
-        return buildAssessmentStatusNoteLine(statusValue, atValue, { offerAmount }).replace(/\.$/, "").trim();
-      })
-      .filter(Boolean);
     const currentStatus = normalizeAssessmentStatusLabel(
       String(
         statusHistory.length
@@ -14493,10 +14484,37 @@ function PortalApp({ token, onLogout }) {
           : (assessment?.candidateStatus || assessment?.status || "")
       ).trim()
     );
-    if (currentStatus) {
-      historyLines.push(`Current: ${currentStatus}`);
+    const stageIndexFromStatus = (value) => {
+      const lower = normalizeAssessmentStatusLabel(value || "").toLowerCase();
+      if (lower === "screening call aligned") return 0;
+      if (lower === "l1 aligned") return 1;
+      if (lower === "l2 aligned") return 2;
+      if (lower === "l3 aligned") return 3;
+      if (lower === "hr interview aligned") return 4;
+      return -1;
+    };
+    const stageRoundFromIndex = (idx) => {
+      if (idx === 0) return "Screening";
+      if (idx === 1) return "L1";
+      if (idx === 2) return "L2";
+      if (idx === 3) return "L3";
+      if (idx === 4) return "HR";
+      return "";
+    };
+    const currentStageIndex = stageIndexFromStatus(currentStatus);
+    if (currentStageIndex >= 0) return currentStatus || "-";
+
+    let lastAlignedRound = "";
+    statusHistory.forEach((item) => {
+      const idx = stageIndexFromStatus(String(item?.status || "").trim());
+      if (idx >= 0) lastAlignedRound = stageRoundFromIndex(idx);
+    });
+    if (!lastAlignedRound) {
+      const assessmentStageIndex = stageIndexFromStatus(String(assessment?.candidateStatus || assessment?.status || "").trim());
+      if (assessmentStageIndex >= 0) lastAlignedRound = stageRoundFromIndex(assessmentStageIndex);
     }
-    return historyLines.join(" | ");
+    if (currentStatus && lastAlignedRound) return `${currentStatus} | ${lastAlignedRound} done`;
+    return currentStatus || "-";
   }, []);
   const patchCandidateSmartChipRowsForAssessment = useCallback((assessment = {}) => {
     if (String(location?.pathname || "").trim() !== "/candidates") return;
@@ -25331,7 +25349,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                       <th>Candidate</th>
                                       <th>{
                                         chip.id === "interview_history" || chip.id === "aligned_interviews"
-                                          ? "Round / Status"
+                                          ? "Current status"
                                           : "Current status"
                                       }</th>
                                       <th>{
