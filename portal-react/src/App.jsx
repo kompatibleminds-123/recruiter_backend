@@ -2998,8 +2998,10 @@ function applyCandidateChange(candidate = {}, resolved = {}, source = "MUTATION_
   const normalizedBucket = String(nextResolved?.bucket || "").trim().toLowerCase() || "captured";
   const isCapturedBucket = normalizedBucket === "captured";
   const isApplicantBucket = normalizedBucket === "applicants";
+  const preserveExistingApplicantMembership = Boolean(existingApplicantRow) && normalizedBucket !== "hidden" && normalizedBucket !== "archived";
+  const treatAsApplicantBucket = isApplicantBucket || preserveExistingApplicantMembership;
   const isVisibleInCaptured = isCapturedBucket && isCapturedRowVisibleInCurrentView(mergedCandidate, currentCandidateFiltersApplied, currentApplicantUser);
-  const isVisibleInApplicants = isApplicantBucket && isApplicantRowVisibleInCurrentView(mergedCandidate, currentApplicantFiltersApplied, currentApplicantUser, mergedCandidate, null);
+  const isVisibleInApplicants = treatAsApplicantBucket && isApplicantRowVisibleInCurrentView(mergedCandidate, currentApplicantFiltersApplied, currentApplicantUser, mergedCandidate, null);
   const updatedAt = String(mergedCandidate?.updated_at || mergedCandidate?.updatedAt || new Date().toISOString()).trim() || new Date().toISOString();
   const patchRow = (item) => {
     if (!item || String(item?.id || "").trim() !== candidateId) return item;
@@ -3019,19 +3021,60 @@ function applyCandidateChange(candidate = {}, resolved = {}, source = "MUTATION_
     nextItem.last_synced_source = String(source || "").trim();
     return nextItem;
   };
-  const patchVisibleList = (items, keepVisible, sortFn) => {
+  const patchVisibleList = (items, keepVisible, sortFn, deriveVisibility = null) => {
     const currentItems = Array.isArray(items) ? items : [];
-    const nextItems = keepVisible
+    let nextKeepVisible = keepVisible;
+    if (!nextKeepVisible && typeof deriveVisibility === "function") {
+      const existingItem = currentItems.find((item) => String(item?.id || "").trim() === candidateId) || null;
+      if (existingItem) {
+        nextKeepVisible = Boolean(deriveVisibility(existingItem));
+      }
+    }
+    const nextItems = nextKeepVisible
       ? upsertCandidatesById(currentItems, [patchRow(mergedCandidate)])
       : removeCandidatesById(currentItems, [candidateId]);
-    return keepVisible ? sortFn(nextItems) : nextItems;
+    return nextKeepVisible ? sortFn(nextItems) : nextItems;
   };
   if (typeof setCurrentState === "function") setCurrentState((current) => ({
     ...current,
     candidates: upsertCandidatesById(current.candidates, [patchRow(mergedCandidate)]),
     databaseCandidates: upsertCandidatesById(current.databaseCandidates, [patchRow(mergedCandidate)]),
-    applicants: patchVisibleList(current.applicants, isVisibleInApplicants, (items) => sortApplicantsForList(items, currentApplicantSortBy)),
-    applicantListItems: patchVisibleList(current.applicantListItems, isVisibleInApplicants, (items) => sortApplicantsForList(items, currentApplicantSortBy))
+    applicants: patchVisibleList(
+      current.applicants,
+      isVisibleInApplicants,
+      (items) => sortApplicantsForList(items, currentApplicantSortBy),
+      (existingItem) => {
+        const mergedExistingApplicant = normalizeApplicantVisibleRow({ ...existingItem, ...mergedCandidate });
+        const resolvedExistingApplicant = resolveCandidateBucket(mergedExistingApplicant, source);
+        const bucket = String(resolvedExistingApplicant?.bucket || "").trim().toLowerCase();
+        if (bucket !== "applicants") return false;
+        return isApplicantRowVisibleInCurrentView(
+          mergedExistingApplicant,
+          currentApplicantFiltersApplied,
+          currentApplicantUser,
+          mergedExistingApplicant,
+          null
+        );
+      }
+    ),
+    applicantListItems: patchVisibleList(
+      current.applicantListItems,
+      isVisibleInApplicants,
+      (items) => sortApplicantsForList(items, currentApplicantSortBy),
+      (existingItem) => {
+        const mergedExistingApplicant = normalizeApplicantVisibleRow({ ...existingItem, ...mergedCandidate });
+        const resolvedExistingApplicant = resolveCandidateBucket(mergedExistingApplicant, source);
+        const bucket = String(resolvedExistingApplicant?.bucket || "").trim().toLowerCase();
+        if (bucket !== "applicants") return false;
+        return isApplicantRowVisibleInCurrentView(
+          mergedExistingApplicant,
+          currentApplicantFiltersApplied,
+          currentApplicantUser,
+          mergedExistingApplicant,
+          null
+        );
+      }
+    )
   }));
   if (typeof setCurrentCapturedOptionPool === "function") setCurrentCapturedOptionPool((current) => patchVisibleList(current, isVisibleInCaptured, (items) => sortCapturedNotesForList(items, currentCapturedSortBy)));
   if (typeof setCurrentCapturedListItems === "function") setCurrentCapturedListItems((current) => patchVisibleList(current, isVisibleInCaptured, (items) => sortCapturedNotesForList(items, currentCapturedSortBy)));
@@ -3039,6 +3082,7 @@ function applyCandidateChange(candidate = {}, resolved = {}, source = "MUTATION_
     console.debug("[candidate-application-resolution]", {
       candidateId,
       resolvedBucket: normalizedBucket,
+      preservedApplicantMembership: preserveExistingApplicantMembership,
       appliedToo: Boolean(nextResolved?.appliedToo),
       applicationSource: String(mergedCandidate?.application_source || mergedCandidate?.applicationSource || mergedCandidate?.sourcePlatform || mergedCandidate?.source || "").trim(),
       originalOwnerId: String(mergedCandidate?.recruiter_id || mergedCandidate?.assigned_to_user_id || mergedCandidate?.assignedToUserId || "").trim(),
@@ -25649,11 +25693,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <div className="captured-note-subtitle">{item.jdTitle || item.assignedJdTitle || item.assigned_jd_title || item.jd_title || item.role || item.position || "Untitled role"}</div>
                         <div className="captured-note-detail-list captured-note-profile-meta">
                           <div className="captured-note-contact-row captured-note-field">
-                            <span className="captured-note-contact-icon" aria-hidden="true">{"\u{1F3E2}"}</span>
+                            <span className="captured-note-contact-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 9h.01"/><path d="M15 9h.01"/><path d="M9 13h.01"/><path d="M15 13h.01"/></svg></span>
                             <span className="captured-note-field-value">{item.currentCompany || "NA"}</span>
                           </div>
                           <div className="captured-note-contact-row captured-note-field">
-                            <span className="captured-note-contact-icon" aria-hidden="true">{"\u{1F4CD}"}</span>
+                            <span className="captured-note-contact-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
                             <span className="captured-note-field-value">{item.location || "NA"}</span>
                           </div>
                         </div>
@@ -25661,17 +25705,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <div className="captured-note-col captured-note-col--details">
                         <div className="captured-note-detail-list">
                           <div className="captured-note-contact-row captured-note-field">
-                            <span className="captured-note-contact-icon" aria-hidden="true">{"\u23F1\uFE0F"}</span>
+                            <span className="captured-note-contact-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
                             <span className="captured-note-field-label">Experience</span>
                             <span className="captured-note-field-value">{item.totalExperience || item.total_experience || "NA"}</span>
                           </div>
                           <div className="captured-note-contact-row captured-note-field">
-                            <span className="captured-note-contact-icon" aria-hidden="true">{"\u{1F4B0}"}</span>
+                            <span className="captured-note-contact-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v12"/><path d="M8 10h6a2 2 0 1 1 0 4H9"/></svg></span>
                             <span className="captured-note-field-label">CTC</span>
                             <span className="captured-note-field-value">{item.currentCtc || item.current_ctc || "NA"}</span>
                           </div>
                           <div className="captured-note-contact-row captured-note-field">
-                            <span className="captured-note-contact-icon" aria-hidden="true">{"\u{1F552}"}</span>
+                            <span className="captured-note-contact-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
                             <span className="captured-note-field-label">Notice period</span>
                             <span className="captured-note-field-value">{item.noticePeriod || item.notice_period || "NA"}</span>
                           </div>
@@ -25680,17 +25724,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <div className="captured-note-col captured-note-col--meta">
                         <div className="captured-note-detail-list">
                           <div className="captured-note-contact-row captured-note-field">
-                            <span className="captured-note-contact-icon" aria-hidden="true">{"\u2709\uFE0F"}</span>
-                            <span className="captured-note-contact-icon" aria-hidden="true">{"\u2709\uFE0F"}</span>
+                            <span className="captured-note-contact-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16v10H4z"/><path d="m4 8 8 6 8-6"/></svg></span>
                             <span className="captured-note-field-value">{item.email || "NA"}</span>
                           </div>
                           <div className="captured-note-contact-row captured-note-field">
-                            <span className="captured-note-contact-icon" aria-hidden="true">{"\u260E\uFE0F"}</span>
-                            <span className="captured-note-contact-icon" aria-hidden="true">{"\u260E\uFE0F"}</span>
+                            <span className="captured-note-contact-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.86 19.86 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.86 19.86 0 0 1 2.09 4.18 2 2 0 0 1 4.08 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.79.61 2.64a2 2 0 0 1-.45 2.11L8 9.91a16 16 0 0 0 6 6l1.44-1.24a2 2 0 0 1 2.11-.45c.85.28 1.74.49 2.64.61A2 2 0 0 1 22 16.92z"/></svg></span>
                             <span className="captured-note-field-value">{item.phone || item.phoneNumber || "NA"}</span>
                           </div>
                           <div className="captured-note-contact-row captured-note-field">
-                            <span className="captured-note-contact-icon" aria-hidden="true">{"\u{1F516}"}</span>
+                            <span className="captured-note-contact-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12V7a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v12l7-4 7 4v-7"/></svg></span>
                             <span className="captured-note-field-label">Source</span>
                             <span className="captured-note-field-value">{item.sourcePlatform || "NA"}</span>
                           </div>
@@ -25699,17 +25741,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <div className="captured-note-col captured-note-col--ownership">
                         <div className="captured-note-detail-list">
                           <div className="captured-note-contact-row captured-note-field">
-                            <span className="captured-note-contact-icon" aria-hidden="true">{"\u{1F464}"}</span>
+                            <span className="captured-note-contact-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c2-4 6-6 8-6s6 2 8 6"/></svg></span>
                             <span className="captured-note-field-label">Assigned to</span>
                             <span className="captured-note-field-value">{item.assignedToName || "NA"}</span>
                           </div>
                           <div className="captured-note-contact-row captured-note-field">
-                            <span className="captured-note-contact-icon" aria-hidden="true">{"\u{1F5D3}\uFE0F"}</span>
+                            <span className="captured-note-contact-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></span>
                             <span className="captured-note-field-label">Updated at</span>
                             <span className="captured-note-field-value">{formatAppliedPlacardDateTime(item.updatedAt || item.updated_at || item.assignedAt || item.assigned_at || item.createdAt || item.created_at)}</span>
                           </div>
                           <div className="captured-note-contact-row captured-note-field">
-                            <span className="captured-note-contact-icon" aria-hidden="true">{"\u{1F5D3}\uFE0F"}</span>
+                            <span className="captured-note-contact-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></span>
                             <span className="captured-note-field-label">Applied at</span>
                             <span className="captured-note-field-value">{formatAppliedPlacardDateTime(item.createdAt || item.created_at || item.appliedAt || item.applied_at)}</span>
                           </div>
