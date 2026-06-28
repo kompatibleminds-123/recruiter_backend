@@ -28047,55 +28047,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </div>
                 </Section>
 
-                <Section kicker="Job" title="Job-Specific Shortcuts" className="shortcuts-section shortcuts-section--job">
-                  <p className="muted">Tied to the selected JD. Private to the recruiter.</p>
-                  <div className="form-grid two-col">
-                    <label>
-                      <span>Select JD</span>
-                      <select value={shortcutJobId} onChange={(e) => setShortcutJobId(e.target.value)}>
-                        <option value="">Select JD / role</option>
-                        {shortcutJobOptions.map((job) => <option key={job.id} value={job.id}>{job.title}{job.clientName ? ` (${job.clientName})` : ""}</option>)}
-                      </select>
-                    </label>
-                    <label className="shortcuts-key-field">
-                      <span>Shortcut key</span>
-                      <input value={shortcutJobKey} onChange={(e) => setShortcutJobKey(e.target.value)} placeholder="/interview" />
-                    </label>
-                    <label className="full">
-                      <span>Template text</span>
-                      <textarea ref={jobTemplateTextareaRef} value={shortcutJobValue} onChange={(e) => setShortcutJobValue(e.target.value)} rows={4} />
-                      <span className="field-help">Click placeholders to insert:</span>
-                      <div className="placeholder-selector">
-                        {SHORTCUT_TEMPLATE_PLACEHOLDERS.map((token) => (
-                          <button key={`job-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(jobTemplateTextareaRef, shortcutJobValue, setShortcutJobValue, token)}>{token}</button>
-                        ))}
-                      </div>
-                    </label>
-                  </div>
-                  <div className="button-row">
-                    <button onClick={() => void saveJobShortcutTemplate()}>{normalizeShortcutKey(shortcutJobKey) ? "Save job shortcut" : "Add job shortcut"}</button>
-                  </div>
-                  <div className="stack-list compact">
-                    {Object.entries(selectedShortcutJobMap || {}).length ? (
-                      Object.entries(selectedShortcutJobMap || {})
-                        .sort(([a], [b]) => String(a || "").localeCompare(String(b || "")))
-                        .map(([key, value]) => (
-                          <article className="item-card compact-card" key={`job-${selectedShortcutJob?.id || "none"}-${key}`}>
-                            <div className="item-card__top compact-top">
-                              <strong>{formatShortcutLabel(key)}</strong>
-                              <div className="button-row tight">
-                                <button className="ghost-btn" onClick={() => { setShortcutJobKey(String(key || "")); setShortcutJobValue(String(value || "")); }}>Edit</button>
-                                <button className="ghost-btn" onClick={() => void copyShortcutTemplateWithValues(String(key || ""), String(value || ""), selectedShortcutJob)}>Copy</button>
-                                <button className="ghost-btn" onClick={() => void deleteJobShortcutTemplate(String(key || ""))}>Delete</button>
-                              </div>
-                            </div>
-                            <div className="candidate-snippet no-top-border">{String(value || "")}</div>
-                          </article>
-                        ))
-                    ) : <div className="empty-state">{shortcutJobId ? "No job-specific shortcuts yet." : "Select JD to view shortcuts."}</div>}
-                  </div>
-                </Section>
-
                 <Section kicker="Company" title="Company Shortcuts" className="shortcuts-section shortcuts-section--company">
                   <p className="muted">Shared across the workspace for everyone on the team.</p>
                   {!isSettingsAdmin ? <p className="muted">Read-only for recruiters. Admin-defined shortcuts appear automatically in your template pickers.</p> : null}
