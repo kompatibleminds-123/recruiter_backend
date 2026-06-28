@@ -2983,18 +2983,29 @@ function applyCandidateChange(candidate = {}, resolved = {}, source = "MUTATION_
     user = null
   } = context && typeof context === "object" ? context : {};
   const currentApplicantUser = applicantUser || user || null;
-  const nextResolved = resolved && typeof resolved === "object" ? resolved : resolveCandidateBucket(safeCandidate, source);
+  const existingApplicantRow = (Array.isArray(currentState?.applicantListItems) ? currentState.applicantListItems : []).find((item) => String(item?.id || "").trim() === candidateId)
+    || (Array.isArray(currentState?.applicants) ? currentState.applicants : []).find((item) => String(item?.id || "").trim() === candidateId)
+    || null;
+  const existingCapturedRow = (Array.isArray(currentState?.candidates) ? currentState.candidates : []).find((item) => String(item?.id || "").trim() === candidateId)
+    || (Array.isArray(currentState?.databaseCandidates) ? currentState.databaseCandidates : []).find((item) => String(item?.id || "").trim() === candidateId)
+    || null;
+  const mergedCandidate = normalizeApplicantVisibleRow({
+    ...(existingCapturedRow || {}),
+    ...(existingApplicantRow || {}),
+    ...safeCandidate
+  });
+  const nextResolved = resolved && typeof resolved === "object" ? resolved : resolveCandidateBucket(mergedCandidate, source);
   const normalizedBucket = String(nextResolved?.bucket || "").trim().toLowerCase() || "captured";
   const isCapturedBucket = normalizedBucket === "captured";
   const isApplicantBucket = normalizedBucket === "applicants";
-  const isVisibleInCaptured = isCapturedBucket && isCapturedRowVisibleInCurrentView(safeCandidate, currentCandidateFiltersApplied, currentApplicantUser);
-  const isVisibleInApplicants = isApplicantBucket && isApplicantRowVisibleInCurrentView(safeCandidate, currentApplicantFiltersApplied, currentApplicantUser, safeCandidate, null);
-  const updatedAt = String(safeCandidate?.updated_at || safeCandidate?.updatedAt || new Date().toISOString()).trim() || new Date().toISOString();
+  const isVisibleInCaptured = isCapturedBucket && isCapturedRowVisibleInCurrentView(mergedCandidate, currentCandidateFiltersApplied, currentApplicantUser);
+  const isVisibleInApplicants = isApplicantBucket && isApplicantRowVisibleInCurrentView(mergedCandidate, currentApplicantFiltersApplied, currentApplicantUser, mergedCandidate, null);
+  const updatedAt = String(mergedCandidate?.updated_at || mergedCandidate?.updatedAt || new Date().toISOString()).trim() || new Date().toISOString();
   const patchRow = (item) => {
     if (!item || String(item?.id || "").trim() !== candidateId) return item;
     const nextItem = {
       ...item,
-      ...safeCandidate,
+      ...mergedCandidate,
       updated_at: updatedAt,
       updatedAt
     };
@@ -3011,14 +3022,14 @@ function applyCandidateChange(candidate = {}, resolved = {}, source = "MUTATION_
   const patchVisibleList = (items, keepVisible, sortFn) => {
     const currentItems = Array.isArray(items) ? items : [];
     const nextItems = keepVisible
-      ? upsertCandidatesById(currentItems, [patchRow(safeCandidate)])
+      ? upsertCandidatesById(currentItems, [patchRow(mergedCandidate)])
       : removeCandidatesById(currentItems, [candidateId]);
     return keepVisible ? sortFn(nextItems) : nextItems;
   };
   if (typeof setCurrentState === "function") setCurrentState((current) => ({
     ...current,
-    candidates: upsertCandidatesById(current.candidates, [patchRow(safeCandidate)]),
-    databaseCandidates: upsertCandidatesById(current.databaseCandidates, [patchRow(safeCandidate)]),
+    candidates: upsertCandidatesById(current.candidates, [patchRow(mergedCandidate)]),
+    databaseCandidates: upsertCandidatesById(current.databaseCandidates, [patchRow(mergedCandidate)]),
     applicants: patchVisibleList(current.applicants, isVisibleInApplicants, (items) => sortApplicantsForList(items, currentApplicantSortBy)),
     applicantListItems: patchVisibleList(current.applicantListItems, isVisibleInApplicants, (items) => sortApplicantsForList(items, currentApplicantSortBy))
   }));
@@ -3029,9 +3040,9 @@ function applyCandidateChange(candidate = {}, resolved = {}, source = "MUTATION_
       candidateId,
       resolvedBucket: normalizedBucket,
       appliedToo: Boolean(nextResolved?.appliedToo),
-      applicationSource: String(safeCandidate?.application_source || safeCandidate?.applicationSource || safeCandidate?.sourcePlatform || safeCandidate?.source || "").trim(),
-      originalOwnerId: String(safeCandidate?.recruiter_id || safeCandidate?.assigned_to_user_id || safeCandidate?.assignedToUserId || "").trim(),
-      applicationAssignedToUserId: String(safeCandidate?.applyAssignedToUserId || safeCandidate?.apply_assigned_to_user_id || safeCandidate?.assigned_to_user_id || "").trim(),
+      applicationSource: String(mergedCandidate?.application_source || mergedCandidate?.applicationSource || mergedCandidate?.sourcePlatform || mergedCandidate?.source || "").trim(),
+      originalOwnerId: String(mergedCandidate?.recruiter_id || mergedCandidate?.assigned_to_user_id || mergedCandidate?.assignedToUserId || "").trim(),
+      applicationAssignedToUserId: String(mergedCandidate?.applyAssignedToUserId || mergedCandidate?.apply_assigned_to_user_id || mergedCandidate?.assigned_to_user_id || "").trim(),
       insertedNewApplicant: isApplicantBucket,
       updatedExistingCaptured: isCapturedBucket
     });
