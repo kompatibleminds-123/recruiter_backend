@@ -4532,15 +4532,32 @@ function buildReasonOfChangeForExport(item = {}) {
 }
 
 function parsePresetColumns(columnsText = "") {
-  return String(columnsText || "")
+  const rawText = String(columnsText || "").trim();
+  if (!rawText) return [];
+  const lines = rawText
     .split(/\r?\n/)
     .map((line) => String(line || "").trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [header, field] = line.split("|");
-      return { header: String(header || "").trim(), field: String(field || "").trim() };
-    })
-    .filter((item) => item.header && item.field);
+    .filter(Boolean);
+  if (lines.length > 1) {
+    return lines
+      .map((line) => {
+        const [header, field] = line.split("|");
+        return { header: String(header || "").trim(), field: String(field || "").trim() };
+      })
+      .filter((item) => item.header && item.field);
+  }
+  const singleLine = lines[0] || "";
+  const matches = Array.from(singleLine.matchAll(/(.*?)\|([a-z0-9_+]+)(?=\s+[^\s|][^|]*\|[a-z0-9_+]+|$)/gi));
+  if (matches.length > 1) {
+    return matches
+      .map((match) => ({
+        header: String(match?.[1] || "").trim(),
+        field: String(match?.[2] || "").trim()
+      }))
+      .filter((item) => item.header && item.field);
+  }
+  const [header, field] = singleLine.split("|");
+  return [{ header: String(header || "").trim(), field: String(field || "").trim() }].filter((item) => item.header && item.field);
 }
 
 function presetColumnsToIndicators(columnsText = "") {
@@ -9684,6 +9701,10 @@ function PortalApp({ token, onLogout }) {
         aboutCompany: String(item?.aboutCompany || item?.about_company || "").trim(),
         publicCompanyLine: String(item?.publicCompanyLine || item?.public_company_line || "").trim(),
         publicPostingTitle: String(item?.publicPostingTitle || item?.public_posting_title || item?.publicTitle || item?.public_title || "").trim(),
+        presetLabel: String(item?.presetLabel || item?.preset_label || "").trim(),
+        presetColumns: String(item?.presetColumns || item?.preset_columns || "").trim(),
+        presetUpdatedAt: String(item?.presetUpdatedAt || item?.preset_updated_at || "").trim(),
+        presetUpdatedBy: String(item?.presetUpdatedBy || item?.preset_updated_by || "").trim(),
         createdAt: String(item?.createdAt || item?.created_at || "").trim(),
         updatedAt: String(item?.updatedAt || item?.updated_at || "").trim(),
         updatedBy: String(item?.updatedBy || item?.updated_by || "").trim()
@@ -9721,6 +9742,10 @@ function PortalApp({ token, onLogout }) {
           aboutCompany: item.aboutCompany || existing.aboutCompany || "",
           publicCompanyLine: item.publicCompanyLine || existing.publicCompanyLine || "",
           publicPostingTitle: item.publicPostingTitle || existing.publicPostingTitle || "",
+          presetLabel: item.presetLabel || existing.presetLabel || "",
+          presetColumns: item.presetColumns || existing.presetColumns || "",
+          presetUpdatedAt: item.presetUpdatedAt || existing.presetUpdatedAt || "",
+          presetUpdatedBy: item.presetUpdatedBy || existing.presetUpdatedBy || "",
           createdAt: existing.createdAt || item.createdAt || "",
           updatedAt: item.updatedAt || existing.updatedAt || "",
           updatedBy: item.updatedBy || existing.updatedBy || ""
@@ -29148,7 +29173,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <div className="settings-subsection preset-edit-shell">
                     <div className="section-kicker">Edit Existing Presets</div>
                     <p className="muted">Edit any existing candidate tracker preset, attach it to a specific client if needed, and save shared usage defaults.</p>
-                    <p className="muted">Advanced mode also works: you can directly type one-line `Label|field` rows in the generated columns box.</p>
                     <div className="form-grid">
                       <label>
                         <span>Select preset to edit</span>
@@ -29255,18 +29279,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           {canEditSelectedPreset ? <div className="button-row align-end"><button className="ghost-btn" onClick={addEditMixedIndicator}>Add mixed indicator</button></div> : null}
                         </div>
                       </div>
-                      <label className="full">
-                        <span>{isSettingsAdmin ? "Generated preset columns (advanced view)" : "Selected preset columns"}</span>
-                        <textarea
-                          className="preset-editor"
-                          disabled={!canEditSelectedPreset}
-                          value={selectedPresetColumns}
-                          onChange={(e) => updateSelectedPresetColumns(e.target.value)}
-                          placeholder={"S.No.|s_no\nName|name\nStatus|assessment_status"}
-                          rows={10}
-                          spellCheck={false}
-                        />
-                      </label>
                       <label className="full">
                         <span>WhatsApp template</span>
                         <textarea disabled={!isSettingsAdmin} value={copySettings.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, whatsappTemplate: e.target.value }))} />
@@ -29387,7 +29399,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           {isSettingsAdmin ? <div className="button-row align-end"><button className="ghost-btn" onClick={addMixedIndicator}>Add mixed indicator</button></div> : null}
                         </div>
                       </div>
-                      <label className="full"><span>Generated preset columns (advanced view)</span><textarea disabled={!isSettingsAdmin} value={newPresetDraft.columns} onChange={(e) => setNewPresetDraft((current) => ({ ...current, columns: e.target.value }))} placeholder={"S.No.|s_no\nName|name\nStatus|assessment_status"} /></label>
                     </div>
                     {isSettingsAdmin ? <div className="button-row">
                       <button className="ghost-btn" onClick={addCustomPreset}>Create preset</button>
