@@ -879,6 +879,9 @@ function sanitizeSharedExportPresetSettings(raw) {
     source.companyWideShortcuts && typeof source.companyWideShortcuts === "object"
       ? source.companyWideShortcuts
       : {};
+  const rawDeletedSuggestedShortcuts = Array.isArray(source.deletedSuggestedShortcuts)
+    ? source.deletedSuggestedShortcuts
+    : [];
   const rawJobApplyFields = Array.isArray(source.jobApplyFields) ? source.jobApplyFields : [];
   const rawSheetImportMappingsByUser =
     source.sheetImportMappingsByUser && typeof source.sheetImportMappingsByUser === "object"
@@ -947,6 +950,11 @@ function sanitizeSharedExportPresetSettings(raw) {
     if (Object.keys(normalized).length) personalShortcutsByUser[safeUserId] = normalized;
   });
   const companyWideShortcuts = normalizeShortcutMap(rawCompanyWideShortcuts);
+  const deletedSuggestedShortcuts = rawDeletedSuggestedShortcuts
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .map((item) => item.startsWith("/") ? item : `/${item}`)
+    .filter((item, index, arr) => arr.indexOf(item) === index);
   const sheetImportMappingsByUser = {};
   Object.entries(rawSheetImportMappingsByUser).forEach(([userId, signatures]) => {
     const safeUserId = String(userId || "").trim();
@@ -1100,6 +1108,7 @@ function sanitizeSharedExportPresetSettings(raw) {
     sheetImportLearnedAliases,
     recruiterCampaignTemplatesByUser,
     companyWideShortcuts,
+    deletedSuggestedShortcuts,
     personalShortcutsByUser,
     clientDirectory: sanitizeClientDirectoryList(rawClientDirectory),
     updatedAt: String(source.updatedAt || "").trim(),
@@ -1183,6 +1192,11 @@ async function resolveSuggestedGlobalSourceCompanyId() {
 function mergeSuggestedAndCompanySettings(globalSettings = {}, companySettings = {}) {
   const globalSafe = sanitizeSharedExportPresetSettings(globalSettings || {});
   const companySafe = sanitizeSharedExportPresetSettings(companySettings || {});
+  const deletedSuggestedShortcutSet = new Set(
+    (Array.isArray(companySafe.deletedSuggestedShortcuts) ? companySafe.deletedSuggestedShortcuts : [])
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)
+  );
   const mergedCustomById = new Map();
   (globalSafe.customExportPresets || []).forEach((item) => {
     const id = String(item?.id || "").trim();
@@ -1193,6 +1207,13 @@ function mergeSuggestedAndCompanySettings(globalSettings = {}, companySettings =
     const id = String(item?.id || "").trim();
     if (!id) return;
     mergedCustomById.set(id, { ...item, scope: item?.scope || "company_local" });
+  });
+  const mergedCompanyWideShortcuts = {
+    ...(globalSafe.companyWideShortcuts || {}),
+    ...(companySafe.companyWideShortcuts || {})
+  };
+  deletedSuggestedShortcutSet.forEach((key) => {
+    delete mergedCompanyWideShortcuts[key];
   });
   return sanitizeSharedExportPresetSettings({
     ...globalSafe,
@@ -1205,10 +1226,7 @@ function mergeSuggestedAndCompanySettings(globalSettings = {}, companySettings =
       ...(globalSafe.exportPresetColumns || {}),
       ...(companySafe.exportPresetColumns || {})
     },
-    companyWideShortcuts: {
-      ...(globalSafe.companyWideShortcuts || {}),
-      ...(companySafe.companyWideShortcuts || {})
-    },
+    companyWideShortcuts: mergedCompanyWideShortcuts,
     customExportPresets: Array.from(mergedCustomById.values())
   });
 }

@@ -11101,8 +11101,16 @@ function PortalApp({ token, onLogout }) {
     const sourceMap = sourceSettings?.companyWideShortcuts && typeof sourceSettings.companyWideShortcuts === "object"
       ? sourceSettings.companyWideShortcuts
       : {};
+    const deletedSuggestedShortcutSet = new Set(
+      (Array.isArray(sourceSettings?.deletedSuggestedShortcuts) ? sourceSettings.deletedSuggestedShortcuts : [])
+        .map((item) => normalizeShortcutKey(item))
+        .filter(Boolean)
+    );
     const normalizedMap = normalizeShortcutMapKeys(sourceMap);
     const next = { ...normalizedMap };
+    deletedSuggestedShortcutSet.forEach((key) => {
+      delete next[key];
+    });
     if (includeLinkedin) {
       const connectedExists = Object.keys(next).some((key) => normalizeShortcutKeyLower(key) === LINKEDIN_CONNECTED_SHORTCUT_KEY.toLowerCase());
       const requestExists = Object.keys(next).some((key) => normalizeShortcutKeyLower(key) === LINKEDIN_REQUEST_SHORTCUT_KEY.toLowerCase());
@@ -22838,17 +22846,23 @@ function PortalApp({ token, onLogout }) {
         ? currentSharedSettings.companyWideShortcuts
         : {}
     );
+    const previousDeletedSuggested = Array.isArray(currentSharedSettings?.deletedSuggestedShortcuts)
+      ? currentSharedSettings.deletedSuggestedShortcuts
+      : [];
     const linkedinMeta = getLinkedinShortcutMeta(key);
     const nextShortcuts = { ...previousShortcuts, [linkedinMeta?.key || key]: value };
+    const nextDeletedSuggested = previousDeletedSuggested.filter((item) => normalizeShortcutKey(item) !== (linkedinMeta?.key || key));
     const optimisticSettings = {
       ...currentSharedSettings,
       companyWideShortcuts: nextShortcuts,
+      deletedSuggestedShortcuts: nextDeletedSuggested,
       ...(linkedinMeta?.mode === "connected" ? { linkedinConnectedTemplate: value } : {}),
       ...(linkedinMeta?.mode === "request" ? { linkedinConnectionRequestTemplate: value } : {})
     };
     setCopySettings((current) => ({
       ...current,
       companyWideShortcuts: nextShortcuts,
+      deletedSuggestedShortcuts: nextDeletedSuggested,
       ...(linkedinMeta?.mode === "connected" ? { linkedinConnectedTemplate: value } : {}),
       ...(linkedinMeta?.mode === "request" ? { linkedinConnectionRequestTemplate: value } : {})
     }));
@@ -22864,6 +22878,7 @@ function PortalApp({ token, onLogout }) {
       setCopySettings((current) => ({
         ...current,
         companyWideShortcuts: previousShortcuts,
+        deletedSuggestedShortcuts: previousDeletedSuggested,
         ...(linkedinMeta?.mode === "connected" ? { linkedinConnectedTemplate: copySettings?.linkedinConnectedTemplate || DEFAULT_COPY_SETTINGS.linkedinConnectedTemplate || "" } : {}),
         ...(linkedinMeta?.mode === "request" ? { linkedinConnectionRequestTemplate: copySettings?.linkedinConnectionRequestTemplate || DEFAULT_COPY_SETTINGS.linkedinConnectionRequestTemplate || "" } : {})
       }));
@@ -22893,10 +22908,14 @@ function PortalApp({ token, onLogout }) {
         ? currentSharedSettings.companyWideShortcuts
         : {}
     );
+    const previousDeletedSuggested = Array.isArray(currentSharedSettings?.deletedSuggestedShortcuts)
+      ? currentSharedSettings.deletedSuggestedShortcuts
+      : [];
     const nextShortcuts = { ...previousShortcuts };
     delete nextShortcuts[normalized];
-    const optimisticSettings = { ...currentSharedSettings, companyWideShortcuts: nextShortcuts };
-    setCopySettings((current) => ({ ...current, companyWideShortcuts: nextShortcuts }));
+    const nextDeletedSuggested = Array.from(new Set([...previousDeletedSuggested, normalized]));
+    const optimisticSettings = { ...currentSharedSettings, companyWideShortcuts: nextShortcuts, deletedSuggestedShortcuts: nextDeletedSuggested };
+    setCopySettings((current) => ({ ...current, companyWideShortcuts: nextShortcuts, deletedSuggestedShortcuts: nextDeletedSuggested }));
     setStatus("shortcuts", `Deleting company shortcut ${formatShortcutLabel(normalized)}...`, "info");
     try {
       const payload = optimisticSettings;
@@ -22904,7 +22923,7 @@ function PortalApp({ token, onLogout }) {
       setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
       setStatus("shortcuts", `Deleted company shortcut ${formatShortcutLabel(normalized)}.`, "ok");
     } catch (error) {
-      setCopySettings((current) => ({ ...current, companyWideShortcuts: previousShortcuts }));
+      setCopySettings((current) => ({ ...current, companyWideShortcuts: previousShortcuts, deletedSuggestedShortcuts: previousDeletedSuggested }));
       setStatus("shortcuts", String(error?.message || error), "error");
     }
   }
