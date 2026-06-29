@@ -1206,6 +1206,7 @@ function mergeSuggestedAndCompanySettings(globalSettings = {}, companySettings =
       ...(companySafe.exportPresetColumns || {})
     },
     companyWideShortcuts: {
+      ...(globalSafe.companyWideShortcuts || {}),
       ...(companySafe.companyWideShortcuts || {})
     },
     customExportPresets: Array.from(mergedCustomById.values())

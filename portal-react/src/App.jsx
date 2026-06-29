@@ -22854,15 +22854,19 @@ function PortalApp({ token, onLogout }) {
       setStatus("shortcuts", "Enter company shortcut key and template text.", "error");
       return;
     }
+    const latestSharedSettings = await api("/company/shared-export-presets", token).catch(() => null);
+    const currentSharedSettings = latestSharedSettings && typeof latestSharedSettings === "object"
+      ? { ...copySettings, ...latestSharedSettings }
+      : copySettings;
     const previousShortcuts = normalizeShortcutMapKeys(
-      copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
-        ? copySettings.companyWideShortcuts
+      currentSharedSettings?.companyWideShortcuts && typeof currentSharedSettings.companyWideShortcuts === "object"
+        ? currentSharedSettings.companyWideShortcuts
         : {}
     );
     const linkedinMeta = getLinkedinShortcutMeta(key);
     const nextShortcuts = { ...previousShortcuts, [linkedinMeta?.key || key]: value };
     const optimisticSettings = {
-      ...copySettings,
+      ...currentSharedSettings,
       companyWideShortcuts: nextShortcuts,
       ...(linkedinMeta?.mode === "connected" ? { linkedinConnectedTemplate: value } : {}),
       ...(linkedinMeta?.mode === "request" ? { linkedinConnectionRequestTemplate: value } : {})
@@ -22905,14 +22909,18 @@ function PortalApp({ token, onLogout }) {
       setStatus("shortcuts", "LinkedIn shared templates should be edited, not deleted.", "error");
       return;
     }
+    const latestSharedSettings = await api("/company/shared-export-presets", token).catch(() => null);
+    const currentSharedSettings = latestSharedSettings && typeof latestSharedSettings === "object"
+      ? { ...copySettings, ...latestSharedSettings }
+      : copySettings;
     const previousShortcuts = normalizeShortcutMapKeys(
-      copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
-        ? copySettings.companyWideShortcuts
+      currentSharedSettings?.companyWideShortcuts && typeof currentSharedSettings.companyWideShortcuts === "object"
+        ? currentSharedSettings.companyWideShortcuts
         : {}
     );
     const nextShortcuts = { ...previousShortcuts };
     delete nextShortcuts[normalized];
-    const optimisticSettings = { ...copySettings, companyWideShortcuts: nextShortcuts };
+    const optimisticSettings = { ...currentSharedSettings, companyWideShortcuts: nextShortcuts };
     setCopySettings((current) => ({ ...current, companyWideShortcuts: nextShortcuts }));
     setStatus("shortcuts", `Deleting company shortcut ${formatShortcutLabel(normalized)}...`, "info");
     try {
