@@ -387,17 +387,17 @@ function migrateCopySettings(settings = {}) {
 	    if (didChange) presetColumns.attentive_tracker = cleanedLines.join("\n");
   }
   // Auto-clean known mojibake from persisted templates/labels so symbols do not reappear.
-  next.whatsappTemplate = normalizeMojibakeSymbols(next.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate || "");
-  next.linkedinConnectedTemplate = normalizeMojibakeSymbols(next.linkedinConnectedTemplate || DEFAULT_COPY_SETTINGS.linkedinConnectedTemplate || "");
-  next.linkedinConnectionRequestTemplate = normalizeMojibakeSymbols(next.linkedinConnectionRequestTemplate || DEFAULT_COPY_SETTINGS.linkedinConnectionRequestTemplate || "");
-  next.emailTemplate = normalizeMojibakeSymbols(next.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate || "");
+  next.whatsappTemplate = normalizeTemplateFormatting(next.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate || "");
+  next.linkedinConnectedTemplate = normalizeTemplateFormatting(next.linkedinConnectedTemplate || DEFAULT_COPY_SETTINGS.linkedinConnectedTemplate || "");
+  next.linkedinConnectionRequestTemplate = normalizeTemplateFormatting(next.linkedinConnectionRequestTemplate || DEFAULT_COPY_SETTINGS.linkedinConnectionRequestTemplate || "");
+  next.emailTemplate = normalizeTemplateFormatting(next.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate || "");
   next.bulkMailSubjectTemplate = normalizeMojibakeSymbols(next.bulkMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkMailSubjectTemplate || "");
-  next.bulkMailBodyTemplate = normalizeMojibakeSymbols(next.bulkMailBodyTemplate || DEFAULT_COPY_SETTINGS.bulkMailBodyTemplate || "");
-  next.clientShareIntroTemplate = normalizeMojibakeSymbols(next.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "");
-  next.clientShareThreadIntroTemplate = normalizeMojibakeSymbols(next.clientShareThreadIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareThreadIntroTemplate || "");
+  next.bulkMailBodyTemplate = normalizeTemplateFormatting(next.bulkMailBodyTemplate || DEFAULT_COPY_SETTINGS.bulkMailBodyTemplate || "");
+  next.clientShareIntroTemplate = normalizeTemplateFormatting(next.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "");
+  next.clientShareThreadIntroTemplate = normalizeTemplateFormatting(next.clientShareThreadIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareThreadIntroTemplate || "");
   next.clientShareSubjectTemplate = normalizeMojibakeSymbols(next.clientShareSubjectTemplate || DEFAULT_COPY_SETTINGS.clientShareSubjectTemplate || "");
-  next.clientShareSignatureText = normalizeMojibakeSymbols(next.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || "");
-  next.jdEmailSubjectTemplate = normalizeMojibakeSymbols(next.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate || "");
+  next.clientShareSignatureText = normalizeTemplateFormatting(next.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || "");
+  next.jdEmailSubjectTemplate = normalizeTemplateFormatting(next.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate || "");
   next.jdEmailIntroTemplate = normalizeMojibakeSymbols(next.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate || "");
   next.clientShareSignatureLinkLabel = normalizeMojibakeSymbols(next.clientShareSignatureLinkLabel || "");
   next.clientShareSignatureLinkLabel2 = normalizeMojibakeSymbols(next.clientShareSignatureLinkLabel2 || "");
@@ -522,14 +522,19 @@ const SHORTCUT_TEMPLATE_PLACEHOLDERS = [
   "{{recruiter_name}}",
   "{{recruiter_email}}",
   "{{recruiter_phone}}",
+  "{{logged_in_recruiter_name}}",
+  "{{logged_in_recruiter_email}}",
+  "{{logged_in_recruiter_phone}}",
   "{{interview_at}}",
   "{{jd_title}}",
   "{{client_name}}",
+  "{{anonymous_client_name}}",
   "{{company_name}}",
   "{{phone}}",
   "{{email}}",
   "{{jd_link}}",
-  "{{recruiter_jd_link}}"
+  "{{recruiter_jd_link}}",
+  "{{anonymous_jd_link}}"
 ];
 
 const CLIENT_SHARE_TEMPLATE_PLACEHOLDERS = [
@@ -1091,8 +1096,8 @@ function normalizeShortcutMapKeys(map = {}) {
   const next = {};
   Object.entries(source).forEach(([rawKey, rawValue]) => {
     const key = normalizeShortcutKey(rawKey);
-    const value = String(rawValue || "").trim();
-    if (!key || !value) return;
+    const value = normalizeTemplateFormatting(rawValue);
+    if (!key || !value.trim()) return;
     next[key] = value;
   });
   return next;
@@ -2124,6 +2129,14 @@ function normalizeMojibakeSymbols(text) {
     .replace(/[\uFFFD]/g, "")
     .replace(/\s{2,}/g, " ")
     .trim();
+}
+
+function normalizeTemplateFormatting(text) {
+  return String(text ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\u00a0/g, " ")
+    .replace(/[\u2022\u2023\u25AA\u25FC\u25A0\u25CF]/g, "\u2022")
+    .replace(/[\uFFFD]/g, "");
 }
 
 
@@ -3976,11 +3989,16 @@ function fillCandidateTemplate(template, candidate) {
     recruiter_name: source.recruiter_name || source.recruiterName || "",
     recruiter_email: source.recruiter_email || source.recruiterEmail || "",
     recruiter_phone: source.recruiter_phone || source.recruiterPhone || source.recruiter_mobile || source.recruiterMobile || "",
+    logged_in_recruiter_name: source.logged_in_recruiter_name || source.loggedInRecruiterName || "",
+    logged_in_recruiter_email: source.logged_in_recruiter_email || source.loggedInRecruiterEmail || "",
+    logged_in_recruiter_phone: source.logged_in_recruiter_phone || source.loggedInRecruiterPhone || "",
     interview_at: formatDateForCopy(source.interview_at || source.interviewAt || ""),
     client_name: source.client_name || source.clientName || "",
+    anonymous_client_name: source.anonymous_client_name || source.anonymousClientName || source.client_name || source.clientName || "",
     company_name: source.company_name || source.companyName || "",
     jd_link: source.jd_link || source.jdLink || "",
-    recruiter_jd_link: source.recruiter_jd_link || source.recruiterJdLink || source.jd_link || source.jdLink || ""
+    recruiter_jd_link: source.recruiter_jd_link || source.recruiterJdLink || source.jd_link || source.jdLink || "",
+    anonymous_jd_link: source.anonymous_jd_link || source.anonymousJdLink || source.jd_link || source.jdLink || ""
   };
   return String(template || "").replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_, key) => String(map[key] || ""));
 }
@@ -10339,6 +10357,13 @@ function PortalApp({ token, onLogout }) {
   }, [location?.pathname]);
 
   useEffect(() => {
+    if (!token) return;
+    if (location?.pathname !== "/client-share") return;
+    if (sharedExportPresetsHydratedRef.current) return;
+    void syncSharedSettingsFromServer().catch(() => null);
+  }, [token, location?.pathname]);
+
+  useEffect(() => {
     if (!openAssessmentMoreId) return;
     const handleDocumentClick = (event) => {
       const root = assessmentMoreMenuRef.current;
@@ -11315,11 +11340,28 @@ function PortalApp({ token, onLogout }) {
 
   function enrichTemplateRowWithRecruiter(row = {}) {
     const recruiterContext = getTemplateRecruiterContext(row);
+    const loggedInRecruiterName = String(state.user?.name || "").trim();
+    const loggedInRecruiterEmail = String(state.user?.email || "").trim();
+    const loggedInRecruiterPhone = String(
+      state.user?.phone
+      || state.user?.phoneNumber
+      || state.user?.mobile
+      || state.user?.mobileNumber
+      || ""
+    ).trim();
+    const anonymousClientName = String(row?.client_name || row?.clientName || "").trim();
+    const anonymousJdLink = String(row?.jd_link || row?.jdLink || "").trim()
+      || (resolveRowJobId(row) ? getApplyLink(resolveRowJobId(row)) : "");
     return {
       ...(row || {}),
       recruiter_name: recruiterContext.name || String(row?.recruiter_name || row?.recruiterName || "").trim(),
       recruiter_email: recruiterContext.email || String(row?.recruiter_email || row?.recruiterEmail || "").trim(),
-      recruiter_phone: recruiterContext.phone || String(row?.recruiter_phone || row?.recruiterPhone || row?.recruiter_mobile || row?.recruiterMobile || "").trim()
+      recruiter_phone: recruiterContext.phone || String(row?.recruiter_phone || row?.recruiterPhone || row?.recruiter_mobile || row?.recruiterMobile || "").trim(),
+      logged_in_recruiter_name: loggedInRecruiterName,
+      logged_in_recruiter_email: loggedInRecruiterEmail,
+      logged_in_recruiter_phone: loggedInRecruiterPhone,
+      anonymous_client_name: anonymousClientName,
+      anonymous_jd_link: anonymousJdLink
     };
   }
 
@@ -11363,7 +11405,7 @@ function PortalApp({ token, onLogout }) {
     const baseJdLink = resolvedJobId ? getApplyLink(resolvedJobId) : "";
     const recruiterJdLink = String(row?.recruiter_jd_link || row?.recruiterJdLink || "").trim() || baseJdLink;
     const recruiterContext = getTemplateRecruiterContext(row);
-    return fillCandidateTemplate(String(template || "").trim(), {
+    return fillCandidateTemplate(normalizeTemplateFormatting(template), {
       ...enrichTemplateRowWithRecruiter(row),
       index: 1,
       follow_up_at: formatDateForCopy(row?.follow_up_at || row?.next_follow_up_at || ""),
@@ -11526,8 +11568,8 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function applyWhatsappTemplatePickerSelection() {
-    const customText = String(whatsappTemplatePicker.customText || "").trim();
-    if (!customText) {
+    const customText = normalizeTemplateFormatting(whatsappTemplatePicker.customText || "");
+    if (!customText.trim()) {
       setStatus(whatsappTemplatePicker.statusKey || "workspace", "Template text is empty.", "error");
       return;
     }
@@ -11544,8 +11586,8 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function applyLinkedinTemplatePickerSelection() {
-    const customText = String(linkedinTemplatePicker.customText || "").trim();
-    if (!customText) {
+    const customText = normalizeTemplateFormatting(linkedinTemplatePicker.customText || "");
+    if (!customText.trim()) {
       setStatus(linkedinTemplatePicker.statusKey || "workspace", "Template text is empty.", "error");
       return;
     }
@@ -11568,8 +11610,8 @@ function PortalApp({ token, onLogout }) {
 
   async function saveWhatsappTemplateFromPicker() {
     const shortcutKey = normalizeShortcutKey(whatsappTemplatePicker.newShortcutKey);
-    const templateText = String(whatsappTemplatePicker.customText || "").trim();
-    if (!shortcutKey || !templateText) {
+    const templateText = normalizeTemplateFormatting(whatsappTemplatePicker.customText || "");
+    if (!shortcutKey || !templateText.trim()) {
       setStatus(whatsappTemplatePicker.statusKey || "workspace", "Add shortcut key and template text.", "error");
       return;
     }
@@ -22659,8 +22701,8 @@ function PortalApp({ token, onLogout }) {
 
   async function savePersonalShortcutTemplate() {
     const key = normalizeShortcutKey(shortcutPersonalKey);
-    const value = String(shortcutPersonalValue || "").trim();
-    if (!key || !value) {
+    const value = String(shortcutPersonalValue ?? "").replace(/\r\n/g, "\n");
+    if (!key || !value.trim()) {
       setStatus("shortcuts", "Enter personal shortcut key and template text.", "error");
       return;
     }
@@ -22711,12 +22753,12 @@ function PortalApp({ token, onLogout }) {
   async function saveJobShortcutTemplate() {
     const jobId = String(shortcutJobId || "").trim();
     const key = normalizeShortcutKey(shortcutJobKey);
-    const value = String(shortcutJobValue || "").trim();
+    const value = String(shortcutJobValue ?? "").replace(/\r\n/g, "\n");
     if (!jobId) {
       setStatus("shortcuts", "Select a JD first for job-specific shortcut.", "error");
       return;
     }
-    if (!key || !value) {
+    if (!key || !value.trim()) {
       setStatus("shortcuts", "Enter job shortcut key and template text.", "error");
       return;
     }
@@ -22832,8 +22874,8 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     const key = normalizeShortcutKey(shortcutCompanyKey);
-    const value = String(shortcutCompanyValue || "").trim();
-    if (!key || !value) {
+    const value = String(shortcutCompanyValue ?? "").replace(/\r\n/g, "\n");
+    if (!key || !value.trim()) {
       setStatus("shortcuts", "Enter company shortcut key and template text.", "error");
       return;
     }
@@ -23063,17 +23105,32 @@ function PortalApp({ token, onLogout }) {
     const job = jobOverride || selectedShortcutJob || null;
     const jobId = String(job?.id || "").trim();
     const recruiterName = String(state.user?.name || "").trim();
+    const recruiterEmail = String(state.user?.email || "").trim();
+    const recruiterPhone = String(
+      state.user?.phone
+      || state.user?.phoneNumber
+      || state.user?.mobile
+      || state.user?.mobileNumber
+      || ""
+    ).trim();
     const companyName = String(state.user?.companyName || "").trim();
     const jdTitle = String(job?.title || "").trim();
     const clientName = String(job?.clientName || "").trim();
     const jdLink = jobId ? getApplyLink(jobId) : "";
     return {
       recruiter_name: recruiterName,
+      recruiter_email: recruiterEmail,
+      recruiter_phone: recruiterPhone,
+      logged_in_recruiter_name: recruiterName,
+      logged_in_recruiter_email: recruiterEmail,
+      logged_in_recruiter_phone: recruiterPhone,
       company_name: companyName,
       jd_title: jdTitle,
       client_name: clientName,
+      anonymous_client_name: clientName,
       jd_link: jdLink,
-      recruiter_jd_link: jdLink
+      recruiter_jd_link: jdLink,
+      anonymous_jd_link: jdLink
     };
   }
 
@@ -29864,7 +29921,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             <label className="full">
               <span>Customize message</span>
               <textarea value={whatsappTemplatePicker.customText || ""} onChange={(e) => setWhatsappTemplatePicker((current) => ({ ...current, customText: e.target.value }))} />
-              <span className="field-help">Use placeholders like {`{{name}} {{recruiter_name}} {{recruiter_email}} {{recruiter_phone}} {{interview_at}} {{jd_title}} {{client_name}} {{company_name}} {{phone}} {{jd_link}} {{recruiter_jd_link}}`}</span>
+              <span className="field-help">Use placeholders like {`{{name}} {{recruiter_name}} {{recruiter_email}} {{recruiter_phone}} {{logged_in_recruiter_name}} {{logged_in_recruiter_email}} {{logged_in_recruiter_phone}} {{interview_at}} {{jd_title}} {{client_name}} {{anonymous_client_name}} {{company_name}} {{phone}} {{jd_link}} {{recruiter_jd_link}} {{anonymous_jd_link}}`}</span>
             </label>
             <div className="form-grid two-col">
               <label>
@@ -29976,7 +30033,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             <label className="full">
               <span>Customize message</span>
               <textarea value={linkedinTemplatePicker.customText || ""} onChange={(e) => setLinkedinTemplatePicker((current) => ({ ...current, customText: e.target.value }))} />
-              <span className="field-help">Use placeholders like {`{{name}} {{recruiter_name}} {{recruiter_email}} {{recruiter_phone}} {{interview_at}} {{jd_title}} {{client_name}} {{company_name}} {{phone}} {{jd_link}} {{recruiter_jd_link}}`}</span>
+              <span className="field-help">Use placeholders like {`{{name}} {{recruiter_name}} {{recruiter_email}} {{recruiter_phone}} {{logged_in_recruiter_name}} {{logged_in_recruiter_email}} {{logged_in_recruiter_phone}} {{interview_at}} {{jd_title}} {{client_name}} {{anonymous_client_name}} {{company_name}} {{phone}} {{jd_link}} {{recruiter_jd_link}} {{anonymous_jd_link}}`}</span>
             </label>
             <div className="button-row">
               <button className="ghost-btn" onClick={() => setLinkedinTemplatePicker({ open: false, options: [], selectedId: "", row: null, statusKey: "workspace", customText: "", linkedinUrl: "", outreachMode: "connected" })}>Cancel</button>

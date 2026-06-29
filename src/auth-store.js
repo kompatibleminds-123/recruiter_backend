@@ -935,10 +935,10 @@ function sanitizeSharedExportPresetSettings(raw) {
     const out = {};
     Object.entries(value).forEach(([key, template]) => {
       const safeKey = String(key || "").trim();
-      const safeTemplate = String(template || "").trim();
-      if (!safeKey || !safeTemplate) return;
+      const rawTemplate = String(template ?? "").replace(/\r\n/g, "\n");
+      if (!safeKey || !rawTemplate.trim()) return;
       const finalKey = safeKey.startsWith("/") ? safeKey : `/${safeKey}`;
-      out[finalKey] = safeTemplate;
+      out[finalKey] = rawTemplate;
     });
     return out;
   };
@@ -1121,10 +1121,10 @@ function sanitizeShortcutMapForPersistence(shortcuts) {
   const out = {};
   Object.entries(shortcuts).forEach(([key, template]) => {
     const safeKey = String(key || "").trim();
-    const safeTemplate = String(template || "").trim();
-    if (!safeKey || !safeTemplate) return;
+    const rawTemplate = String(template ?? "").replace(/\r\n/g, "\n");
+    if (!safeKey || !rawTemplate.trim()) return;
     const finalKey = safeKey.startsWith("/") ? safeKey : `/${safeKey}`;
-    out[finalKey] = safeTemplate;
+    out[finalKey] = rawTemplate;
   });
   return out;
 }
