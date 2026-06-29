@@ -1130,6 +1130,15 @@ function getLinkedinShortcutMeta(raw) {
   return null;
 }
 
+function getNonLinkedinShortcutEntries(map = {}) {
+  return Object.entries(normalizeShortcutMapKeys(map || {}))
+    .filter(([key, value]) => !isLinkedinShortcutKey(key) && String(value || "").trim());
+}
+
+function hasNonLinkedinShortcuts(map = {}) {
+  return getNonLinkedinShortcutEntries(map).length > 0;
+}
+
 function parseAmountToLpa(value) {
   const raw = String(value || "").trim().toLowerCase();
   if (!raw) return null;
@@ -9988,6 +9997,8 @@ function PortalApp({ token, onLogout }) {
 	const linkedinSideWindowRef = useRef(null);
   const linkedinCompanyShortcutSeedRef = useRef("");
   const sharedExportPresetsHydratedRef = useRef(false);
+  const shortcutLocalSnapshotRef = useRef({});
+  const shortcutRecoveryAttemptRef = useRef("");
   const archivedJobsLoadedRef = useRef(false);
   const archivedJobsLoadingRef = useRef(false);
   const [jobShortcutKey, setJobShortcutKey] = useState("");
@@ -10523,8 +10534,15 @@ function PortalApp({ token, onLogout }) {
       const saved = window.localStorage.getItem(key);
       const parsed = saved ? JSON.parse(saved) : {};
       if (parsed && typeof parsed === "object") delete parsed.interviewAiParsingEnabled;
+      shortcutLocalSnapshotRef.current =
+        parsed && typeof parsed === "object" && parsed.companyWideShortcuts && typeof parsed.companyWideShortcuts === "object"
+          ? normalizeShortcutMapKeys(parsed.companyWideShortcuts)
+          : {};
+      shortcutRecoveryAttemptRef.current = "";
       setCopySettings(migrateCopySettings(parsed || {}));
     } catch {
+      shortcutLocalSnapshotRef.current = {};
+      shortcutRecoveryAttemptRef.current = "";
       setCopySettings(migrateCopySettings({}));
     }
   }, [currentCompanyId]);
@@ -12145,9 +12163,52 @@ function PortalApp({ token, onLogout }) {
   }, [token, isSettingsAdmin, copySettings, location?.pathname]);
 
   useEffect(() => {
+    if (!token || !isSettingsAdmin) return;
+    const pathname = String(location?.pathname || "").trim();
+    if (pathname !== "/shortcuts") return;
+    if (!sharedExportPresetsHydratedRef.current) return;
+    const serverCompanyShortcuts = normalizeShortcutMapKeys(
+      copySettings?.companyWideShortcuts && typeof copySettings.companyWideShortcuts === "object"
+        ? copySettings.companyWideShortcuts
+        : {}
+    );
+    const localSnapshot = normalizeShortcutMapKeys(shortcutLocalSnapshotRef.current || {});
+    const recoveryKey = JSON.stringify({
+      companyId: String(currentCompanyId || "").trim(),
+      serverKeys: Object.keys(serverCompanyShortcuts).sort(),
+      localKeys: Object.keys(localSnapshot).sort()
+    });
+    if (shortcutRecoveryAttemptRef.current === recoveryKey) return;
+    shortcutRecoveryAttemptRef.current = recoveryKey;
+    if (hasNonLinkedinShortcuts(serverCompanyShortcuts)) return;
+    const localNonLinkedin = Object.fromEntries(getNonLinkedinShortcutEntries(localSnapshot));
+    if (!Object.keys(localNonLinkedin).length) return;
+    const mergedShortcuts = {
+      ...localNonLinkedin,
+      ...serverCompanyShortcuts
+    };
+    void (async () => {
+      try {
+        const payload = {
+          ...copySettings,
+          companyWideShortcuts: mergedShortcuts
+        };
+        const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
+        shortcutLocalSnapshotRef.current = normalizeShortcutMapKeys(mergedShortcuts);
+        setCopySettings((current) => migrateCopySettings({ ...current, ...result }));
+        setStatus("shortcuts", "Recovered shared shortcuts from your local cache.", "ok");
+      } catch {
+        // Keep current server state if recovery is not possible.
+      }
+    })();
+  }, [token, isSettingsAdmin, copySettings, location?.pathname, currentCompanyId]);
+
+  useEffect(() => {
     if (token) return;
     sharedExportPresetsHydratedRef.current = false;
     linkedinCompanyShortcutSeedRef.current = "";
+    shortcutRecoveryAttemptRef.current = "";
+    shortcutLocalSnapshotRef.current = {};
   }, [token]);
 
   useEffect(() => {
