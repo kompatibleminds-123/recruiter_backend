@@ -304,6 +304,7 @@ function FeatureLockedSection({ title = "Feature locked" }) {
     embedHeightPx: 900
   },
   jobApplyFields: [],
+  deletedSuggestedPresets: [],
   deletedSuggestedShortcuts: [],
   sheetImportMappingsByUser: {},
   sheetImportLearnedAliases: {}
@@ -360,6 +361,9 @@ function migrateCopySettings(settings = {}) {
     : [];
   next.deletedSuggestedShortcuts = (Array.isArray(next.deletedSuggestedShortcuts) ? next.deletedSuggestedShortcuts : [])
     .map((item) => normalizeShortcutKey(item))
+    .filter(Boolean);
+  next.deletedSuggestedPresets = (Array.isArray(next.deletedSuggestedPresets) ? next.deletedSuggestedPresets : [])
+    .map((item) => String(item || "").trim())
     .filter(Boolean);
 	  next.semanticSearchEnabled = next.semanticSearchEnabled !== false;
   // Fail-safe: only explicit true should turn AI parsing on.
@@ -4623,7 +4627,10 @@ function buildCapturedExcelRows(items, preset, settings = DEFAULT_COPY_SETTINGS)
     index: index + 1,
     ...item
   }));
-  const customPreset = (settings?.customExportPresets || []).find((item) => String(item.id || "") === String(preset || ""));
+  const availableCustomPresets = Array.isArray(settings?.availableCustomExportPresets)
+    ? settings.availableCustomExportPresets
+    : (Array.isArray(settings?.customExportPresets) ? settings.customExportPresets : []);
+  const customPreset = availableCustomPresets.find((item) => String(item.id || "") === String(preset || ""));
   if (customPreset) {
     const columns = parsePresetColumns(customPreset.columns);
     return {
@@ -7181,7 +7188,7 @@ function ClientProfileModal({ open, item, onClose, copySettings = DEFAULT_COPY_S
   const questionAnswers = getAssessmentQuestionAnswers(assessment);
   const hasCv = clientPortalItemHasCv(item);
   const trackerRows = buildClientPortalTrackerRows([item], assessmentId && hasCv ? { [assessmentId]: "Open CV from client portal" } : {});
-  const trackerPreview = buildCapturedExcelRows(trackerRows, presetId || copySettings.excelPreset, copySettings);
+  const trackerPreview = buildCapturedExcelRows(trackerRows, presetId || copySettings.excelPreset, effectiveCopySettings);
   const screeningRemarks = buildScreeningRemarksForExport({
     ...candidate,
     ...assessment,
@@ -9566,17 +9573,6 @@ function PortalApp({ token, onLogout }) {
   const [clientShareSuggestOpen, setClientShareSuggestOpen] = useState({ to: false, cc: false });
   // Assessment event exports are available via dedicated buttons (no modal).
   const [copySettings, setCopySettings] = useState(() => migrateCopySettings({}));
-  const exportPresetOptions = useMemo(() => [
-    { id: "compact_recruiter", label: copySettings.exportPresetLabels?.compact_recruiter || "Default recruiter exports", source: "built_in" },
-    { id: "client_tracker", label: copySettings.exportPresetLabels?.client_tracker || "Internal tracker", source: "built_in" },
-    { id: "client_submission", label: copySettings.exportPresetLabels?.client_submission || "Client submission", source: "built_in" },
-    { id: "screening_focus", label: copySettings.exportPresetLabels?.screening_focus || "Screening focus", source: "built_in" },
-    ...((copySettings.customExportPresets || []).map((preset) => ({
-      id: preset.id,
-      label: preset.label || preset.id,
-      source: "custom"
-    })))
-  ].filter((preset) => String(preset.id || "").trim()), [copySettings]);
   const [activeCopyPresetId, setActiveCopyPresetId] = useState(copySettings.excelPreset || "compact_recruiter");
   const [newPresetDraft, setNewPresetDraft] = useState({ label: "", clientName: "", columns: "" });
   const [newPresetIndicators, setNewPresetIndicators] = useState([]);
@@ -9608,6 +9604,10 @@ function PortalApp({ token, onLogout }) {
   const [companyDraft, setCompanyDraft] = useState({ companyName: "", adminName: "", email: "", password: "", platformSecret: "" });
   const [companyRecords, setCompanyRecords] = useState([]);
   const [clientRecords, setClientRecords] = useState([]);
+  const buildClientPresetId = useCallback((clientId) => {
+    const scopedClientId = String(clientId || "").trim();
+    return scopedClientId ? `client_preset:${scopedClientId}` : "";
+  }, []);
   const [companyEditDrafts, setCompanyEditDrafts] = useState({});
   const [clientUsers, setClientUsers] = useState([]);
   const [clientUserEditDrafts, setClientUserEditDrafts] = useState({});
@@ -9754,6 +9754,63 @@ function PortalApp({ token, onLogout }) {
     });
     return Array.from(values).sort((a, b) => a.localeCompare(b));
   }, [clientRecords, canonicalizeClientName, archivedClientNameKeys, normalizeClientIdentityKey]);
+  const clientPresetOptions = useMemo(() => {
+    return mergeClientRecordsByIdentity(clientRecords, [])
+      .filter((item) => item.archived !== true)
+      .map((item) => {
+        const presetColumns = String(item?.presetColumns || "").trim();
+        const presetLabel = String(item?.presetLabel || "").trim();
+        if (!presetColumns) return null;
+        return {
+          id: buildClientPresetId(item.id),
+          clientId: item.id,
+          clientName: canonicalizeClientName(item.name),
+          label: presetLabel || canonicalizeClientName(item.name),
+          columns: presetColumns,
+          source: "client_custom"
+        };
+      })
+      .filter(Boolean);
+  }, [clientRecords, mergeClientRecordsByIdentity, buildClientPresetId, canonicalizeClientName]);
+  const legacyCustomExportPresetList = useMemo(
+    () => (Array.isArray(copySettings?.customExportPresets) ? copySettings.customExportPresets : []).map((preset) => ({
+      ...preset,
+      source: "legacy_custom"
+    })),
+    [copySettings?.customExportPresets]
+  );
+  const customExportPresetList = useMemo(
+    () => [...clientPresetOptions, ...legacyCustomExportPresetList],
+    [clientPresetOptions, legacyCustomExportPresetList]
+  );
+  const deletedSuggestedPresetIds = useMemo(
+    () => new Set((Array.isArray(copySettings?.deletedSuggestedPresets) ? copySettings.deletedSuggestedPresets : []).map((item) => String(item || "").trim()).filter(Boolean)),
+    [copySettings?.deletedSuggestedPresets]
+  );
+  const exportPresetOptions = useMemo(() => [
+    { id: "compact_recruiter", label: copySettings.exportPresetLabels?.compact_recruiter || "Default recruiter exports", source: "built_in" },
+    { id: "client_tracker", label: copySettings.exportPresetLabels?.client_tracker || "Internal tracker", source: "built_in" },
+    { id: "client_submission", label: copySettings.exportPresetLabels?.client_submission || "Client submission", source: "built_in" },
+    { id: "screening_focus", label: copySettings.exportPresetLabels?.screening_focus || "Screening focus", source: "built_in" },
+    ...customExportPresetList.map((preset) => ({
+      id: preset.id,
+      label: preset.label || preset.id,
+      source: preset.source || "custom"
+    }))
+  ].filter((preset) => {
+    const presetId = String(preset.id || "").trim();
+    if (!presetId) return false;
+    if (preset.source === "built_in" && deletedSuggestedPresetIds.has(presetId)) return false;
+    return true;
+  }), [copySettings.exportPresetLabels, customExportPresetList, deletedSuggestedPresetIds]);
+  const effectiveCopySettings = useMemo(
+    () => ({
+      ...copySettings,
+      customExportPresets: customExportPresetList,
+      availableCustomExportPresets: customExportPresetList
+    }),
+    [copySettings, customExportPresetList]
+  );
   const clientMasterOptions = useMemo(() => {
     return mergeClientRecordsByIdentity(clientRecords, []).map((item) => ({
       id: item.id,
@@ -10656,10 +10713,6 @@ function PortalApp({ token, onLogout }) {
   const recruiterNameOptions = useMemo(
     () => uniqueNonEmpty((recruiterWorkspaceUsers || []).map((item) => String(item?.name || "").trim())),
     [recruiterWorkspaceUsers]
-  );
-  const customExportPresetList = useMemo(
-    () => (Array.isArray(copySettings?.customExportPresets) ? copySettings.customExportPresets : []),
-    [copySettings?.customExportPresets]
   );
   const accessFlagsReady = Boolean(state.user?.id) && (Boolean(companyLicense) || Boolean(billingOverview));
   const marketingOwnerEmail = String(state.user?.email || "").trim().toLowerCase();
@@ -13654,7 +13707,7 @@ function PortalApp({ token, onLogout }) {
     copySettings.clientShareSignatureLinkLabel2,
     copySettings.clientShareSignatureLinkUrl2,
     copySettings.exportPresetColumns,
-    copySettings.customExportPresets,
+    customExportPresetList,
     selectedAssessmentIds,
     state.assessments,
     clientShareCvLinks,
@@ -19935,7 +19988,7 @@ function PortalApp({ token, onLogout }) {
 
   async function copyCapturedExcel() {
     const rows = buildCapturedCopyRows();
-    const preset = buildCapturedExcelRows(rows, activeCopyPresetId || copySettings.excelPreset, copySettings);
+    const preset = buildCapturedExcelRows(rows, activeCopyPresetId || copySettings.excelPreset, effectiveCopySettings);
     const lines = [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
     await copyText(lines);
     setStatus("captured", "Filtered candidates copied in Excel format.", "ok");
@@ -19999,7 +20052,7 @@ function PortalApp({ token, onLogout }) {
 
   async function copyApplicantsExcel() {
     const rows = buildApplicantCopyRows();
-    const preset = buildCapturedExcelRows(rows, activeCopyPresetId || copySettings.excelPreset, copySettings);
+    const preset = buildCapturedExcelRows(rows, activeCopyPresetId || copySettings.excelPreset, effectiveCopySettings);
     const lines = [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
     await copyText(lines);
     setStatus("applicants", "Filtered applied candidates copied in Excel format.", "ok");
@@ -20020,7 +20073,7 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function copyAssessmentsExcel() {
-    const preset = buildCapturedExcelRows(normalizedAssessmentCopyRows, activeCopyPresetId || copySettings.excelPreset, copySettings);
+    const preset = buildCapturedExcelRows(normalizedAssessmentCopyRows, activeCopyPresetId || copySettings.excelPreset, effectiveCopySettings);
     const lines = [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
     await copyText(lines);
     setStatus("assessments", "Filtered assessments copied in Excel format.", "ok");
@@ -20180,7 +20233,7 @@ function PortalApp({ token, onLogout }) {
 
   async function copyCandidatesExcel() {
     const rows = await fetchFilteredDatabaseExportRows();
-    const preset = buildCapturedExcelRows(rows, activeCopyPresetId || copySettings.excelPreset, copySettings);
+    const preset = buildCapturedExcelRows(rows, activeCopyPresetId || copySettings.excelPreset, effectiveCopySettings);
     const lines = [
       preset.headers.join("\t"),
       ...preset.rows.map((row) => row.map((cell) => normalizeExcelClipboardCell(cell)).join("\t"))
@@ -21701,7 +21754,7 @@ function PortalApp({ token, onLogout }) {
       cv_link: getClientShareCvText(item),
       cv_url: getClientShareCvText(item)
     }));
-    const preset = buildCapturedExcelRows(rowsWithCv, clientShareDraft.presetId || copySettings.excelPreset, copySettings);
+    const preset = buildCapturedExcelRows(rowsWithCv, clientShareDraft.presetId || copySettings.excelPreset, effectiveCopySettings);
     const hasCvColumn = preset.headers.some((header) => String(header || "").trim().toLowerCase().includes("cv"));
     const headers = hasCvColumn ? preset.headers : [...preset.headers, "CV Link"];
     const outputRows = preset.rows.map((row, index) => (hasCvColumn
@@ -21806,6 +21859,24 @@ function PortalApp({ token, onLogout }) {
   async function saveSharedCopySettings() {
     if (!isSettingsAdmin) {
       setStatus("settings", "Only admin can save shared settings.", "error");
+      return;
+    }
+    if (selectedCustomPreset?.source === "client_custom") {
+      try {
+        setStatus("settings", `Saving preset for ${selectedCustomPreset.clientName}...`, "info");
+        const result = await saveClientPresetRecord({
+          clientName: selectedCustomPreset.clientName,
+          presetLabel: selectedPresetLabel,
+          presetColumns: selectedPresetColumns
+        });
+        setCopySettings((current) => ({
+          ...current,
+          excelPreset: buildClientPresetId(result?.id)
+        }));
+        setStatus("settings", "Client preset saved.", "ok");
+      } catch (error) {
+        setStatus("settings", String(error?.message || error || "Could not save preset."), "error");
+      }
       return;
     }
     const draftSettings = {
@@ -21931,6 +22002,37 @@ function PortalApp({ token, onLogout }) {
     setClientRecords((current) => mergeClientRecordsByIdentity(current, [result]));
     if (!skipStatus) setStatus(statusKey, options?.successMessage || "Client saved.", "ok");
     return normalizedClientName;
+  }
+
+  async function saveClientPresetRecord({ clientName, presetLabel, presetColumns, clearPreset = false, createClientIfMissing = false }) {
+    const normalizedClientName = canonicalizeClientName(String(clientName || "").trim());
+    let matchedClient = (Array.isArray(clientRecords) ? clientRecords : []).find((item) => (
+      normalizeClientIdentityKey(String(item?.name || "").trim()) === normalizeClientIdentityKey(normalizedClientName)
+    )) || null;
+    if (!matchedClient && createClientIfMissing && normalizedClientName) {
+      const savedClientName = await saveClientDirectoryName(normalizedClientName, {
+        skipStatus: true,
+        silentIfExists: true
+      });
+      const clientsResult = await api("/company/clients", token).catch(() => ({ clients: [] }));
+      const latestClients = Array.isArray(clientsResult?.clients) ? clientsResult.clients : [];
+      setClientRecords((current) => mergeClientRecordsByIdentity(current, latestClients));
+      matchedClient = latestClients.find((item) => (
+        normalizeClientIdentityKey(String(item?.name || "").trim()) === normalizeClientIdentityKey(savedClientName || normalizedClientName)
+      )) || null;
+    }
+    if (!matchedClient?.id) {
+      throw new Error("Select a client first. Presets are now saved per client.");
+    }
+    const result = await api("/company/clients", token, "PATCH", {
+      clientId: matchedClient.id,
+      currentName: matchedClient.name,
+      name: matchedClient.name,
+      presetLabel: clearPreset ? "" : String(presetLabel || "").trim(),
+      presetColumns: clearPreset ? "" : String(presetColumns || "").trim()
+    });
+    setClientRecords((current) => mergeClientRecordsByIdentity(current, [result]));
+    return result;
   }
 
   const selectedClientMaster = useMemo(() => {
@@ -22416,31 +22518,37 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
-  function addCustomPreset() {
+  async function addCustomPreset() {
     if (!isSettingsAdmin) {
       setStatus("settings", "Only admin can add shared presets.", "error");
       return;
     }
     const label = String(newPresetDraft.label || "").trim();
+    const clientName = canonicalizeClientName(String(newPresetDraft.clientName || "").trim());
     const columns = String(newPresetDraft.columns || "").trim();
-    if (!label || !columns) {
-      setStatus("settings", "Preset label and columns are required.", "error");
+    if (!label || !clientName || !columns) {
+      setStatus("settings", "Preset label, client, and columns are required.", "error");
       return;
     }
-    const id = label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || `custom_${Date.now()}`;
-    setCopySettings((current) => ({
-      ...current,
-      // Auto-select the newly created preset so admin can edit it right away.
-      excelPreset: id,
-      customExportPresets: [
-        ...((current.customExportPresets || []).filter((item) => String(item.id) !== String(id))),
-        { id, label, clientName: String(newPresetDraft.clientName || "").trim(), columns }
-      ]
-    }));
-    setNewPresetDraft({ label: "", clientName: "", columns: "" });
-    setNewPresetIndicators([]);
-    setNewIndicatorDraft({ title: "", fieldA: "", fieldB: "", fieldC: "" });
-    setStatus("settings", "Custom preset added. Save settings to share it with the team.", "ok");
+    try {
+      setStatus("settings", "Creating preset...", "ok");
+      const result = await saveClientPresetRecord({
+        clientName,
+        presetLabel: label,
+        presetColumns: columns,
+        createClientIfMissing: true
+      });
+      setCopySettings((current) => ({
+        ...current,
+        excelPreset: buildClientPresetId(result?.id)
+      }));
+      setNewPresetDraft({ label: "", clientName: "", columns: "" });
+      setNewPresetIndicators([]);
+      setNewIndicatorDraft({ title: "", fieldA: "", fieldB: "", fieldC: "" });
+      setStatus("settings", "Preset created and saved immediately.", "ok");
+    } catch (error) {
+      setStatus("settings", String(error?.message || error || "Could not create preset."), "error");
+    }
   }
 
   function refreshNewPresetColumnsFromIndicators(nextIndicators = []) {
@@ -22530,9 +22638,28 @@ function PortalApp({ token, onLogout }) {
     setStatus("settings", "Mixed indicator added.", "ok");
   }
 
-  function removeCustomPreset(id) {
+  async function removeCustomPreset(id) {
     if (!isSettingsAdmin) {
       setStatus("settings", "Only admin can remove shared presets.", "error");
+      return;
+    }
+    const matchedPreset = customExportPresetList.find((item) => String(item.id) === String(id));
+    if (!matchedPreset) return;
+    if (matchedPreset.source === "client_custom") {
+      try {
+        setStatus("settings", `Removing preset from ${matchedPreset.clientName}...`, "info");
+        await saveClientPresetRecord({
+          clientName: matchedPreset.clientName,
+          clearPreset: true
+        });
+        setCopySettings((current) => ({
+          ...current,
+          excelPreset: String(current.excelPreset) === String(id) ? "compact_recruiter" : current.excelPreset
+        }));
+        setStatus("settings", "Preset removed.", "ok");
+      } catch (error) {
+        setStatus("settings", String(error?.message || error || "Could not remove preset."), "error");
+      }
       return;
     }
     setCopySettings((current) => ({
@@ -22542,7 +22669,22 @@ function PortalApp({ token, onLogout }) {
     }));
   }
 
-  const selectedCustomPreset = (copySettings.customExportPresets || []).find((preset) => String(preset.id) === String(copySettings.excelPreset));
+  function removeSuggestedPreset(id) {
+    if (!isSettingsAdmin) {
+      setStatus("settings", "Only admin can remove shared presets.", "error");
+      return;
+    }
+    const presetId = String(id || "").trim();
+    if (!presetId) return;
+    setCopySettings((current) => ({
+      ...current,
+      deletedSuggestedPresets: Array.from(new Set([...(Array.isArray(current.deletedSuggestedPresets) ? current.deletedSuggestedPresets : []), presetId])),
+      excelPreset: String(current.excelPreset) === presetId ? "compact_recruiter" : current.excelPreset
+    }));
+    setStatus("settings", "Suggested preset removed. Save settings to apply for the team.", "ok");
+  }
+
+  const selectedCustomPreset = customExportPresetList.find((preset) => String(preset.id) === String(copySettings.excelPreset));
   const selectedBuiltInPresetId = selectedCustomPreset ? "" : String(copySettings.excelPreset || "");
   const selectedPresetLabel = selectedCustomPreset
     ? selectedCustomPreset.label
@@ -22555,6 +22697,7 @@ function PortalApp({ token, onLogout }) {
     : String(copySettings.exportPresetClientMap?.[selectedBuiltInPresetId] || "").trim();
   const isSuggestedPresetSelected = !selectedCustomPreset && Boolean(selectedBuiltInPresetId);
   const canEditSelectedPreset = Boolean(isSettingsAdmin);
+  const canEditSelectedPresetClient = Boolean(isSettingsAdmin && (!selectedCustomPreset || selectedCustomPreset.source !== "client_custom"));
 
   useEffect(() => {
     setEditPresetIndicators(presetColumnsToIndicators(selectedPresetColumns));
@@ -22628,6 +22771,12 @@ function PortalApp({ token, onLogout }) {
   function updateSelectedPresetLabel(value) {
     if (selectedCustomPreset) {
       if (!isSettingsAdmin) return;
+      if (selectedCustomPreset.source === "client_custom") {
+        setClientRecords((current) => current.map((item) => String(item?.id || "") === String(selectedCustomPreset.clientId)
+          ? { ...item, presetLabel: value }
+          : item));
+        return;
+      }
       setCopySettings((current) => ({
         ...current,
         customExportPresets: (current.customExportPresets || []).map((preset) => String(preset.id) === String(selectedCustomPreset.id) ? { ...preset, label: value } : preset)
@@ -22648,6 +22797,12 @@ function PortalApp({ token, onLogout }) {
   function updateSelectedPresetColumns(value) {
     if (selectedCustomPreset) {
       if (!isSettingsAdmin) return;
+      if (selectedCustomPreset.source === "client_custom") {
+        setClientRecords((current) => current.map((item) => String(item?.id || "") === String(selectedCustomPreset.clientId)
+          ? { ...item, presetColumns: value }
+          : item));
+        return;
+      }
       setCopySettings((current) => ({
         ...current,
         customExportPresets: (current.customExportPresets || []).map((preset) => String(preset.id) === String(selectedCustomPreset.id) ? { ...preset, columns: value } : preset)
@@ -22668,6 +22823,7 @@ function PortalApp({ token, onLogout }) {
   function updateSelectedPresetClientName(value) {
     if (selectedCustomPreset) {
       if (!isSettingsAdmin) return;
+      if (selectedCustomPreset.source === "client_custom") return;
       setCopySettings((current) => ({
         ...current,
         customExportPresets: (current.customExportPresets || []).map((preset) => String(preset.id) === String(selectedCustomPreset.id) ? { ...preset, clientName: value } : preset)
@@ -23210,7 +23366,7 @@ function PortalApp({ token, onLogout }) {
       assessment_status: interviewForm.candidateStatus || ""
     };
 
-    const preset = buildCapturedExcelRows([row], activeCopyPresetId || copySettings.excelPreset, copySettings);
+    const preset = buildCapturedExcelRows([row], activeCopyPresetId || copySettings.excelPreset, effectiveCopySettings);
     const lines = [
       preset.headers.join("\t"),
       ...preset.rows.map((cells) => cells.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))
@@ -28983,7 +29139,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <select value={copySettings.excelPreset} onChange={(e) => setCopySettings((current) => ({ ...current, excelPreset: e.target.value }))}>
                           {exportPresetOptions.map((preset) => (
                             <option key={preset.id} value={preset.id}>
-                              {preset.source === "custom" ? `${preset.label} (Company Specific)` : `${preset.label} (Suggested)`}
+                              {preset.source !== "built_in" ? `${preset.label} (Company Specific)` : `${preset.label} (Suggested)`}
                             </option>
                           ))}
                         </select>
@@ -29001,7 +29157,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <label>
                         <span>Client for this preset</span>
                         <select
-                          disabled={!canEditSelectedPreset}
+                          disabled={!canEditSelectedPresetClient}
                           value={selectedPresetClientName}
                           onChange={(e) => updateSelectedPresetClientName(e.target.value)}
                         >
@@ -29107,14 +29263,21 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <p className="muted">{"Available placeholders: copy templates use {{index}} {{name}} {{jd_title}} {{company}} {{outcome}} {{recruiter_notes}} {{location}} {{phone}} {{email}} {{source}} {{follow_up_at}}. Note: remarks = Recruiter Note (manual recruiter note), notice_period = notice period text (can include immediate/serving/NP value), screening_remarks = Strong points + Screening Q&A + Reason of change."}</p>
                     <div className="button-row">
                       {canEditSelectedPreset ? <button onClick={() => void saveSharedCopySettings()}>{isSuggestedPresetSelected ? "Save suggested preset changes" : "Save preset changes"}</button> : null}
-                      {isSettingsAdmin && selectedCustomPreset ? (
+                      {isSettingsAdmin && (selectedCustomPreset || selectedBuiltInPresetId) ? (
                         <button
                           className="ghost-btn"
                           onClick={() => {
-                            const confirmed = window.confirm(`Remove preset "${selectedCustomPreset.label}"?`);
+                            const presetLabel = selectedCustomPreset?.label
+                              || copySettings.exportPresetLabels?.[selectedBuiltInPresetId]
+                              || DEFAULT_COPY_SETTINGS.exportPresetLabels?.[selectedBuiltInPresetId]
+                              || selectedBuiltInPresetId;
+                            const confirmed = window.confirm(`Remove preset "${presetLabel}"?`);
                             if (!confirmed) return;
-                            removeCustomPreset(selectedCustomPreset.id);
-                            setStatus("settings", "Preset removed. Save settings to apply for the team.", "ok");
+                            if (selectedCustomPreset) {
+                              void removeCustomPreset(selectedCustomPreset.id);
+                              return;
+                            }
+                            removeSuggestedPreset(selectedBuiltInPresetId);
                           }}
                         >
                           Remove selected preset
@@ -29130,7 +29293,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <label>
                         <span>Client for new preset</span>
                         <select disabled={!isSettingsAdmin} value={newPresetDraft.clientName || ""} onChange={(e) => setNewPresetDraft((current) => ({ ...current, clientName: e.target.value }))}>
-                          <option value="">Internal / all clients</option>
+                          <option value="">Select client</option>
                           {availablePresetClients.map((clientName) => <option key={clientName} value={clientName}>{clientName}</option>)}
                         </select>
                       </label>
@@ -29212,9 +29375,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </div>
                     {isSettingsAdmin ? <div className="button-row">
                       <button className="ghost-btn" onClick={addCustomPreset}>Create preset</button>
-                      <button onClick={() => void saveSharedCopySettings()}>Save new preset</button>
                     </div> : null}
-                    <p className="muted">After creating a preset, select it from the dropdown above to view, edit, or remove it.</p>
+                    <p className="muted">Create preset saves immediately on the selected client, then you can edit it from the dropdown above.</p>
                   </div> : null}
                 </Section>
               </div>

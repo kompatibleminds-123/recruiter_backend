@@ -15273,7 +15273,9 @@ const server = http.createServer(async (req, res) => {
         name: String(body.name || body.clientName || "").trim(),
         aboutCompany: String(body.aboutCompany || body.about_company || "").trim(),
         publicCompanyLine: String(body.publicCompanyLine || body.public_company_line || "").trim(),
-        publicPostingTitle: String(body.publicPostingTitle || body.public_posting_title || "").trim()
+        publicPostingTitle: String(body.publicPostingTitle || body.public_posting_title || "").trim(),
+        presetLabel: String(body.presetLabel || body.preset_label || "").trim(),
+        presetColumns: String(body.presetColumns || body.preset_columns || "").trim()
       });
       sendJson(res, 200, { ok: true, result: client });
     } catch (error) {
@@ -15296,7 +15298,9 @@ const server = http.createServer(async (req, res) => {
         archived: typeof body.archived === "boolean" ? body.archived : undefined,
         aboutCompany: body.aboutCompany,
         publicCompanyLine: body.publicCompanyLine,
-        publicPostingTitle: body.publicPostingTitle
+        publicPostingTitle: body.publicPostingTitle,
+        presetLabel: body.presetLabel,
+        presetColumns: body.presetColumns
       });
       sendJson(res, 200, { ok: true, result: client });
     } catch (error) {

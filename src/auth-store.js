@@ -482,6 +482,10 @@ function sanitizeCompanyClient(client) {
     aboutCompany: String(client.aboutCompany ?? client.about_company ?? "").trim(),
     publicCompanyLine: String(client.publicCompanyLine ?? client.public_company_line ?? "").trim(),
     publicPostingTitle: String(client.publicPostingTitle ?? client.public_posting_title ?? client.publicTitle ?? client.public_title ?? "").trim(),
+    presetLabel: String(client.presetLabel ?? client.preset_label ?? "").trim(),
+    presetColumns: String(client.presetColumns ?? client.preset_columns ?? "").trim(),
+    presetUpdatedAt: client.presetUpdatedAt ?? client.preset_updated_at ?? null,
+    presetUpdatedBy: String(client.presetUpdatedBy ?? client.preset_updated_by ?? "").trim(),
     createdAt: client.createdAt ?? client.created_at ?? null,
     updatedAt: client.updatedAt ?? client.updated_at ?? null,
     updatedBy: String(client.updatedBy ?? client.updated_by ?? "").trim()
@@ -520,6 +524,10 @@ function mergeCompanyClientEntries(entries = []) {
       aboutCompany: item.aboutCompany || existing.aboutCompany || "",
       publicCompanyLine: item.publicCompanyLine || existing.publicCompanyLine || "",
       publicPostingTitle: item.publicPostingTitle || existing.publicPostingTitle || "",
+      presetLabel: item.presetLabel || existing.presetLabel || "",
+      presetColumns: item.presetColumns || existing.presetColumns || "",
+      presetUpdatedAt: item.presetUpdatedAt || existing.presetUpdatedAt || null,
+      presetUpdatedBy: item.presetUpdatedBy || existing.presetUpdatedBy || "",
       createdAt: existing.createdAt || item.createdAt || null,
       updatedAt: item.updatedAt || existing.updatedAt || null,
       updatedBy: item.updatedBy || existing.updatedBy || ""
@@ -534,6 +542,10 @@ function mergeCompanyClientEntries(entries = []) {
       aboutCompany: existing.aboutCompany || item.aboutCompany || "",
       publicCompanyLine: existing.publicCompanyLine || item.publicCompanyLine || "",
       publicPostingTitle: existing.publicPostingTitle || item.publicPostingTitle || "",
+      presetLabel: existing.presetLabel || item.presetLabel || "",
+      presetColumns: existing.presetColumns || item.presetColumns || "",
+      presetUpdatedAt: existing.presetUpdatedAt || item.presetUpdatedAt || null,
+      presetUpdatedBy: existing.presetUpdatedBy || item.presetUpdatedBy || "",
       createdAt: existing.createdAt || item.createdAt || null,
       updatedAt: existing.updatedAt || item.updatedAt || null,
       updatedBy: existing.updatedBy || item.updatedBy || ""
@@ -591,6 +603,42 @@ const COMPANY_LICENSE_ROW_TITLE = "__company_license__";
 const AUDIT_LOG_ROW_PREFIX = "__audit_log__";
 const AUDIT_LOG_ROW_TITLE = "__audit_log__";
 const MAX_SHARED_CUSTOM_EXPORT_PRESETS = 10;
+const SUGGESTED_EXPORT_PRESET_IDS = [
+  "compact_recruiter",
+  "client_tracker",
+  "client_submission",
+  "screening_focus"
+];
+const DEFAULT_SUGGESTED_EXPORT_PRESET_CATALOG = [
+  {
+    id: "compact_recruiter",
+    label: "Default recruiter exports",
+    columns: "S.No.|s_no\nName|name\nPh|phone\nEmail|email\nCurrent Company|current_company\nCurrent Designation|current_designation\nTotal Experience|total_experience\nTenure in current company|current_org_tenure\nLocation|location\nReason of change|reason_of_change\nStatus|status\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nOther Standard Questions|other_standard_questions\nRemarks|remarks\nLinkedIn|linkedin",
+    active: true,
+    sortOrder: 0
+  },
+  {
+    id: "client_tracker",
+    label: "Internal tracker",
+    columns: "Client Name|client_name\nTarget Role / Open Position|jd_title\nKey Skills Required|key_skills_required\nAssigned to|recruiter_name\nDate Added|date_added\nCandidate Name|name\nStatus|status\nContact No.|phone\nEmail ID|email\nLocation|location\nCurrent Company|current_company\nCurrent Designation|current_designation\nDomain / Industry|domain_industry\nWork Exp (Total years/months)|total_experience\nHighest Education|highest_education\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nRemarks / Notes|remarks\nLinkedIn Profile Link (Optional)|linkedin",
+    active: true,
+    sortOrder: 1
+  },
+  {
+    id: "client_submission",
+    label: "Client submission",
+    columns: "S.No.|s_no\nName|name\nPh|phone\nEmail|email\nCurrent Company|current_company\nCurrent Designation|current_designation\nTotal Experience|total_experience\nStrong Points|other_pointers\nRemarks|remarks",
+    active: true,
+    sortOrder: 2
+  },
+  {
+    id: "screening_focus",
+    label: "Screening focus",
+    columns: "S.No.|s_no\nName|name\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nScreening Answers|other_standard_questions\nRemarks|remarks",
+    active: true,
+    sortOrder: 3
+  }
+];
 const { parseExperienceTimelineTextToStructured, normalizeTimelineRow } = require("./timeline-utils");
 function isSharedExportPresetRow(job) {
   const id = String(job?.id || "").trim();
@@ -882,6 +930,9 @@ function sanitizeSharedExportPresetSettings(raw) {
   const rawDeletedSuggestedShortcuts = Array.isArray(source.deletedSuggestedShortcuts)
     ? source.deletedSuggestedShortcuts
     : [];
+  const rawDeletedSuggestedPresets = Array.isArray(source.deletedSuggestedPresets)
+    ? source.deletedSuggestedPresets
+    : [];
   const rawJobApplyFields = Array.isArray(source.jobApplyFields) ? source.jobApplyFields : [];
   const rawSheetImportMappingsByUser =
     source.sheetImportMappingsByUser && typeof source.sheetImportMappingsByUser === "object"
@@ -954,6 +1005,10 @@ function sanitizeSharedExportPresetSettings(raw) {
     .map((item) => String(item || "").trim())
     .filter(Boolean)
     .map((item) => item.startsWith("/") ? item : `/${item}`)
+    .filter((item, index, arr) => arr.indexOf(item) === index);
+  const deletedSuggestedPresets = rawDeletedSuggestedPresets
+    .map((item) => String(item || "").trim())
+    .filter((item) => SUGGESTED_EXPORT_PRESET_IDS.includes(item))
     .filter((item, index, arr) => arr.indexOf(item) === index);
   const sheetImportMappingsByUser = {};
   Object.entries(rawSheetImportMappingsByUser).forEach(([userId, signatures]) => {
@@ -1108,6 +1163,7 @@ function sanitizeSharedExportPresetSettings(raw) {
     sheetImportLearnedAliases,
     recruiterCampaignTemplatesByUser,
     companyWideShortcuts,
+    deletedSuggestedPresets,
     deletedSuggestedShortcuts,
     personalShortcutsByUser,
     clientDirectory: sanitizeClientDirectoryList(rawClientDirectory),
@@ -1144,6 +1200,67 @@ function isSuggestedGlobalOwner(actor = null) {
   return allow.includes(email);
 }
 
+function sanitizeSuggestedExportPresetCatalogEntry(rawEntry, index = 0) {
+  const source = rawEntry && typeof rawEntry === "object" ? rawEntry : {};
+  const fallback = DEFAULT_SUGGESTED_EXPORT_PRESET_CATALOG[index] || DEFAULT_SUGGESTED_EXPORT_PRESET_CATALOG[0];
+  const id = String(source.id || source.presetId || source.preset_id || fallback?.id || "").trim();
+  if (!SUGGESTED_EXPORT_PRESET_IDS.includes(id)) return null;
+  return {
+    id,
+    label: String(source.label || fallback?.label || "").trim(),
+    columns: String(source.columns || fallback?.columns || "").trim(),
+    active: source.active !== false,
+    sortOrder: Number.isFinite(Number(source.sortOrder ?? source.sort_order))
+      ? Number(source.sortOrder ?? source.sort_order)
+      : Number(fallback?.sortOrder || index || 0),
+    updatedAt: String(source.updatedAt || source.updated_at || "").trim(),
+    updatedBy: String(source.updatedBy || source.updated_by || "").trim()
+  };
+}
+
+function sanitizeSuggestedExportPresetCatalog(rawList = []) {
+  const fallbackById = new Map(DEFAULT_SUGGESTED_EXPORT_PRESET_CATALOG.map((item) => [item.id, item]));
+  const byId = new Map();
+  (Array.isArray(rawList) ? rawList : []).forEach((item, index) => {
+    const normalized = sanitizeSuggestedExportPresetCatalogEntry(item, index);
+    if (!normalized) return;
+    byId.set(normalized.id, normalized);
+  });
+  DEFAULT_SUGGESTED_EXPORT_PRESET_CATALOG.forEach((item, index) => {
+    if (byId.has(item.id)) return;
+    const normalized = sanitizeSuggestedExportPresetCatalogEntry(item, index);
+    if (normalized) byId.set(item.id, normalized);
+  });
+  return SUGGESTED_EXPORT_PRESET_IDS.map((id, index) => {
+    const existing = byId.get(id);
+    return existing || sanitizeSuggestedExportPresetCatalogEntry(fallbackById.get(id), index);
+  }).filter(Boolean);
+}
+
+function sanitizeCompanySuggestedPresetOverride(rawEntry) {
+  const source = rawEntry && typeof rawEntry === "object" ? rawEntry : {};
+  const presetId = String(source.presetId || source.preset_id || source.id || "").trim();
+  if (!SUGGESTED_EXPORT_PRESET_IDS.includes(presetId)) return null;
+  return {
+    presetId,
+    label: String(source.label || "").trim(),
+    columns: String(source.columns || "").trim(),
+    hidden: source.hidden === true,
+    updatedAt: String(source.updatedAt || source.updated_at || "").trim(),
+    updatedBy: String(source.updatedBy || source.updated_by || "").trim()
+  };
+}
+
+function sanitizeCompanySuggestedPresetOverrideList(rawList = []) {
+  const byId = new Map();
+  (Array.isArray(rawList) ? rawList : []).forEach((item) => {
+    const normalized = sanitizeCompanySuggestedPresetOverride(item);
+    if (!normalized) return;
+    byId.set(normalized.presetId, normalized);
+  });
+  return Array.from(byId.values()).sort((a, b) => SUGGESTED_EXPORT_PRESET_IDS.indexOf(a.presetId) - SUGGESTED_EXPORT_PRESET_IDS.indexOf(b.presetId));
+}
+
 async function getCompanySharedExportPresetsLocal(companyId) {
   if (!companyId) throw new Error("companyId is required.");
   if (!cfg().on) {
@@ -1155,79 +1272,139 @@ async function getCompanySharedExportPresetsLocal(companyId) {
   return sanitizeSharedExportPresetSettings(rows?.[0]?.payload || rows?.[0] || {});
 }
 
-let SUGGESTED_GLOBAL_SOURCE_CACHE = { companyId: "", resolvedAt: 0 };
-async function resolveSuggestedGlobalSourceCompanyId() {
-  const forced = String(process.env.PLATFORM_SUGGESTED_SOURCE_COMPANY_ID || "").trim();
-  if (forced) return forced;
-  const now = Date.now();
-  if (SUGGESTED_GLOBAL_SOURCE_CACHE.companyId && now - Number(SUGGESTED_GLOBAL_SOURCE_CACHE.resolvedAt || 0) < 10 * 60 * 1000) {
-    return SUGGESTED_GLOBAL_SOURCE_CACHE.companyId;
-  }
-  const ownerEmails = parseOwnerEmailList();
-  if (!ownerEmails.length) return "";
+async function getGlobalSuggestedExportPresetCatalog() {
   if (!cfg().on) {
     const store = readStore();
-    const users = Array.isArray(store.users) ? store.users : [];
-    const hit = users.find((user) => {
-      const email = normalizeEmail(user?.email || "");
-      return email && ownerEmails.includes(email) && String(user?.role || "").toLowerCase() === "admin";
-    });
-    const companyId = String(hit?.companyId || hit?.company_id || "").trim();
-    if (companyId) SUGGESTED_GLOBAL_SOURCE_CACHE = { companyId, resolvedAt: now };
-    return companyId;
+    const rows = Array.isArray(store.presetTemplates) ? store.presetTemplates : [];
+    return sanitizeSuggestedExportPresetCatalog(rows);
   }
   await ensureSeeded();
-  for (const ownerEmail of ownerEmails) {
-    const rows = await sbSel("users", `select=company_id,role,email&email=eq.${enc(ownerEmail)}&limit=1`).catch(() => []);
-    const hit = (rows || []).find((row) => String(row?.role || "").toLowerCase() === "admin");
-    const companyId = String(hit?.company_id || "").trim();
-    if (companyId) {
-      SUGGESTED_GLOBAL_SOURCE_CACHE = { companyId, resolvedAt: now };
-      return companyId;
-    }
+  try {
+    const rows = await sbSel("preset_templates", "select=*&scope=eq.global_suggested&order=sort_order.asc&limit=100");
+    return sanitizeSuggestedExportPresetCatalog(rows || []);
+  } catch (error) {
+    return sanitizeSuggestedExportPresetCatalog(DEFAULT_SUGGESTED_EXPORT_PRESET_CATALOG);
   }
-  return "";
 }
 
-function mergeSuggestedAndCompanySettings(globalSettings = {}, companySettings = {}) {
-  const globalSafe = sanitizeSharedExportPresetSettings(globalSettings || {});
+async function saveGlobalSuggestedExportPresetCatalog({ actor, catalog = [] }) {
+  const sanitizedCatalog = sanitizeSuggestedExportPresetCatalog(catalog);
+  const now = new Date().toISOString();
+  if (!cfg().on) {
+    const store = readStore();
+    store.presetTemplates = sanitizedCatalog.map((item) => ({
+      id: item.id,
+      label: item.label,
+      columns: item.columns,
+      active: item.active !== false,
+      scope: "global_suggested",
+      sortOrder: item.sortOrder,
+      updatedAt: now,
+      updatedBy: actor?.email || ""
+    }));
+    writeStore(store);
+    return sanitizeSuggestedExportPresetCatalog(store.presetTemplates);
+  }
+  await ensureSeeded();
+  await sbIns("preset_templates", sanitizedCatalog.map((item) => ({
+    id: item.id,
+    label: item.label,
+    columns: item.columns,
+    active: item.active !== false,
+    scope: "global_suggested",
+    sort_order: item.sortOrder,
+    updated_at: now,
+    updated_by: actor?.email || ""
+  })), { conflict: "id", upsert: true, returning: "minimal" });
+  return sanitizedCatalog;
+}
+
+async function getCompanySuggestedPresetOverrides(companyId) {
+  const scopedCompanyId = String(companyId || "").trim();
+  if (!scopedCompanyId) throw new Error("companyId is required.");
+  if (!cfg().on) {
+    const store = readStore();
+    const rows = Array.isArray(store.companyPresetOverrides) ? store.companyPresetOverrides : [];
+    return sanitizeCompanySuggestedPresetOverrideList(
+      rows.filter((item) => String(item?.companyId || item?.company_id || "").trim() === scopedCompanyId)
+    );
+  }
+  await ensureSeeded();
+  try {
+    const rows = await sbSel("company_preset_overrides", `select=*&company_id=eq.${enc(scopedCompanyId)}&limit=100`);
+    return sanitizeCompanySuggestedPresetOverrideList(rows || []);
+  } catch (error) {
+    return [];
+  }
+}
+
+async function saveCompanySuggestedPresetOverrides({ actor, companyId, overrides = [] }) {
+  const scopedCompanyId = String(companyId || "").trim();
+  const sanitizedOverrides = sanitizeCompanySuggestedPresetOverrideList(overrides);
+  const now = new Date().toISOString();
+  if (!cfg().on) {
+    const store = readStore();
+    store.companyPresetOverrides = Array.isArray(store.companyPresetOverrides) ? store.companyPresetOverrides : [];
+    const keep = store.companyPresetOverrides.filter((item) => String(item?.companyId || item?.company_id || "").trim() !== scopedCompanyId);
+    store.companyPresetOverrides = [
+      ...keep,
+      ...sanitizedOverrides.map((item) => ({
+        companyId: scopedCompanyId,
+        presetId: item.presetId,
+        label: item.label,
+        columns: item.columns,
+        hidden: item.hidden === true,
+        updatedAt: now,
+        updatedBy: actor?.email || ""
+      }))
+    ];
+    writeStore(store);
+    return sanitizedOverrides;
+  }
+  await ensureSeeded();
+  await sbIns("company_preset_overrides", sanitizedOverrides.map((item) => ({
+    company_id: scopedCompanyId,
+    preset_id: item.presetId,
+    label: item.label,
+    columns: item.columns,
+    hidden: item.hidden === true,
+    updated_at: now,
+    updated_by: actor?.email || ""
+  })), { conflict: "company_id,preset_id", upsert: true, returning: "minimal" });
+  return sanitizedOverrides;
+}
+
+function mergeSuggestedCatalogAndCompanySettings(globalCatalog = [], companyOverrides = [], companySettings = {}) {
   const companySafe = sanitizeSharedExportPresetSettings(companySettings || {});
   const deletedSuggestedShortcutSet = new Set(
     (Array.isArray(companySafe.deletedSuggestedShortcuts) ? companySafe.deletedSuggestedShortcuts : [])
       .map((item) => String(item || "").trim())
       .filter(Boolean)
   );
-  const mergedCustomById = new Map();
-  (globalSafe.customExportPresets || []).forEach((item) => {
-    const id = String(item?.id || "").trim();
-    if (!id) return;
-    mergedCustomById.set(id, { ...item, scope: "suggested_global" });
+  const overrideById = new Map(
+    sanitizeCompanySuggestedPresetOverrideList(companyOverrides).map((item) => [item.presetId, item])
+  );
+  const mergedLabels = {};
+  const mergedColumns = {};
+  const deletedSuggestedPresets = [];
+  sanitizeSuggestedExportPresetCatalog(globalCatalog).forEach((item) => {
+    const override = overrideById.get(item.id);
+    const hidden = override?.hidden === true || item.active === false;
+    if (hidden) deletedSuggestedPresets.push(item.id);
+    mergedLabels[item.id] = String(override?.label || item.label || "").trim();
+    mergedColumns[item.id] = String(override?.columns || item.columns || "").trim();
   });
-  (companySafe.customExportPresets || []).forEach((item) => {
-    const id = String(item?.id || "").trim();
-    if (!id) return;
-    mergedCustomById.set(id, { ...item, scope: item?.scope || "company_local" });
-  });
-  const mergedCompanyWideShortcuts = {
-    ...(globalSafe.companyWideShortcuts || {}),
-    ...(companySafe.companyWideShortcuts || {})
-  };
+  const mergedCompanyWideShortcuts = { ...(companySafe.companyWideShortcuts || {}) };
   deletedSuggestedShortcutSet.forEach((key) => {
     delete mergedCompanyWideShortcuts[key];
   });
   return sanitizeSharedExportPresetSettings({
-    ...globalSafe,
     ...companySafe,
-    exportPresetLabels: {
-      ...(globalSafe.exportPresetLabels || {}),
-      ...(companySafe.exportPresetLabels || {})
-    },
-    exportPresetColumns: {
-      ...(globalSafe.exportPresetColumns || {}),
-      ...(companySafe.exportPresetColumns || {})
-    },
+    exportPresetLabels: mergedLabels,
+    exportPresetColumns: mergedColumns,
     companyWideShortcuts: mergedCompanyWideShortcuts,
-    customExportPresets: Array.from(mergedCustomById.values())
+    customExportPresets: companySafe.customExportPresets || [],
+    deletedSuggestedPresets
   });
 }
 function sanitizeAssessment(item) {
@@ -3352,12 +3529,11 @@ async function saveCompanyJobRecruiterShortcuts({ actorUserId, companyId, jobId,
 async function getCompanySharedExportPresets(companyId) {
   if (!companyId) throw new Error("companyId is required.");
   const companyLocal = await getCompanySharedExportPresetsLocal(companyId);
-  const suggestedSourceCompanyId = await resolveSuggestedGlobalSourceCompanyId();
-  if (!suggestedSourceCompanyId || suggestedSourceCompanyId === String(companyId || "").trim()) {
-    return companyLocal;
-  }
-  const globalSuggested = await getCompanySharedExportPresetsLocal(suggestedSourceCompanyId).catch(() => ({}));
-  return mergeSuggestedAndCompanySettings(globalSuggested, companyLocal);
+  const [globalCatalog, companyOverrides] = await Promise.all([
+    getGlobalSuggestedExportPresetCatalog().catch(() => sanitizeSuggestedExportPresetCatalog(DEFAULT_SUGGESTED_EXPORT_PRESET_CATALOG)),
+    getCompanySuggestedPresetOverrides(companyId).catch(() => [])
+  ]);
+  return mergeSuggestedCatalogAndCompanySettings(globalCatalog, companyOverrides, companyLocal);
 }
 
 async function getCompanyEmailThreadByKey(companyId, conversationKey) {
@@ -3447,26 +3623,54 @@ async function saveCompanySharedExportPresets({ actorUserId, companyId, settings
   if (saveAsSuggestedGlobal && !isSuggestedGlobalOwner(actor)) {
     throw new Error("Only platform owner can update suggested global presets.");
   }
-  const targetCompanyId = saveAsSuggestedGlobal
-    ? (await resolveSuggestedGlobalSourceCompanyId().catch(() => "") || String(companyId || "").trim())
-    : String(companyId || "").trim();
   const sanitized = sanitizeSharedExportPresetSettings(settings);
   const now = new Date().toISOString();
+  const scopedCompanyId = String(companyId || "").trim();
+  if (saveAsSuggestedGlobal) {
+    const suggestedCatalog = SUGGESTED_EXPORT_PRESET_IDS.map((presetId, index) => ({
+      id: presetId,
+      label: String(sanitized?.exportPresetLabels?.[presetId] || DEFAULT_SUGGESTED_EXPORT_PRESET_CATALOG[index]?.label || "").trim(),
+      columns: String(sanitized?.exportPresetColumns?.[presetId] || DEFAULT_SUGGESTED_EXPORT_PRESET_CATALOG[index]?.columns || "").trim(),
+      active: !(Array.isArray(sanitized?.deletedSuggestedPresets) && sanitized.deletedSuggestedPresets.includes(presetId)),
+      sortOrder: index
+    }));
+    await saveGlobalSuggestedExportPresetCatalog({ actor, catalog: suggestedCatalog });
+  } else {
+    const globalCatalog = await getGlobalSuggestedExportPresetCatalog().catch(() => sanitizeSuggestedExportPresetCatalog(DEFAULT_SUGGESTED_EXPORT_PRESET_CATALOG));
+    const globalById = new Map(globalCatalog.map((item) => [item.id, item]));
+    const companySuggestedOverrides = SUGGESTED_EXPORT_PRESET_IDS.map((presetId) => {
+      const globalPreset = globalById.get(presetId) || {};
+      const nextLabel = String(sanitized?.exportPresetLabels?.[presetId] || "").trim();
+      const nextColumns = String(sanitized?.exportPresetColumns?.[presetId] || "").trim();
+      const globalLabel = String(globalPreset?.label || "").trim();
+      const globalColumns = String(globalPreset?.columns || "").trim();
+      return {
+        presetId,
+        label: nextLabel && nextLabel !== globalLabel ? nextLabel : "",
+        columns: nextColumns && nextColumns !== globalColumns ? nextColumns : "",
+        hidden: Array.isArray(sanitized?.deletedSuggestedPresets) && sanitized.deletedSuggestedPresets.includes(presetId)
+      };
+    });
+    await saveCompanySuggestedPresetOverrides({ actor, companyId: scopedCompanyId, overrides: companySuggestedOverrides });
+  }
   const payload = {
     ...sanitized,
     id: SHARED_EXPORT_PRESET_ROW_ID,
     title: SHARED_EXPORT_PRESET_ROW_TITLE,
-    companyId: targetCompanyId,
+    companyId: scopedCompanyId,
+    exportPresetLabels: {},
+    exportPresetColumns: {},
+    deletedSuggestedPresets: [],
     updatedAt: now,
     updatedBy: actor.email
   };
   if (!cfg().on) {
     const store = readStore();
     store.jobs = Array.isArray(store.jobs) ? store.jobs : [];
-    const ix = store.jobs.findIndex((j) => j.companyId === targetCompanyId && isSharedExportPresetRow(j));
+    const ix = store.jobs.findIndex((j) => j.companyId === scopedCompanyId && isSharedExportPresetRow(j));
     const next = {
       id: SHARED_EXPORT_PRESET_ROW_ID,
-      companyId: targetCompanyId,
+      companyId: scopedCompanyId,
       title: SHARED_EXPORT_PRESET_ROW_TITLE,
       clientName: "__system__",
       jobDescription: "Shared export presets",
@@ -3485,8 +3689,8 @@ async function saveCompanySharedExportPresets({ actorUserId, companyId, settings
     return sanitizeSharedExportPresetSettings(next.payload);
   }
   const rows = await sbIns("company_jobs", [{
-    id: systemJobRowId(targetCompanyId, SHARED_EXPORT_PRESET_ROW_ID),
-    company_id: targetCompanyId,
+    id: systemJobRowId(scopedCompanyId, SHARED_EXPORT_PRESET_ROW_ID),
+    company_id: scopedCompanyId,
     title: SHARED_EXPORT_PRESET_ROW_TITLE,
     client_name: "__system__",
     job_description: "Shared export presets",
@@ -3500,10 +3704,7 @@ async function saveCompanySharedExportPresets({ actorUserId, companyId, settings
     updated_by: actor.email,
     payload
   }], { conflict: "id", upsert: true });
-  if (saveAsSuggestedGlobal && targetCompanyId !== String(companyId || "").trim()) {
-    return getCompanySharedExportPresets(companyId);
-  }
-  return sanitizeSharedExportPresetSettings(rows?.[0]?.payload || payload);
+  return getCompanySharedExportPresets(scopedCompanyId);
 }
 async function getCompanyPersonalShortcuts({ companyId, userId }) {
   const scopedCompanyId = String(companyId || "").trim();
@@ -3829,6 +4030,10 @@ async function saveCompanyClientsRow({ companyId, clients, actorEmail = "" }) {
         aboutCompany: item.aboutCompany || "",
         publicCompanyLine: item.publicCompanyLine || "",
         publicPostingTitle: item.publicPostingTitle || "",
+        presetLabel: item.presetLabel || "",
+        presetColumns: item.presetColumns || "",
+        presetUpdatedAt: item.presetUpdatedAt || null,
+        presetUpdatedBy: item.presetUpdatedBy || String(actorEmail || "").trim(),
         createdAt: item.createdAt || new Date().toISOString(),
         updatedAt: item.updatedAt || new Date().toISOString(),
         updatedBy: item.updatedBy || String(actorEmail || "").trim()
@@ -3845,6 +4050,10 @@ async function saveCompanyClientsRow({ companyId, clients, actorEmail = "" }) {
     about_company: item.aboutCompany || "",
     public_company_line: item.publicCompanyLine || "",
     public_posting_title: item.publicPostingTitle || "",
+    preset_label: item.presetLabel || "",
+    preset_columns: item.presetColumns || "",
+    preset_updated_at: item.presetUpdatedAt || null,
+    preset_updated_by: item.presetUpdatedBy || String(actorEmail || "").trim(),
     created_at: item.createdAt || new Date().toISOString(),
     updated_at: item.updatedAt || new Date().toISOString(),
     updated_by: item.updatedBy || String(actorEmail || "").trim()
@@ -3892,7 +4101,7 @@ async function getCompanyClients(companyId) {
   }
   return merged;
 }
-async function createCompanyClient({ actorUserId, companyId, name, aboutCompany = "", publicCompanyLine = "", publicPostingTitle = "" }) {
+async function createCompanyClient({ actorUserId, companyId, name, aboutCompany = "", publicCompanyLine = "", publicPostingTitle = "", presetLabel = "", presetColumns = "" }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor || String(actor.role || "").toLowerCase() !== "admin") throw new Error("Only an admin can create clients.");
   const scopedCompanyId = String(companyId || "").trim();
@@ -3910,6 +4119,10 @@ async function createCompanyClient({ actorUserId, companyId, name, aboutCompany 
     aboutCompany: String(aboutCompany || existing?.aboutCompany || "").trim(),
     publicCompanyLine: String(publicCompanyLine || existing?.publicCompanyLine || "").trim(),
     publicPostingTitle: String(publicPostingTitle || existing?.publicPostingTitle || "").trim(),
+    presetLabel: String(presetLabel || existing?.presetLabel || "").trim(),
+    presetColumns: String(presetColumns || existing?.presetColumns || "").trim(),
+    presetUpdatedAt: (String(presetLabel || presetColumns || "").trim() || existing?.presetUpdatedAt) ? now : null,
+    presetUpdatedBy: String(presetLabel || presetColumns || existing?.presetUpdatedBy || "").trim() ? (actor.email || "") : "",
     createdAt: existing?.createdAt || now,
     updatedAt: now,
     updatedBy: actor.email || ""
@@ -3934,7 +4147,7 @@ async function createCompanyClient({ actorUserId, companyId, name, aboutCompany 
   }
   return nextClient;
 }
-async function updateCompanyClientRecord({ actorUserId, companyId, clientId = "", currentName = "", nextName = "", archived, aboutCompany, publicCompanyLine, publicPostingTitle }) {
+async function updateCompanyClientRecord({ actorUserId, companyId, clientId = "", currentName = "", nextName = "", archived, aboutCompany, publicCompanyLine, publicPostingTitle, presetLabel, presetColumns }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor || String(actor.role || "").toLowerCase() !== "admin") throw new Error("Only an admin can update clients.");
   const scopedCompanyId = String(companyId || "").trim();
@@ -3949,6 +4162,9 @@ async function updateCompanyClientRecord({ actorUserId, companyId, clientId = ""
   const safeNextName = String(nextName || matched.name || "").trim();
   if (!safeNextName) throw new Error("Client name is required.");
   const now = new Date().toISOString();
+  const nextPresetLabel = presetLabel !== undefined ? String(presetLabel || "").trim() : matched.presetLabel;
+  const nextPresetColumns = presetColumns !== undefined ? String(presetColumns || "").trim() : matched.presetColumns;
+  const presetTouched = presetLabel !== undefined || presetColumns !== undefined;
   const nextClient = sanitizeCompanyClient({
     ...matched,
     name: safeNextName,
@@ -3956,6 +4172,10 @@ async function updateCompanyClientRecord({ actorUserId, companyId, clientId = ""
     aboutCompany: aboutCompany !== undefined ? String(aboutCompany || "").trim() : matched.aboutCompany,
     publicCompanyLine: publicCompanyLine !== undefined ? String(publicCompanyLine || "").trim() : matched.publicCompanyLine,
     publicPostingTitle: publicPostingTitle !== undefined ? String(publicPostingTitle || "").trim() : matched.publicPostingTitle,
+    presetLabel: nextPresetLabel,
+    presetColumns: nextPresetColumns,
+    presetUpdatedAt: presetTouched ? now : matched.presetUpdatedAt,
+    presetUpdatedBy: presetTouched ? (actor.email || "") : matched.presetUpdatedBy,
     updatedAt: now,
     updatedBy: actor.email || ""
   });
