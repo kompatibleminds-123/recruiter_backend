@@ -12172,35 +12172,10 @@ function PortalApp({ token, onLogout }) {
         ? copySettings.companyWideShortcuts
         : {}
     );
-    const localSnapshot = normalizeShortcutMapKeys(shortcutLocalSnapshotRef.current || {});
-    const recoveryKey = JSON.stringify({
+    shortcutRecoveryAttemptRef.current = JSON.stringify({
       companyId: String(currentCompanyId || "").trim(),
-      serverKeys: Object.keys(serverCompanyShortcuts).sort(),
-      localKeys: Object.keys(localSnapshot).sort()
+      serverKeys: Object.keys(serverCompanyShortcuts).sort()
     });
-    if (shortcutRecoveryAttemptRef.current === recoveryKey) return;
-    shortcutRecoveryAttemptRef.current = recoveryKey;
-    if (hasNonLinkedinShortcuts(serverCompanyShortcuts)) return;
-    const localNonLinkedin = Object.fromEntries(getNonLinkedinShortcutEntries(localSnapshot));
-    if (!Object.keys(localNonLinkedin).length) return;
-    const mergedShortcuts = {
-      ...localNonLinkedin,
-      ...serverCompanyShortcuts
-    };
-    void (async () => {
-      try {
-        const payload = {
-          ...copySettings,
-          companyWideShortcuts: mergedShortcuts
-        };
-        const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
-        shortcutLocalSnapshotRef.current = normalizeShortcutMapKeys(mergedShortcuts);
-        setCopySettings((current) => migrateCopySettings({ ...current, ...result }));
-        setStatus("shortcuts", "Recovered shared shortcuts from your local cache.", "ok");
-      } catch {
-        // Keep current server state if recovery is not possible.
-      }
-    })();
   }, [token, isSettingsAdmin, copySettings, location?.pathname, currentCompanyId]);
 
   useEffect(() => {
