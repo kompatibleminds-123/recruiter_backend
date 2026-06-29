@@ -4346,7 +4346,6 @@ function buildScreeningRemarksForExport(item = {}) {
   const ctx = resolveCandidateContext(item);
   const otherStandardQuestions = String(ctx.otherStandardQuestions || "").trim();
   const reasonOfChangeValue = buildReasonOfChangeForExport({ ...ctx.candidate, ...(ctx.assessment || {}), screening_answers: ctx.screeningMap || {} });
-  const strongPoints = (ctx.highlights || []).slice(0, 2);
   const fixedFieldLabels = new Set([
     "current ctc",
     "expected ctc",
@@ -4376,39 +4375,52 @@ function buildScreeningRemarksForExport(item = {}) {
     "recruiter"
   ]);
   const lines = otherStandardQuestions
-    .split(/\r?\n+/)
-    .map((line) => String(line || "").trim())
-    .filter(Boolean);
-  const questionLines = [];
+    .split(/\r?\n/)
+    .map((line) => String(line || "").trimEnd());
+  const questionItems = [];
   let inlineReasonOfChange = "";
+  let currentQuestion = null;
 
   lines.forEach((line) => {
-    // Attempt history lines look like: "[4/15/2026, 4:08:06 PM] JD shared"
-    // They contain ":" because of time, which previously got mis-parsed as "label: answer".
-    if (/^\[[^\]]+\]\s*/.test(line)) return;
-    const normalizedLine = line.replace(/^[\d\.\-\)\s]+/, "").trim();
-    const separatorIndex = normalizedLine.indexOf(":");
-    if (separatorIndex <= 0) return;
-    const label = normalizedLine.slice(0, separatorIndex).trim();
-    const answer = normalizedLine
-      .slice(separatorIndex + 1)
-      .replace(/^[\s:\-]+/, "")
-      .trim();
-    const normalizedLabel = label.toLowerCase();
-    if (!label || !answer) return;
-    // Only keep actual question labels (needs at least one letter).
-    if (!/[a-z]/i.test(label)) return;
-    if (normalizedLabel === "reason of change") {
-      inlineReasonOfChange = answer;
+    const trimmedLine = String(line || "").trim();
+    if (!trimmedLine) {
       return;
     }
-    if (fixedFieldLabels.has(normalizedLabel)) return;
-    questionLines.push(`${questionLines.length + 1}. ${label} - *${answer}*`);
+    // Attempt history lines look like: "[4/15/2026, 4:08:06 PM] JD shared"
+    // They contain ":" because of time, which previously got mis-parsed as "label: answer".
+    if (/^\[[^\]]+\]\s*/.test(trimmedLine)) return;
+    const normalizedLine = trimmedLine.replace(/^[\d\.\-\)\s]+/, "").trim();
+    const separatorIndex = normalizedLine.indexOf(":");
+    if (separatorIndex > 0) {
+      const label = normalizedLine.slice(0, separatorIndex).trim();
+      const answer = normalizedLine
+        .slice(separatorIndex + 1)
+        .replace(/^[\s:\-]+/, "")
+        .trim();
+      const normalizedLabel = label.toLowerCase();
+      if (!label || !answer) return;
+      if (!/[a-z]/i.test(label)) return;
+      if (normalizedLabel === "reason of change") {
+        inlineReasonOfChange = answer;
+        currentQuestion = null;
+        return;
+      }
+      if (fixedFieldLabels.has(normalizedLabel)) {
+        currentQuestion = null;
+        return;
+      }
+      currentQuestion = { label, answer };
+      questionItems.push(currentQuestion);
+      return;
+    }
+    if (currentQuestion) {
+      currentQuestion.answer = `${currentQuestion.answer}\n${trimmedLine}`;
+    }
   });
 
   // Primary: use saved screening answers map (JD questions). This avoids leaking attempt-history/status notes.
   if (ctx.screeningMap) {
-    const nextLines = [];
+    const nextItems = [];
     Object.entries(ctx.screeningMap).forEach(([question, answer]) => {
       const label = String(question || "").trim();
       const value = String(answer || "").trim();
@@ -4419,24 +4431,28 @@ function buildScreeningRemarksForExport(item = {}) {
         return;
       }
       if (fixedFieldLabels.has(normalizedLabel)) return;
-      nextLines.push([label, value]);
+      nextItems.push({ label, answer: value });
     });
-    if (nextLines.length) {
-      questionLines.length = 0;
-      nextLines.forEach(([label, value]) => questionLines.push(`${questionLines.length + 1}. ${label} - *${value}*`));
+    if (nextItems.length) {
+      questionItems.length = 0;
+      nextItems.forEach((item) => questionItems.push(item));
     }
   }
 
   const finalReasonOfChange = inlineReasonOfChange || reasonOfChangeValue;
   const parts = [];
-  if (strongPoints.length) {
-    parts.push("Strong points:");
-    strongPoints.forEach((point, index) => parts.push(`${index + 1}. *${point}*`));
-  }
-  if (questionLines.length) {
-    if (parts.length) parts.push("");
+  if (questionItems.length) {
     parts.push("Screening Q&A:");
-    parts.push(...questionLines);
+    questionItems.forEach((item, index) => {
+      const answerLines = String(item.answer || "")
+        .split(/\r?\n/)
+        .map((line) => String(line || "").trim())
+        .filter(Boolean);
+      if (!answerLines.length) return;
+      const [firstLine, ...restLines] = answerLines;
+      parts.push(`${index + 1}. ${item.label} - *${firstLine}*`);
+      restLines.forEach((line) => parts.push(`   *${line}*`));
+    });
   }
   if (finalReasonOfChange) {
     if (parts.length) parts.push("");
