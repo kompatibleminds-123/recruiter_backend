@@ -9567,13 +9567,14 @@ function PortalApp({ token, onLogout }) {
   // Assessment event exports are available via dedicated buttons (no modal).
   const [copySettings, setCopySettings] = useState(() => migrateCopySettings({}));
   const exportPresetOptions = useMemo(() => [
-    { id: "compact_recruiter", label: copySettings.exportPresetLabels?.compact_recruiter || "Default recruiter exports" },
-    { id: "client_tracker", label: copySettings.exportPresetLabels?.client_tracker || "Internal tracker" },
-    { id: "client_submission", label: copySettings.exportPresetLabels?.client_submission || "Client submission" },
-    { id: "screening_focus", label: copySettings.exportPresetLabels?.screening_focus || "Screening focus" },
+    { id: "compact_recruiter", label: copySettings.exportPresetLabels?.compact_recruiter || "Default recruiter exports", source: "built_in" },
+    { id: "client_tracker", label: copySettings.exportPresetLabels?.client_tracker || "Internal tracker", source: "built_in" },
+    { id: "client_submission", label: copySettings.exportPresetLabels?.client_submission || "Client submission", source: "built_in" },
+    { id: "screening_focus", label: copySettings.exportPresetLabels?.screening_focus || "Screening focus", source: "built_in" },
     ...((copySettings.customExportPresets || []).map((preset) => ({
       id: preset.id,
-      label: preset.label || preset.id
+      label: preset.label || preset.id,
+      source: "custom"
     })))
   ].filter((preset) => String(preset.id || "").trim()), [copySettings]);
   const [activeCopyPresetId, setActiveCopyPresetId] = useState(copySettings.excelPreset || "compact_recruiter");
@@ -28980,12 +28981,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <label>
                         <span>Select preset to edit</span>
                         <select value={copySettings.excelPreset} onChange={(e) => setCopySettings((current) => ({ ...current, excelPreset: e.target.value }))}>
-                          <option value="compact_recruiter">{`${copySettings.exportPresetLabels?.compact_recruiter || "Default recruiter exports"} (Suggested)`}</option>
-                          <option value="client_tracker">{`${copySettings.exportPresetLabels?.client_tracker || "Internal tracker"} (Suggested)`}</option>
-                          <option value="client_submission">{`${copySettings.exportPresetLabels?.client_submission || "Client submission"} (Suggested)`}</option>
-                          <option value="screening_focus">{`${copySettings.exportPresetLabels?.screening_focus || "Screening focus"} (Suggested)`}</option>
-                          {(copySettings.customExportPresets || []).map((preset) => (
-                            <option key={preset.id} value={preset.id}>{`${preset.label} (Company Specific)`}</option>
+                          {exportPresetOptions.map((preset) => (
+                            <option key={preset.id} value={preset.id}>
+                              {preset.source === "custom" ? `${preset.label} (Company Specific)` : `${preset.label} (Suggested)`}
+                            </option>
                           ))}
                         </select>
                       </label>
