@@ -1717,9 +1717,60 @@ function resolveCandidateContext(input = {}) {
   const candidate = raw?.raw?.candidate || raw?.candidate || raw;
   const assessment = raw?.raw?.assessment || raw?.assessment || null;
   const draft = getCandidateDraftState(candidate);
+  const buildAssessmentStandardQaMap = (assessmentRow = null) => {
+    if (!assessmentRow || typeof assessmentRow !== "object") return null;
+    const rawQuestions =
+      assessmentRow?.standardQuestions
+      ?? assessmentRow?.standard_questions
+      ?? assessmentRow?.payload?.standardQuestions
+      ?? assessmentRow?.payload?.standard_questions
+      ?? [];
+    const rawAnswers =
+      assessmentRow?.standardAnswers
+      ?? assessmentRow?.standard_answers
+      ?? assessmentRow?.payload?.standardAnswers
+      ?? assessmentRow?.payload?.standard_answers
+      ?? [];
+    const questionList = Array.isArray(rawQuestions)
+      ? rawQuestions
+        .map((entry) => {
+          if (typeof entry === "string") return String(entry || "").trim();
+          if (entry && typeof entry === "object") return String(entry.question || entry.label || entry.title || "").trim();
+          return "";
+        })
+        .filter(Boolean)
+      : String(rawQuestions || "")
+        .split(/\r?\n|[,;]+/g)
+        .map((entry) => String(entry || "").trim())
+        .filter(Boolean);
+    const answerRows = Array.isArray(rawAnswers) ? rawAnswers : [];
+    if (!questionList.length && !answerRows.length) return null;
+    const map = {};
+    if (answerRows.length) {
+      answerRows.forEach((entry, index) => {
+        if (entry && typeof entry === "object") {
+          const question = String(entry.question || questionList[index] || "").trim();
+          const answer = String(entry.answer ?? "").trim();
+          if (question && answer) map[question] = answer;
+          return;
+        }
+        const question = String(questionList[index] || "").trim();
+        const answer = String(entry ?? "").trim();
+        if (question && answer) map[question] = answer;
+      });
+    }
+    if (!Object.keys(map).length && questionList.length) {
+      questionList.forEach((question) => {
+        if (question) map[question] = "";
+      });
+    }
+    return Object.keys(map).length ? map : null;
+  };
+  const assessmentStandardQaMap = buildAssessmentStandardQaMap(assessment);
 
   const screeningMap =
-    (draft?.jdScreeningAnswers && typeof draft.jdScreeningAnswers === "object" ? draft.jdScreeningAnswers : null)
+    assessmentStandardQaMap
+    || (draft?.jdScreeningAnswers && typeof draft.jdScreeningAnswers === "object" ? draft.jdScreeningAnswers : null)
     || (assessment?.jdScreeningAnswers && typeof assessment.jdScreeningAnswers === "object" ? assessment.jdScreeningAnswers : null)
     || (assessment?.screening_answers && typeof assessment.screening_answers === "object" ? assessment.screening_answers : null)
     || (assessment?.screeningAnswers && typeof assessment.screeningAnswers === "object" ? assessment.screeningAnswers : null)
@@ -4178,7 +4229,7 @@ function buildCombinedAssessmentInsightsForExportV2(item = {}) {
     Object.entries(ctx.screeningMap).forEach(([question, answer]) => pushQa(question, answer));
   }
 
-  const otherStandardQuestions = String(item.other_standard_questions || item.last_contact_notes || "").trim();
+  const otherStandardQuestions = String(ctx.otherStandardQuestions || item.other_standard_questions || item.last_contact_notes || "").trim();
   otherStandardQuestions
     .split(/\r?\n+/)
     .map((line) => String(line || "").trim())
@@ -4343,6 +4394,102 @@ function buildCombinedAssessmentInsightsForExport(item = {}) {
   if (finalReasonOfChange) parts.push(`Reason of change: *${finalReasonOfChange}*`);
   if (questionLines.length) parts.push(...questionLines);
   return parts.join("\n");
+}
+
+function buildScreeningQaOnlyForExport(item = {}) {
+  const ctx = resolveCandidateContext(item);
+  const fixedFieldLabels = new Set([
+    "current ctc",
+    "expected ctc",
+    "notice period",
+    "notice",
+    "experience",
+    "total experience",
+    "work experience",
+    "highest education",
+    "qualification",
+    "current company",
+    "current designation",
+    "location",
+    "offer in hand",
+    "lwd",
+    "doj",
+    "lwd / doj",
+    "lwd or doj",
+    "status",
+    "current status",
+    "assessment status",
+    "candidate status",
+    "pipeline",
+    "pipeline stage",
+    "source",
+    "client",
+    "recruiter"
+  ]);
+  const questionItems = [];
+  let currentQuestion = null;
+  const pushQa = (label, answer) => {
+    const safeLabel = String(label || "").trim();
+    const safeAnswer = String(answer || "").trim();
+    const normalizedLabel = safeLabel.toLowerCase();
+    if (!safeLabel || !safeAnswer) return;
+    if (!/[a-z]/i.test(safeLabel)) return;
+    if (normalizedLabel === "reason of change") return;
+    if (fixedFieldLabels.has(normalizedLabel)) return;
+    questionItems.push({ label: safeLabel, answer: safeAnswer });
+  };
+
+  if (ctx.screeningMap && typeof ctx.screeningMap === "object") {
+    Object.entries(ctx.screeningMap).forEach(([question, answer]) => pushQa(question, answer));
+  }
+
+  if (!questionItems.length) {
+    const lines = String(ctx.otherStandardQuestions || "")
+      .split(/\r?\n/)
+      .map((line) => String(line || "").trimEnd());
+    lines.forEach((line) => {
+      const trimmedLine = String(line || "").trim();
+      if (!trimmedLine) return;
+      if (/^\[[^\]]+\]\s*/.test(trimmedLine)) return;
+      const normalizedLine = trimmedLine.replace(/^[\d\.\-\)\s]+/, "").trim();
+      const separatorIndex = normalizedLine.indexOf(":");
+      if (separatorIndex > 0) {
+        const label = normalizedLine.slice(0, separatorIndex).trim();
+        const answer = normalizedLine
+          .slice(separatorIndex + 1)
+          .replace(/^[\s:\-]+/, "")
+          .trim();
+        if (!label || !answer) return;
+        if (String(label || "").trim().toLowerCase() === "reason of change") {
+          currentQuestion = null;
+          return;
+        }
+        if (fixedFieldLabels.has(String(label || "").trim().toLowerCase())) {
+          currentQuestion = null;
+          return;
+        }
+        currentQuestion = { label, answer };
+        questionItems.push(currentQuestion);
+        return;
+      }
+      if (currentQuestion) {
+        currentQuestion.answer = `${currentQuestion.answer}\n${trimmedLine}`;
+      }
+    });
+  }
+
+  return questionItems.map((item, index) => {
+    const answerLines = String(item.answer || "")
+      .split(/\r?\n/)
+      .map((line) => String(line || "").trim())
+      .filter(Boolean);
+    if (!answerLines.length) return "";
+    const [firstLine, ...restLines] = answerLines;
+    return [
+      `${index + 1}. ${item.label} - *${firstLine}*`,
+      ...restLines.map((line) => `   *${line}*`)
+    ].join("\n");
+  }).filter(Boolean).join("\n");
 }
 
 function buildScreeningRemarksForExport(item = {}) {
@@ -4642,7 +4789,10 @@ function getCapturedExportFieldValue(item = {}, field = "") {
     case "domain_industry": return item.domain_industry || item.domainIndustry || "";
     case "current_org_tenure": return item.current_org_tenure || item.currentOrgTenure || "";
     case "other_pointers": return item.other_pointers || "";
-    case "other_standard_questions": return item.other_standard_questions || item.last_contact_notes || "";
+    case "other_standard_questions": {
+      const next = buildScreeningQaOnlyForExport(item);
+      return next || item.other_standard_questions || item.last_contact_notes || "";
+    }
     case "remarks": return item.recruiter_context_notes || item.notes || "";
     case "cv_link": {
       const value = String(item.cv_link || item.cv_url || item.cvUrl || "").trim();
