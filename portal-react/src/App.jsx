@@ -609,7 +609,7 @@ const PRESET_INDICATOR_LIBRARY = [
   { key: "reason_of_change", label: "Reason of Change" },
   { key: "other_pointers", label: "Optional Pointers" },
   { key: "other_standard_questions", label: "Screening Q&A" },
-  { key: "screening_remarks", label: "Screening Remarks (Strong points + Screening Q&A + Reason of change)" },
+  { key: "screening_remarks", label: "Screening Remarks (Screening Q&A + Reason of change)" },
   { key: "remarks", label: "Recruiter Notes (general)" },
   { key: "lwd_or_doj", label: "LWD / DOJ" },
   { key: "offer_in_hand", label: "Offer in hand" },
@@ -1720,6 +1720,9 @@ function resolveCandidateContext(input = {}) {
 
   const screeningMap =
     (draft?.jdScreeningAnswers && typeof draft.jdScreeningAnswers === "object" ? draft.jdScreeningAnswers : null)
+    || (assessment?.jdScreeningAnswers && typeof assessment.jdScreeningAnswers === "object" ? assessment.jdScreeningAnswers : null)
+    || (assessment?.screening_answers && typeof assessment.screening_answers === "object" ? assessment.screening_answers : null)
+    || (assessment?.screeningAnswers && typeof assessment.screeningAnswers === "object" ? assessment.screeningAnswers : null)
     || (candidate?.screening_answers && typeof candidate.screening_answers === "object" ? candidate.screening_answers : null)
     || (candidate?.screeningAnswers && typeof candidate.screeningAnswers === "object" ? candidate.screeningAnswers : null)
     || null;
@@ -9821,8 +9824,35 @@ function PortalApp({ token, onLogout }) {
     [copySettings?.customExportPresets]
   );
   const customExportPresetList = useMemo(
-    () => [...clientPresetOptions, ...legacyCustomExportPresetList],
-    [clientPresetOptions, legacyCustomExportPresetList]
+    () => {
+      const byKey = new Map();
+      const clientPresetLabelKeys = new Set(
+        clientPresetOptions
+          .map((preset) => String(preset?.label || "").trim().toLowerCase())
+          .filter(Boolean)
+      );
+      const makeKey = (preset = {}) => {
+        const clientPart = normalizeClientIdentityKey(String(preset?.clientName || "").trim());
+        const labelPart = String(preset?.label || "").trim().toLowerCase();
+        return `${clientPart}::${labelPart}`;
+      };
+      clientPresetOptions.forEach((preset) => {
+        const presetId = String(preset?.id || "").trim();
+        if (!presetId) return;
+        byKey.set(makeKey(preset), preset);
+      });
+      legacyCustomExportPresetList.forEach((preset) => {
+        const presetId = String(preset?.id || "").trim();
+        if (!presetId) return;
+        const labelKey = String(preset?.label || "").trim().toLowerCase();
+        if (labelKey && clientPresetLabelKeys.has(labelKey)) return;
+        const dedupeKey = makeKey(preset);
+        if (byKey.has(dedupeKey)) return;
+        byKey.set(dedupeKey, preset);
+      });
+      return Array.from(byKey.values());
+    },
+    [clientPresetOptions, legacyCustomExportPresetList, normalizeClientIdentityKey]
   );
   const deletedSuggestedPresetIds = useMemo(
     () => new Set((Array.isArray(copySettings?.deletedSuggestedPresets) ? copySettings.deletedSuggestedPresets : []).map((item) => String(item || "").trim()).filter(Boolean)),
@@ -29223,7 +29253,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </label>
                       <div className="full">
                         <span className="field-label">Selected indicators ({editPresetIndicators.length})</span>
-                        <p className="muted">Mixed indicator output shows in one column as: Value 1 | Value 2 | Value 3.</p><p className="muted">Indicator reference: `remarks` = Recruiter Note (manual recruiter note). `screening_remarks` = Strong points + Screening Q&A + Reason of change. `notice_period` = notice + LWD/DOJ + offer-in-hand context.</p>
+                        <p className="muted">Mixed indicator output shows in one column as: Value 1 | Value 2 | Value 3.</p><p className="muted">Indicator reference: `remarks` = Recruiter Note (manual recruiter note). `screening_remarks` = Screening Q&A + Reason of change. `notice_period` = notice + LWD/DOJ + offer-in-hand context.</p>
                         <div className="stack-list compact preset-indicator-list">
                           {editPresetIndicators.length ? editPresetIndicators.map((indicator) => (
                             <article
@@ -29288,7 +29318,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <textarea disabled={!isSettingsAdmin} value={copySettings.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, emailTemplate: e.target.value }))} />
                       </label>
                     </div>
-                    <p className="muted">{"Available placeholders: copy templates use {{index}} {{name}} {{jd_title}} {{company}} {{outcome}} {{recruiter_notes}} {{location}} {{phone}} {{email}} {{source}} {{follow_up_at}}. Note: remarks = Recruiter Note (manual recruiter note), notice_period = notice period text (can include immediate/serving/NP value), screening_remarks = Strong points + Screening Q&A + Reason of change."}</p>
+                    <p className="muted">{"Available placeholders: copy templates use {{index}} {{name}} {{jd_title}} {{company}} {{outcome}} {{recruiter_notes}} {{location}} {{phone}} {{email}} {{source}} {{follow_up_at}}. Note: remarks = Recruiter Note (manual recruiter note), notice_period = notice period text (can include immediate/serving/NP value), screening_remarks = Screening Q&A + Reason of change."}</p>
                     <div className="button-row">
                       {canEditSelectedPreset ? <button onClick={() => void saveSharedCopySettings()}>{isSuggestedPresetSelected ? "Save suggested preset changes" : "Save preset changes"}</button> : null}
                       {isSettingsAdmin && (selectedCustomPreset || selectedBuiltInPresetId) ? (
@@ -29343,7 +29373,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </label>
                       <div className="full">
                         <span className="field-label">Selected indicators ({newPresetIndicators.length}/20)</span>
-                        <p className="muted">Mixed indicator output shows in one column as: Value 1 | Value 2 | Value 3.</p><p className="muted">Indicator reference: `remarks` = Recruiter Note (manual recruiter note). `screening_remarks` = Strong points + Screening Q&A + Reason of change. `notice_period` = notice + LWD/DOJ + offer-in-hand context.</p>
+                        <p className="muted">Mixed indicator output shows in one column as: Value 1 | Value 2 | Value 3.</p><p className="muted">Indicator reference: `remarks` = Recruiter Note (manual recruiter note). `screening_remarks` = Screening Q&A + Reason of change. `notice_period` = notice + LWD/DOJ + offer-in-hand context.</p>
                         <div className="stack-list compact preset-indicator-list">
                           {newPresetIndicators.length ? newPresetIndicators.map((indicator) => (
                             <article
