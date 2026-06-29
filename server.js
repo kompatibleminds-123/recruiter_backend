@@ -4875,7 +4875,10 @@ function renderMarketingTemplate(template = "", prospect = {}, context = {}) {
     sender_name: senderName,
     sender_first_name: senderFirstName,
     sender_email: senderEmail,
-    sender_phone: senderPhone
+    sender_phone: senderPhone,
+    logged_in_recruiter_name: senderName,
+    logged_in_recruiter_email: senderEmail,
+    logged_in_recruiter_phone: senderPhone
   };
   const withDoubleBraceTokens = source.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key) => {
     const needle = String(key || "").trim().toLowerCase();
@@ -4890,7 +4893,10 @@ function renderMarketingTemplate(template = "", prospect = {}, context = {}) {
       RecruiterFirstName: replacementMap.sender_first_name,
       Company: replacementMap.company,
       RecruiterEmail: replacementMap.sender_email,
-      RecruiterPhone: replacementMap.sender_phone
+      RecruiterPhone: replacementMap.sender_phone,
+      LoggedInRecruiter: replacementMap.logged_in_recruiter_name,
+      LoggedInRecruiterEmail: replacementMap.logged_in_recruiter_email,
+      LoggedInRecruiterPhone: replacementMap.logged_in_recruiter_phone
     };
     return Object.prototype.hasOwnProperty.call(aliasMap, key) ? aliasMap[key] : match;
   });

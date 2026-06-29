@@ -259,7 +259,7 @@ function FeatureLockedSection({ title = "Feature locked" }) {
   linkedinConnectionRequestTemplate: "Hi {{name}}, came across your profile for {{jd_title}} and would love to connect.",
   emailTemplate: "{{index}}. {{name}}\nCompany: {{company}}\nRole: {{jd_title}}\nLocation: {{location}}\nOutcome: {{outcome}}\nEmail: {{email}}\nPhone: {{phone}}\nNotes: {{recruiter_notes}}",
   bulkMailSubjectTemplate: "Opportunity with {Company}",
-  bulkMailBodyTemplate: "Hello {Candidate},\n\nI hope you are doing well.\n\nI came across your profile and wanted to connect regarding a relevant opportunity.\n\nRegards,\n{Recruiter}\n{RecruiterEmail}",
+  bulkMailBodyTemplate: "Hello {Candidate},\n\nI hope you are doing well.\n\nI came across your profile and wanted to connect regarding a relevant opportunity.",
   clientDirectory: [],
   clientShareIntroTemplate: "Hello {{hr_name}},\n\nGreetings !!\n\nThis is {{recruiter_name}} from {{company_name}}.\nPFA the profiles for {{role}}.\nKindly review and share your feedback.",
   clientShareThreadIntroTemplate: "Hello {{hr_name}},\n\nSharing additional profiles for {{role}} in the same mail chain.\n\nRegards,\n{{recruiter_name}}",
@@ -402,7 +402,7 @@ function migrateCopySettings(settings = {}) {
   next.clientShareSubjectTemplate = normalizeMojibakeSymbols(next.clientShareSubjectTemplate || DEFAULT_COPY_SETTINGS.clientShareSubjectTemplate || "");
   next.clientShareSignatureText = normalizeTemplateFormatting(next.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || "");
   next.jdEmailSubjectTemplate = normalizeTemplateFormatting(next.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate || "");
-  next.jdEmailIntroTemplate = normalizeMojibakeSymbols(next.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate || "");
+  next.jdEmailIntroTemplate = normalizeTemplateFormatting(next.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate || "");
   next.clientShareSignatureLinkLabel = normalizeMojibakeSymbols(next.clientShareSignatureLinkLabel || "");
   next.clientShareSignatureLinkLabel2 = normalizeMojibakeSymbols(next.clientShareSignatureLinkLabel2 || "");
   const resumeFormatting = { ...(DEFAULT_COPY_SETTINGS.resumeFormatting || {}), ...(next.resumeFormatting || {}) };
@@ -549,6 +549,9 @@ const CLIENT_SHARE_TEMPLATE_PLACEHOLDERS = [
   "{{recruiter_name}}",
   "{{recruiter_email}}",
   "{{recruiter_phone}}",
+  "{{logged_in_recruiter_name}}",
+  "{{logged_in_recruiter_email}}",
+  "{{logged_in_recruiter_phone}}",
   "{{company_name}}"
 ];
 const BULK_MAIL_TEMPLATE_PLACEHOLDERS = [
@@ -558,7 +561,10 @@ const BULK_MAIL_TEMPLATE_PLACEHOLDERS = [
   "{Recruiter}",
   "{Company}",
   "{RecruiterEmail}",
-  "{RecruiterPhone}"
+  "{RecruiterPhone}",
+  "{LoggedInRecruiter}",
+  "{LoggedInRecruiterEmail}",
+  "{LoggedInRecruiterPhone}"
 ];
 const JD_SHARE_TEMPLATE_PLACEHOLDERS = [
   "{Candidate}",
@@ -567,7 +573,10 @@ const JD_SHARE_TEMPLATE_PLACEHOLDERS = [
   "{Recruiter}",
   "{Company}",
   "{RecruiterEmail}",
-  "{RecruiterPhone}"
+  "{RecruiterPhone}",
+  "{LoggedInRecruiter}",
+  "{LoggedInRecruiterEmail}",
+  "{LoggedInRecruiterPhone}"
 ];
 
 function parseEmailTokens(value = "") {
@@ -9221,6 +9230,7 @@ function PortalApp({ token, onLogout }) {
     open: false,
     mode: "new",
     contentSource: "template",
+    jdShareMode: "normal",
     templates: [],
     selectedTemplateId: "",
     savedTemplateId: "",
@@ -20077,7 +20087,10 @@ function PortalApp({ token, onLogout }) {
       .replace(/\{Role\}/gi, String(roleLabel || ""))
       .replace(/\{Company\}/gi, String(companyName || ""))
       .replace(/\{RecruiterEmail\}/gi, String(recruiterEmail || ""))
-      .replace(/\{RecruiterPhone\}/gi, String(recruiterPhone || ""));
+      .replace(/\{RecruiterPhone\}/gi, String(recruiterPhone || ""))
+      .replace(/\{LoggedInRecruiter\}/gi, String(recruiterName || ""))
+      .replace(/\{LoggedInRecruiterEmail\}/gi, String(recruiterEmail || ""))
+      .replace(/\{LoggedInRecruiterPhone\}/gi, String(recruiterPhone || ""));
   }
 
   function openJdEmailModalForCandidate(candidate, defaultJobId = "") {
@@ -20801,12 +20814,160 @@ function PortalApp({ token, onLogout }) {
     return nextState;
   }
 
-  function buildDbCampaignModalJdDraftSync(jobId = "", applyLinkOverride = "") {
+  function getDbCampaignSenderContext(senderUserId = "") {
+    const selectedId = String(senderUserId || state.user?.id || "").trim();
+    const currentUserId = String(state.user?.id || "").trim();
+    const selectedUser =
+      (Array.isArray(state.users) ? state.users : []).find((item) => String(item?.id || "").trim() === selectedId)
+      || (selectedId && selectedId === currentUserId ? state.user : null)
+      || state.user
+      || {};
+    return {
+      id: String(selectedUser?.id || selectedId || "").trim(),
+      name: String(selectedUser?.name || state.user?.name || "Recruiter").trim(),
+      email: String(selectedUser?.email || state.user?.email || "").trim(),
+      phone: String(
+        selectedUser?.phone
+        || selectedUser?.phoneNumber
+        || selectedUser?.mobile
+        || selectedUser?.mobileNumber
+        || state.user?.phone
+        || state.user?.phoneNumber
+        || state.user?.mobile
+        || state.user?.mobileNumber
+        || ""
+      ).trim(),
+      companyName: String(
+        selectedUser?.companyName
+        || selectedUser?.company_name
+        || state.user?.companyName
+        || state.user?.company_name
+        || "RecruitDesk"
+      ).trim()
+    };
+  }
+
+  function renderDbCampaignTemplatePreview(template = "", prospect = {}, senderContext = {}) {
+    const source = String(template || "");
+    const firstName = extractSafeFirstName(String(prospect?.name || "").trim());
+    const senderName = String(senderContext?.name || "").trim();
+    const senderFirstName = extractSafeFirstName(senderName);
+    const senderEmail = String(senderContext?.email || "").trim();
+    const senderPhone = String(senderContext?.phone || "").trim();
+    const senderCompany = String(senderContext?.companyName || "").trim();
+    const resolvedRole = String(prospect?.jd_title || prospect?.jdTitle || prospect?.role || prospect?.designation || "").trim();
+    const resolvedCompany = String(senderCompany || prospect?.company_name || prospect?.companyName || "").trim();
+    const replacementMap = {
+      name: String(prospect?.name || "").trim(),
+      first_name: firstName,
+      email: String(prospect?.email || "").trim(),
+      phone: String(prospect?.phone || "").trim(),
+      company: resolvedCompany,
+      company_name: resolvedCompany,
+      designation: String(prospect?.designation || "").trim(),
+      role: resolvedRole,
+      jd_title: resolvedRole,
+      category: String(prospect?.category || "").trim(),
+      categories: Array.isArray(prospect?.categories) ? prospect.categories.join(", ") : String(prospect?.categories || "").trim(),
+      sender_name: senderName,
+      sender_first_name: senderFirstName,
+      sender_email: senderEmail,
+      sender_phone: senderPhone,
+      logged_in_recruiter_name: senderName,
+      logged_in_recruiter_email: senderEmail,
+      logged_in_recruiter_phone: senderPhone
+    };
+    const withDoubleBraceTokens = source.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key) => {
+      const needle = String(key || "").trim().toLowerCase();
+      return Object.prototype.hasOwnProperty.call(replacementMap, needle) ? replacementMap[needle] : "";
+    });
+    return withDoubleBraceTokens.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (match, key) => {
+      const aliasMap = {
+        Candidate: replacementMap.name,
+        CandidateFirstName: replacementMap.first_name,
+        Role: replacementMap.role,
+        Recruiter: replacementMap.sender_name,
+        RecruiterFirstName: replacementMap.sender_first_name,
+        Company: replacementMap.company,
+        RecruiterEmail: replacementMap.sender_email,
+        RecruiterPhone: replacementMap.sender_phone,
+        LoggedInRecruiter: replacementMap.logged_in_recruiter_name,
+        LoggedInRecruiterEmail: replacementMap.logged_in_recruiter_email,
+        LoggedInRecruiterPhone: replacementMap.logged_in_recruiter_phone
+      };
+      return Object.prototype.hasOwnProperty.call(aliasMap, key) ? aliasMap[key] : match;
+    });
+  }
+
+  function redactClientNameFromText(value = "", clientName = "") {
+    const source = String(value || "");
+    const client = String(clientName || "").trim();
+    if (!source || !client) return source;
+    try {
+      const variants = Array.from(new Set([
+        client,
+        client.replace(/\.(ai|com|in|co|io)$/i, ""),
+        client.split(/\s+/)[0] || ""
+      ].map((item) => String(item || "").trim()).filter((item) => item.length >= 3)));
+      let output = source;
+      variants.forEach((variant) => {
+        const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        output = output.replace(new RegExp(escaped, "gi"), "");
+      });
+      return output.replace(/\s{2,}/g, " ").replace(/\(\s*\)/g, "").trim();
+    } catch {
+      return source;
+    }
+  }
+
+  function buildDbCampaignJdBodyText(job = {}, { introText = "", applyLink = "", jdShareMode = "normal" } = {}) {
+    const anonymous = String(jdShareMode || "").trim().toLowerCase() === "anonymous";
+    const clientName = String(job?.clientName || job?.client_name || "").trim();
+    const publicCompanyLine = String(job?.publicCompanyLine || job?.public_company_line || "").trim();
+    const publicTitle = String(job?.publicTitle || job?.public_title || "").trim();
+    const roleLabel = anonymous
+      ? (publicTitle || redactClientNameFromText(String(job?.title || "").trim(), clientName) || String(job?.title || "").trim())
+      : String(job?.title || "").trim();
+    const aboutCompany = anonymous
+      ? (publicCompanyLine || "Confidential company")
+      : String(job?.aboutCompany || job?.about_company || "").trim();
+    const jdText = anonymous
+      ? redactClientNameFromText(htmlToPlainTextFallback(String(job?.jobDescription || "").trim()), clientName)
+      : htmlToPlainTextFallback(String(job?.jobDescription || "").trim());
+    const mustHaveSkills = anonymous
+      ? redactClientNameFromText(String(job?.mustHaveSkills || job?.must_have_skills || "").trim(), clientName)
+      : String(job?.mustHaveSkills || job?.must_have_skills || "").trim();
+    const recruiterNotes = anonymous
+      ? redactClientNameFromText(String(job?.recruiterNotes || job?.recruiter_notes || "").trim(), clientName)
+      : String(job?.recruiterNotes || job?.recruiter_notes || "").trim();
+    const blocks = [
+      introText ? introText : "",
+      roleLabel ? `Role: ${roleLabel}` : "",
+      anonymous
+        ? (aboutCompany ? `Company: ${aboutCompany}` : "")
+        : (clientName ? `Client: ${clientName}` : ""),
+      String(job?.location || "").trim() ? `Location: ${String(job.location || "").trim()}` : "",
+      String(job?.workMode || job?.work_mode || "").trim() ? `Work mode: ${String(job?.workMode || job?.work_mode || "").trim()}` : "",
+      aboutCompany ? `About company:\n${aboutCompany}` : "",
+      mustHaveSkills ? `Must have skills:\n${mustHaveSkills}` : "",
+      jdText ? `Job description:\n${jdText}` : "",
+      recruiterNotes ? `Notes:\n${recruiterNotes}` : "",
+      applyLink ? `Apply here: ${applyLink}` : ""
+    ].filter(Boolean);
+    return blocks.join("\n\n");
+  }
+
+  function buildDbCampaignModalJdDraftSync(jobId = "", applyLinkOverride = "", jdShareMode = "normal") {
     const resolvedJobId = String(jobId || "").trim();
     if (!resolvedJobId) return null;
     const job = (Array.isArray(state.jobs) ? state.jobs : []).find((item) => String(item?.id || "").trim() === resolvedJobId) || null;
     if (!job) return null;
-    const applyLink = String(applyLinkOverride || getApplyLink(resolvedJobId) || "").trim();
+    const isAnonymousMode = String(jdShareMode || "").trim().toLowerCase() === "anonymous";
+    const applyLink = String(
+      applyLinkOverride
+      || (isAnonymousMode ? getPublicApplyLink(resolvedJobId) : getApplyLink(resolvedJobId))
+      || ""
+    ).trim();
     const recruiterName = String(state.user?.name || "Recruiter").trim();
     const recruiterEmail = String(state.user?.email || "").trim();
     const recruiterPhone = String(
@@ -20817,7 +20978,14 @@ function PortalApp({ token, onLogout }) {
       || ""
     ).trim();
     const companyName = String(state.user?.companyName || state.user?.company_name || "RecruitDesk").trim();
-    const roleLabel = String(job?.title || "Job Description").trim();
+    const clientName = String(job?.clientName || job?.client_name || "").trim();
+    const roleLabel = isAnonymousMode
+      ? (
+        String(job?.publicTitle || job?.public_title || "").trim()
+        || redactClientNameFromText(String(job?.title || "Job Description").trim(), clientName)
+        || String(job?.title || "Job Description").trim()
+      )
+      : String(job?.title || "Job Description").trim();
     const subjectTpl = String(copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate || "Job Description - {Role}").trim();
     const introTpl = String(copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate || "").trim();
     const subject = fillJdEmailTemplate(subjectTpl, {
@@ -20836,18 +21004,19 @@ function PortalApp({ token, onLogout }) {
       recruiterEmail,
       recruiterPhone
     }).trim();
-    const bodyText = [
+    const bodyText = buildDbCampaignJdBodyText(job, {
       introText,
-      "",
-      `View JD / Apply here: ${applyLink}`
-    ].filter(Boolean).join("\n");
+      applyLink,
+      jdShareMode
+    });
     return {
       campaignName: `${roleLabel} bulk mail`,
       templateName: roleLabel,
-      templateTag: String(job?.clientName || job?.client_name || "").trim(),
+      templateTag: isAnonymousMode ? "Anonymous JD" : clientName,
       templateSubject: subject || `Job Description - ${roleLabel}`,
       templateBodyText: bodyText,
-      jdJobId: resolvedJobId
+      jdJobId: resolvedJobId,
+      jdShareMode: isAnonymousMode ? "anonymous" : "normal"
     };
   }
 
@@ -20861,7 +21030,7 @@ function PortalApp({ token, onLogout }) {
       const mine = items.find((item) => String(item?.recruiterId || "").trim() === selfId) || items[0] || null;
       const signedLink = mine?.sig ? getRecruiterApplyLink(resolvedJobId, mine.recruiterId, mine.sig) : "";
       if (!signedLink) return;
-      const draft = buildDbCampaignModalJdDraftSync(resolvedJobId, signedLink);
+      const draft = buildDbCampaignModalJdDraftSync(resolvedJobId, signedLink, "normal");
       if (!draft) return;
       setDbCampaignAttachModal((current) => {
         if (!current?.open) return current;
@@ -20875,6 +21044,94 @@ function PortalApp({ token, onLogout }) {
     } catch {
       // Keep generic apply link already shown in modal.
     }
+  }
+
+  function buildDbCampaignAttachPreview(modal = dbCampaignAttachModal) {
+    const sampleRow = (Array.isArray(databaseRenderedItems) ? databaseRenderedItems[0] : []) || {};
+    const senderContext = getDbCampaignSenderContext(modal?.senderUserId || "");
+    const selectedJob = String(modal?.jdJobId || "").trim()
+      ? (Array.isArray(state.jobs) ? state.jobs : []).find((item) => String(item?.id || "").trim() === String(modal?.jdJobId || "").trim()) || null
+      : null;
+    const prospect = {
+      name: String(sampleRow?.name || "Candidate Name").trim() || "Candidate Name",
+      email: String(sampleRow?.email || "").trim(),
+      phone: String(sampleRow?.phone || "").trim(),
+      designation: String(sampleRow?.designation || sampleRow?.current_designation || "").trim(),
+      jd_title: String(
+        selectedJob?.title
+        || sampleRow?.jd_title
+        || sampleRow?.jdTitle
+        || sampleRow?.role
+        || sampleRow?.designation
+        || ""
+      ).trim(),
+      company_name: senderContext.companyName,
+      category: String(sampleRow?.category || "").trim(),
+      categories: Array.isArray(sampleRow?.categories) ? sampleRow.categories : []
+    };
+    const subject = renderDbCampaignTemplatePreview(String(modal?.templateSubject || ""), prospect, senderContext).trim();
+    const body = renderDbCampaignTemplatePreview(normalizeTemplateFormatting(String(modal?.templateBodyText || "")), prospect, senderContext).trim();
+    const isCurrentUserSender = String(senderContext.id || "") === String(state.user?.id || "");
+    const loadedRecruiterSignature = isCurrentUserSender
+      ? normalizeLoadedSignatureValue(smtpSettings.signatureHtml || "", smtpSettings.signatureText || "")
+      : { signatureHtml: "", signatureText: "" };
+    const adminSignatureText = fillCandidateTemplate(
+      normalizeTemplateFormatting(copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || ""),
+      {
+        recruiter_name: senderContext.name,
+        recruiter_email: senderContext.email,
+        recruiter_phone: senderContext.phone,
+        logged_in_recruiter_name: senderContext.name,
+        logged_in_recruiter_email: senderContext.email,
+        logged_in_recruiter_phone: senderContext.phone,
+        company_name: senderContext.companyName
+      }
+    ).trim();
+    const signatureText = String(
+      loadedRecruiterSignature.signatureText
+      || adminSignatureText
+      || ""
+    ).trim();
+    const signatureHtml = String(
+      isCurrentUserSender
+        ? (signatureHtmlForMail(loadedRecruiterSignature.signatureHtml || "", loadedRecruiterSignature.signatureText || "") || "")
+        : ""
+    ).trim();
+    const signatureLinks = isCurrentUserSender
+      ? [
+          {
+            label: String(smtpSettings.signatureLinkLabel || "").trim(),
+            url: String(smtpSettings.signatureLinkUrl || "").trim()
+          },
+          {
+            label: String(smtpSettings.signatureLinkLabel2 || "").trim(),
+            url: String(smtpSettings.signatureLinkUrl2 || "").trim()
+          }
+        ].filter((item) => item.url)
+      : [
+          {
+            label: String(copySettings.clientShareSignatureLinkLabel || "").trim(),
+            url: String(copySettings.clientShareSignatureLinkUrl || "").trim()
+          },
+          {
+            label: String(copySettings.clientShareSignatureLinkLabel2 || "").trim(),
+            url: String(copySettings.clientShareSignatureLinkUrl2 || "").trim()
+          }
+        ].filter((item) => item.url);
+    const signatureHtmlBlock = [
+      signatureHtml || (signatureText ? `<div>${escapeHtml(signatureText).replace(/\n/g, "<br/>")}</div>` : ""),
+      signatureLinksHtmlBlock(signatureLinks)
+    ].filter(Boolean).join("");
+    const bodyHtml = [
+      body ? escapeHtml(body).replace(/\n/g, "<br/>") : "",
+      signatureHtmlBlock ? `<div style="margin-top:16px;">${signatureHtmlBlock}</div>` : ""
+    ].filter(Boolean).join("");
+    return {
+      candidateName: prospect.name,
+      senderLabel: senderContext.email ? `${senderContext.name} (${senderContext.email})` : senderContext.name,
+      subject: subject || "-",
+      bodyHtml: bodyHtml || "<em>No preview available.</em>"
+    };
   }
 
   async function deleteCurrentDatabaseCampaignTemplate() {
@@ -30470,6 +30727,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       templateSubject: String(copySettings.bulkMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkMailSubjectTemplate || "").trim(),
                       templateBodyText: String(copySettings.bulkMailBodyTemplate || DEFAULT_COPY_SETTINGS.bulkMailBodyTemplate || "").trim(),
                       jdJobId: "",
+                      jdShareMode: "normal",
                       senderUserId: String(marketingSenderOptions?.[0]?.id || current.senderUserId || ""),
                       sendMode: "staggered",
                       sendGapMinutes: "2",
@@ -30513,7 +30771,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     type="button"
                     className={dbCampaignAttachModal.contentSource === "jd" ? "" : "ghost-btn"}
                     onClick={() => setDbCampaignAttachModal((current) => {
-                      const jdDraft = buildDbCampaignModalJdDraftSync(current?.jdJobId || "");
+                      const jdDraft = buildDbCampaignModalJdDraftSync(current?.jdJobId || "", "", current?.jdShareMode || "normal");
                       return {
                         ...current,
                         contentSource: "jd",
@@ -30557,34 +30815,59 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               </label>
               ) : null}
               {dbCampaignAttachModal.contentSource === "jd" ? (
-                <label>
-                  <span>JD / role</span>
-                  <select
-                    value={dbCampaignAttachModal.jdJobId || ""}
-                    onChange={(e) => {
-                      const nextJobId = e.target.value;
-                      const draft = buildDbCampaignModalJdDraftSync(nextJobId);
-                      setDbCampaignAttachModal((current) => ({
-                        ...current,
-                        contentSource: "jd",
-                        mode: "new",
-                        selectedTemplateId: "",
-                        savedTemplateId: "",
-                        saveAsNew: false,
-                        campaignId: "",
-                        ...(draft || { jdJobId: nextJobId })
-                      }));
-                      if (!nextJobId) return;
-                      void enhanceDbCampaignModalJdLink(nextJobId);
-                    }}
-                    disabled={dbCampaignAttachModal.busy}
-                  >
-                    <option value="">Select JD / role</option>
-                    {(Array.isArray(state.jobs) ? state.jobs : []).map((job) => (
-                      <option key={`db-bulk-jd-${job.id}`} value={job.id}>{job.title || "Untitled job"}</option>
-                    ))}
-                  </select>
-                </label>
+                <>
+                  <label>
+                    <span>JD / role</span>
+                    <select
+                      value={dbCampaignAttachModal.jdJobId || ""}
+                      onChange={(e) => {
+                        const nextJobId = e.target.value;
+                        const nextMode = String(dbCampaignAttachModal?.jdShareMode || "normal").trim().toLowerCase() === "anonymous" ? "anonymous" : "normal";
+                        const draft = buildDbCampaignModalJdDraftSync(nextJobId, "", nextMode);
+                        setDbCampaignAttachModal((current) => ({
+                          ...current,
+                          contentSource: "jd",
+                          mode: "new",
+                          selectedTemplateId: "",
+                          savedTemplateId: "",
+                          saveAsNew: false,
+                          campaignId: "",
+                          ...(draft || { jdJobId: nextJobId, jdShareMode: nextMode })
+                        }));
+                        if (!nextJobId || nextMode !== "normal") return;
+                        void enhanceDbCampaignModalJdLink(nextJobId);
+                      }}
+                      disabled={dbCampaignAttachModal.busy}
+                    >
+                      <option value="">Select JD / role</option>
+                      {(Array.isArray(state.jobs) ? state.jobs : []).map((job) => (
+                        <option key={`db-bulk-jd-${job.id}`} value={job.id}>{job.title || "Untitled job"}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>JD type</span>
+                    <select
+                      value={dbCampaignAttachModal.jdShareMode || "normal"}
+                      onChange={(e) => {
+                        const nextMode = String(e.target.value || "normal").trim().toLowerCase() === "anonymous" ? "anonymous" : "normal";
+                        const nextJobId = String(dbCampaignAttachModal?.jdJobId || "").trim();
+                        const draft = buildDbCampaignModalJdDraftSync(nextJobId, "", nextMode);
+                        setDbCampaignAttachModal((current) => ({
+                          ...current,
+                          jdShareMode: nextMode,
+                          ...(draft || {})
+                        }));
+                        if (!nextJobId || nextMode !== "normal") return;
+                        void enhanceDbCampaignModalJdLink(nextJobId);
+                      }}
+                      disabled={dbCampaignAttachModal.busy}
+                    >
+                      <option value="normal">Normal JD</option>
+                      <option value="anonymous">Anonymous JD</option>
+                    </select>
+                  </label>
+                </>
               ) : null}
               <label>
                 <span>Campaign name</span>
@@ -30674,9 +30957,23 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               </label>
               <p className="muted full-span">
                 {dbCampaignAttachModal.contentSource === "jd"
-                  ? "JD mode auto-builds subject and body from the admin JD-share template, supports candidate placeholders, and sends directly without saving a recruiter template."
+                  ? "JD mode auto-builds subject and body from the admin JD-share template, includes full JD text, and lets you choose normal or anonymous JD sharing."
                   : "Saved templates here are backed by the marketing system directly. Campaign name is used as the saved template label."}
               </p>
+              {(() => {
+                const preview = buildDbCampaignAttachPreview(dbCampaignAttachModal);
+                return (
+                  <div className="item-card compact-card full-span" style={{ marginTop: 4 }}>
+                    <div className="item-subtitle">Preview</div>
+                    <div className="muted" style={{ marginTop: 6 }}>{`Sample candidate: ${preview.candidateName} | Sender: ${preview.senderLabel}`}</div>
+                    <div style={{ marginTop: 10 }}><strong>Subject:</strong> {preview.subject}</div>
+                    <div style={{ marginTop: 10 }}>
+                      <strong>Body:</strong>
+                      <div className="input-like" style={{ marginTop: 6, minHeight: 180 }} dangerouslySetInnerHTML={{ __html: String(preview.bodyHtml || "") }} />
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
               );
             })()}
