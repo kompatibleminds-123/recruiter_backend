@@ -10660,20 +10660,6 @@ function PortalApp({ token, onLogout }) {
     () => (Array.isArray(copySettings?.customExportPresets) ? copySettings.customExportPresets : []),
     [copySettings?.customExportPresets]
   );
-  const directShareCustomPresetList = useMemo(
-    () => customExportPresetList.filter((preset) => String(preset?.scope || "").trim().toLowerCase() !== "suggested_global"),
-    [customExportPresetList]
-  );
-  const directSharePresetOptions = useMemo(() => [
-    { id: "compact_recruiter", label: copySettings.exportPresetLabels?.compact_recruiter || "Default recruiter exports" },
-    { id: "client_tracker", label: copySettings.exportPresetLabels?.client_tracker || "Internal tracker" },
-    { id: "client_submission", label: copySettings.exportPresetLabels?.client_submission || "Client submission" },
-    { id: "screening_focus", label: copySettings.exportPresetLabels?.screening_focus || "Screening focus" },
-    ...(directShareCustomPresetList.map((preset) => ({
-      id: preset.id,
-      label: preset.label || preset.id
-    })))
-  ].filter((preset) => String(preset.id || "").trim()), [copySettings, directShareCustomPresetList]);
   const accessFlagsReady = Boolean(state.user?.id) && (Boolean(companyLicense) || Boolean(billingOverview));
   const marketingOwnerEmail = String(state.user?.email || "").trim().toLowerCase();
   const isMarketingOwner = marketingOwnerEmail === "ankit.garg@kompatibleminds.com" || marketingOwnerEmail === "rasel.mazumder@kompatibleminds.com";
@@ -13605,12 +13591,12 @@ function PortalApp({ token, onLogout }) {
   }, [directShareHistory, currentCompanyId]);
 
   useEffect(() => {
-    if (!directSharePresetOptions.length) return;
-    const selectedPresetExists = directSharePresetOptions.some((preset) => String(preset.id) === String(clientShareDraft.presetId));
+    if (!exportPresetOptions.length) return;
+    const selectedPresetExists = exportPresetOptions.some((preset) => String(preset.id) === String(clientShareDraft.presetId));
     if (!selectedPresetExists) {
-      setClientShareDraft((current) => ({ ...current, presetId: directSharePresetOptions[0].id }));
+      setClientShareDraft((current) => ({ ...current, presetId: exportPresetOptions[0].id }));
     }
-  }, [directSharePresetOptions, clientShareDraft.presetId]);
+  }, [exportPresetOptions, clientShareDraft.presetId]);
 
   useEffect(() => {
     if (clientShareBodyTouched) return;
@@ -20743,7 +20729,7 @@ function PortalApp({ token, onLogout }) {
   }
 
   function getClientSharePresetColumns() {
-    const customPreset = directShareCustomPresetList.find((preset) => String(preset.id) === String(clientShareDraft.presetId));
+    const customPreset = customExportPresetList.find((preset) => String(preset.id) === String(clientShareDraft.presetId));
     const columnsText = customPreset?.columns
       || copySettings.exportPresetColumns?.[clientShareDraft.presetId]
       || DEFAULT_COPY_SETTINGS.exportPresetColumns?.[clientShareDraft.presetId]
@@ -27330,7 +27316,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <label>
                         <span>Client share preset</span>
                         <select value={clientShareDraft.presetId} onChange={(e) => setClientShareDraft((current) => ({ ...current, presetId: e.target.value }))}>
-                          {directSharePresetOptions.map((preset) => (
+                          {exportPresetOptions.map((preset) => (
                             <option key={preset.id} value={preset.id}>{preset.label}</option>
                           ))}
                         </select>
@@ -27338,7 +27324,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </label>
                       <label className="full">
                         <span>Selected preset columns</span>
-                        <textarea value={directShareCustomPresetList.find((preset) => String(preset.id) === String(clientShareDraft.presetId))?.columns || copySettings.exportPresetColumns?.[clientShareDraft.presetId] || DEFAULT_COPY_SETTINGS.exportPresetColumns?.[clientShareDraft.presetId] || ""} readOnly />
+                        <textarea value={customExportPresetList.find((preset) => String(preset.id) === String(clientShareDraft.presetId))?.columns || copySettings.exportPresetColumns?.[clientShareDraft.presetId] || DEFAULT_COPY_SETTINGS.exportPresetColumns?.[clientShareDraft.presetId] || ""} readOnly />
                       </label>
                     </div>
                   </div>
