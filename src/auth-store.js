@@ -1456,6 +1456,8 @@ function sanitizeAssessment(item) {
     redFlags: item.redFlags ?? item.red_flags ?? p.redFlags ?? "",
     jdShortcuts: item.jdShortcuts ?? item.jd_shortcuts ?? p.jdShortcuts ?? "",
     standardQuestions: item.standardQuestions ?? item.standard_questions ?? p.standardQuestions ?? "",
+    standardAnswers: item.standardAnswers ?? item.standard_answers ?? p.standardAnswers ?? p.standard_answers ?? [],
+    standard_answers: item.standard_answers ?? item.standardAnswers ?? p.standard_answers ?? p.standardAnswers ?? [],
     recruiterNotes: item.recruiterNotes ?? item.recruiter_notes ?? p.recruiterNotes ?? "",
     recruiterContextNotes: item.recruiterContextNotes ?? item.recruiter_context_notes ?? p.recruiterContextNotes ?? "",
     otherPointers: item.otherPointers ?? item.other_pointers ?? p.otherPointers ?? "",
