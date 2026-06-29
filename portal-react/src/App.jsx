@@ -5200,6 +5200,8 @@ function getAssessmentQuestionAnswers(assessment = {}) {
   };
   [
     source.questionAnswerPairs,
+    source.standardAnswers,
+    source.standard_answers,
     source.screeningQuestionAnswers,
     source.screeningQuestions,
     source.questions,
@@ -5213,6 +5215,30 @@ function getAssessmentQuestionAnswers(assessment = {}) {
       const answer = String(entry.answer || entry.value || entry.response || entry.a || "").trim();
       if (isVisibleQuestion(question, answer)) pairs.push({ question, answer });
     });
+  });
+  const standardQuestionList = Array.isArray(source.standardQuestions)
+    ? source.standardQuestions
+    : Array.isArray(source.standard_questions)
+      ? source.standard_questions
+      : String(source.standardQuestions || source.standard_questions || "")
+        .split(/\r?\n|[,;]+/g)
+        .map((entry) => String(entry || "").trim())
+        .filter(Boolean);
+  const standardAnswerList = Array.isArray(source.standardAnswers)
+    ? source.standardAnswers
+    : Array.isArray(source.standard_answers)
+      ? source.standard_answers
+      : [];
+  standardAnswerList.forEach((entry, index) => {
+    if (entry && typeof entry === "object") {
+      const question = String(entry.question || standardQuestionList[index] || "").trim();
+      const answer = String(entry.answer ?? "").trim();
+      if (isVisibleQuestion(question, answer)) pairs.push({ question, answer });
+      return;
+    }
+    const question = String(standardQuestionList[index] || "").trim();
+    const answer = String(entry ?? "").trim();
+    if (isVisibleQuestion(question, answer)) pairs.push({ question, answer });
   });
   if (source.screeningAnswers && typeof source.screeningAnswers === "object") {
     Object.entries(source.screeningAnswers).forEach(([question, answer]) => {
