@@ -1597,6 +1597,17 @@ textarea { min-height: 92px; resize: vertical; }
 .muted { color: var(--muted); font-size: 0.86rem; line-height: 1.45; }
 .chip-row, .button-row, .toolbar { display: flex; flex-wrap: wrap; gap: 0.55rem; min-width: 0; }
 .button-row { margin-top: 0.85rem; }
+.settings-switcher {
+  gap: 0.8rem;
+  align-items: center;
+}
+.settings-switcher__btn {
+  min-height: 54px;
+  padding: 0.9rem 1.5rem;
+  border-radius: 999px;
+  font-size: 1rem;
+  font-weight: 700;
+}
 .copy-preset-control {
   display: inline-flex;
   align-items: center;
