@@ -17584,10 +17584,10 @@ function PortalApp({ token, onLogout }) {
           });
         }
       }
-      await refreshCandidateStatsAfterMutation("captured");
       setNewDraftOpen(false);
       resetNewDraftForm();
       setStatus("captured", "Manual draft created.", "ok");
+      void refreshCandidateStatsAfterMutation("captured").catch(() => {});
     } catch (error) {
       setStatus("captured", String(error?.message || error), "error");
     } finally {
