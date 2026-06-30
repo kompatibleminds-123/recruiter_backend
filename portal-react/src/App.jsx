@@ -24115,9 +24115,26 @@ function PortalApp({ token, onLogout }) {
     };
   }
 
-  function renderShortcutTemplateForCopy(template = "", jobOverride = null) {
+  async function resolveRecruiterJdLinkForShortcut(jobOverride = null) {
+    const job = jobOverride || selectedShortcutJob || null;
+    const jobId = String(job?.id || "").trim();
+    if (!jobId || !token) return jobId ? getApplyLink(jobId) : "";
+    try {
+      const result = await api(`/company/jobs/${encodeURIComponent(jobId)}/apply-link-signatures`, token);
+      const items = Array.isArray(result?.items) ? result.items : [];
+      const selfId = String(state.user?.id || "").trim();
+      const mine = items.find((item) => String(item?.recruiterId || "").trim() === selfId) || null;
+      if (!mine?.sig || !mine?.recruiterId) return getApplyLink(jobId);
+      return getRecruiterApplyLink(jobId, mine.recruiterId, mine.sig);
+    } catch {
+      return getApplyLink(jobId);
+    }
+  }
+
+  async function renderShortcutTemplateForCopy(template = "", jobOverride = null) {
     const text = String(template || "");
     const map = buildShortcutCopyContext(jobOverride);
+    map.recruiter_jd_link = await resolveRecruiterJdLinkForShortcut(jobOverride);
     return text.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (match, token) => {
       const key = String(token || "").trim().toLowerCase();
       const value = String(map[key] || "").trim();
@@ -24127,7 +24144,7 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function copyShortcutTemplateWithValues(key, template, jobOverride = null) {
-    const rendered = renderShortcutTemplateForCopy(template, jobOverride);
+    const rendered = await renderShortcutTemplateForCopy(template, jobOverride);
     await copyText(rendered);
     setStatus("shortcuts", `Copied ${formatShortcutLabel(key)} with available values.`, "ok");
   }
