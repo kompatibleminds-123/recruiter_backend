@@ -1193,6 +1193,68 @@ function sanitizeShortcutMapForPersistence(shortcuts) {
   return out;
 }
 
+function shortcutMapFromRows(rows = []) {
+  const map = {};
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const key = String(row?.shortcut_key || row?.shortcutKey || "").trim();
+    const value = String(row?.template_text || row?.templateText || "").replace(/\r\n/g, "\n");
+    if (!key || !value.trim()) return;
+    map[key.startsWith("/") ? key : `/${key}`] = value;
+  });
+  return sanitizeShortcutMapForPersistence(map);
+}
+
+async function getCompanyPublicShortcuts(companyId) {
+  const scopedCompanyId = String(companyId || "").trim();
+  if (!scopedCompanyId) throw new Error("companyId is required.");
+  if (!cfg().on) {
+    const settings = await getCompanySharedExportPresetsLocal(scopedCompanyId).catch(() => ({}));
+    return sanitizeShortcutMapForPersistence(settings?.companyWideShortcuts || {});
+  }
+  const rows = await sbSel(
+    "company_shortcuts",
+    `select=company_id,shortcut_key,template_text&company_id=eq.${enc(scopedCompanyId)}&scope=eq.public&limit=5000`
+  ).catch(() => []);
+  if (Array.isArray(rows) && rows.length) return shortcutMapFromRows(rows);
+  const fallback = await getCompanySharedExportPresetsLocal(scopedCompanyId).catch(() => ({}));
+  return sanitizeShortcutMapForPersistence(fallback?.companyWideShortcuts || {});
+}
+
+async function saveCompanyPublicShortcuts({ actorUserId, companyId, shortcuts }) {
+  if (!actorUserId || !companyId) throw new Error("actorUserId and companyId are required.");
+  const actor = sanitizeUser(await getUserById(actorUserId, companyId));
+  if (!actor) throw new Error("Authenticated recruiter not found for this company.");
+  if (String(actor.role || "").toLowerCase() !== "admin") {
+    throw new Error("Only an admin can manage public shortcuts.");
+  }
+  const scopedCompanyId = String(companyId || "").trim();
+  const safeShortcuts = sanitizeShortcutMapForPersistence(shortcuts);
+  if (!cfg().on) {
+    const existing = await getCompanySharedExportPresets(scopedCompanyId).catch(() => ({}));
+    const payload = { ...existing, companyWideShortcuts: safeShortcuts };
+    const saved = await saveCompanySharedExportPresets({ actorUserId, companyId: scopedCompanyId, settings: payload });
+    return sanitizeShortcutMapForPersistence(saved?.companyWideShortcuts || {});
+  }
+  await sbDel("company_shortcuts", `company_id=eq.${enc(scopedCompanyId)}&scope=eq.public`).catch(() => []);
+  const now = new Date().toISOString();
+  const rows = Object.entries(safeShortcuts).map(([shortcutKey, templateText]) => ({
+    id: crypto.randomUUID(),
+    company_id: scopedCompanyId,
+    scope: "public",
+    user_id: null,
+    shortcut_key: String(shortcutKey || "").trim(),
+    template_text: String(templateText || "").replace(/\r\n/g, "\n"),
+    created_by: String(actor.email || actor.id || "").trim(),
+    updated_by: String(actor.email || actor.id || "").trim(),
+    created_at: now,
+    updated_at: now
+  }));
+  if (rows.length) {
+    await sbIns("company_shortcuts", rows, { returning: "minimal" });
+  }
+  return safeShortcuts;
+}
+
 function parseOwnerEmailList() {
   const configured = String(process.env.PLATFORM_SUGGESTED_OWNER_EMAILS || process.env.PLATFORM_COMPANY_CREATOR_EMAILS || "ankit.garg@kompatibleminds.com")
     .split(",")
@@ -3543,7 +3605,14 @@ async function getCompanySharedExportPresets(companyId) {
     getGlobalSuggestedExportPresetCatalog().catch(() => sanitizeSuggestedExportPresetCatalog(DEFAULT_SUGGESTED_EXPORT_PRESET_CATALOG)),
     getCompanySuggestedPresetOverrides(companyId).catch(() => [])
   ]);
-  return mergeSuggestedCatalogAndCompanySettings(globalCatalog, companyOverrides, companyLocal);
+  const merged = mergeSuggestedCatalogAndCompanySettings(globalCatalog, companyOverrides, companyLocal);
+  const publicShortcuts = await getCompanyPublicShortcuts(companyId).catch(() =>
+    sanitizeShortcutMapForPersistence(merged?.companyWideShortcuts || {})
+  );
+  return {
+    ...merged,
+    companyWideShortcuts: sanitizeShortcutMapForPersistence(publicShortcuts)
+  };
 }
 
 async function getCompanyEmailThreadByKey(companyId, conversationKey) {
@@ -3720,6 +3789,13 @@ async function getCompanyPersonalShortcuts({ companyId, userId }) {
   const scopedCompanyId = String(companyId || "").trim();
   const scopedUserId = String(userId || "").trim();
   if (!scopedCompanyId || !scopedUserId) throw new Error("companyId and userId are required.");
+  if (cfg().on) {
+    const rows = await sbSel(
+      "company_shortcuts",
+      `select=shortcut_key,template_text&company_id=eq.${enc(scopedCompanyId)}&scope=eq.private&user_id=eq.${enc(scopedUserId)}&limit=5000`
+    ).catch(() => []);
+    if (Array.isArray(rows) && rows.length) return shortcutMapFromRows(rows);
+  }
   const settings = await getCompanySharedExportPresets(scopedCompanyId).catch(() => ({}));
   const map = settings?.personalShortcutsByUser && typeof settings.personalShortcutsByUser === "object"
     ? settings.personalShortcutsByUser
@@ -3733,6 +3809,29 @@ async function saveCompanyPersonalShortcuts({ actorUserId, companyId, shortcuts 
   const scopedCompanyId = String(companyId || "").trim();
   const scopedUserId = String(actor.id || "").trim();
   const safeShortcuts = sanitizeShortcutMapForPersistence(shortcuts);
+  if (cfg().on) {
+    await sbDel(
+      "company_shortcuts",
+      `company_id=eq.${enc(scopedCompanyId)}&scope=eq.private&user_id=eq.${enc(scopedUserId)}`
+    ).catch(() => []);
+    const now = new Date().toISOString();
+    const rows = Object.entries(safeShortcuts).map(([shortcutKey, templateText]) => ({
+      id: crypto.randomUUID(),
+      company_id: scopedCompanyId,
+      scope: "private",
+      user_id: scopedUserId,
+      shortcut_key: String(shortcutKey || "").trim(),
+      template_text: String(templateText || "").replace(/\r\n/g, "\n"),
+      created_by: String(actor.email || actor.id || "").trim(),
+      updated_by: String(actor.email || actor.id || "").trim(),
+      created_at: now,
+      updated_at: now
+    }));
+    if (rows.length) {
+      await sbIns("company_shortcuts", rows, { returning: "minimal" });
+    }
+    return safeShortcuts;
+  }
   const existing = await getCompanySharedExportPresets(scopedCompanyId).catch(() => ({}));
   const existingMap = existing?.personalShortcutsByUser && typeof existing.personalShortcutsByUser === "object"
     ? { ...existing.personalShortcutsByUser }
@@ -6961,6 +7060,7 @@ module.exports = {
   deleteCompanyJob,
   getCompanyApplicantIntakeSecret,
   getCompanySharedExportPresets,
+  getCompanyPublicShortcuts,
   getCompanyEmailThreadByKey,
   getCompanyPersonalShortcuts,
   getCompanyRecruiterCampaignTemplates,
@@ -7022,6 +7122,7 @@ module.exports = {
   saveEmployeeCompensationStructure,
   updateEmployeeProfileAndWorkSite,
   saveCompanySharedExportPresets,
+  saveCompanyPublicShortcuts,
   upsertCompanyEmailThread,
   saveCompanyPersonalShortcuts,
   saveCompanyRecruiterCampaignTemplates,

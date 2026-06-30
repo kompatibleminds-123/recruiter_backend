@@ -525,24 +525,23 @@ const SMART_CHIP_INTERVIEW_TIMELINE_STATUSES = new Set([
   "shortlisted",
   "interview on hold"
 ]);
-const SHORTCUT_TEMPLATE_PLACEHOLDERS = [
-  "{{name}}",
-  "{{recruiter_name}}",
-  "{{recruiter_email}}",
-  "{{recruiter_phone}}",
-  "{{logged_in_recruiter_name}}",
-  "{{logged_in_recruiter_email}}",
-  "{{logged_in_recruiter_phone}}",
-  "{{interview_at}}",
-  "{{jd_title}}",
-  "{{client_name}}",
-  "{{anonymous_client_name}}",
-  "{{company_name}}",
-  "{{phone}}",
-  "{{email}}",
-  "{{jd_link}}",
-  "{{recruiter_jd_link}}",
-  "{{anonymous_jd_link}}"
+const SHORTCUT_TEMPLATE_PLACEHOLDER_GROUPS = [
+  {
+    label: "Candidate",
+    tokens: ["{{candidate_name}}", "{{candidate_email}}", "{{candidate_phone}}", "{{interview_at}}"]
+  },
+  {
+    label: "Assigned recruiter",
+    tokens: ["{{recruiter_name}}", "{{recruiter_email}}", "{{recruiter_phone}}"]
+  },
+  {
+    label: "Logged-in recruiter",
+    tokens: ["{{logged_in_recruiter_name}}", "{{logged_in_recruiter_email}}", "{{logged_in_recruiter_phone}}"]
+  },
+  {
+    label: "JD / Client",
+    tokens: ["{{jd_title}}", "{{client_name}}", "{{anonymous_client_name}}", "{{company_name}}", "{{jd_link}}", "{{recruiter_jd_link}}", "{{anonymous_jd_link}}"]
+  }
 ];
 
 const CLIENT_SHARE_TEMPLATE_PLACEHOLDERS = [
@@ -580,6 +579,30 @@ function parseEmailTokens(value = "") {
     .map((item) => String(item || "").trim())
     .filter(Boolean)
     .filter((item) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item));
+}
+
+function renderPlaceholderChipGroups(groups = [], keyPrefix = "", onInsert = () => {}) {
+  return (
+    <div className="placeholder-groups">
+      {(groups || []).map((group) => (
+        <div className="placeholder-group" key={`${keyPrefix}-${group.label}`}>
+          <div className="field-help" style={{ marginBottom: 6 }}>{group.label}</div>
+          <div className="placeholder-selector">
+            {(group.tokens || []).map((token) => (
+              <button
+                key={`${keyPrefix}-${group.label}-${token}`}
+                type="button"
+                className="ghost-btn placeholder-chip"
+                onClick={() => onInsert(token)}
+              >
+                {token}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function uniqueEmails(values = []) {
@@ -4067,13 +4090,16 @@ function fillCandidateTemplate(template, candidate) {
   const map = {
     index: source.index || "",
     name: source.name || "",
+    candidate_name: source.candidate_name || source.name || "",
     jd_title: source.jd_title || source.role || "",
     company: source.company || "",
     outcome: source.outcome || "",
     recruiter_notes: source.recruiter_context_notes || source.notes || "",
     location: source.location || "",
     phone: source.phone || "",
+    candidate_phone: source.candidate_phone || source.phone || "",
     email: source.email || "",
+    candidate_email: source.candidate_email || source.email || "",
     source: source.source || "",
     follow_up_at: formatDateForCopy(source.follow_up_at || ""),
     recruiter_name: source.recruiter_name || source.recruiterName || "",
@@ -11533,7 +11559,7 @@ function PortalApp({ token, onLogout }) {
       const displayKey = safeKey.replace(/^\/+/, "");
       const safeTemplate = String(template || "").trim();
       if (!displayKey || !safeTemplate) return;
-      options.push({ id: `company:${displayKey}`, label: `/${displayKey} (Company Specific)`, template: safeTemplate, scope: "company_wide" });
+      options.push({ id: `company:${displayKey}`, label: `/${displayKey} (Public)`, template: safeTemplate, scope: "company_wide" });
     });
     const personalMap = incomingPersonalShortcuts && typeof incomingPersonalShortcuts === "object" ? incomingPersonalShortcuts : personalShortcuts;
     Object.entries(personalMap || {}).forEach(([key, template]) => {
@@ -11541,50 +11567,8 @@ function PortalApp({ token, onLogout }) {
       const displayKey = safeKey.replace(/^\/+/, "");
       const safeTemplate = String(template || "").trim();
       if (!displayKey || !safeTemplate) return;
-      options.push({ id: `personal:${displayKey}`, label: `/${displayKey} (All jobs)`, template: safeTemplate, scope: "all_jobs" });
+      options.push({ id: `personal:${displayKey}`, label: `/${displayKey} (Private)`, template: safeTemplate, scope: "all_jobs" });
     });
-    const normalizeJdMatch = (value = "") => String(value || "").trim().toLowerCase().replace(/[\s\-_]+/g, " ");
-    const jdId = String(row?.jd_id || row?.jdId || row?.jobId || "").trim();
-    const jdTitle = normalizeJdMatch(row?.jd_title || row?.jdTitle || row?.role || "");
-    const jobs = Array.from(
-      new Map(
-        [
-          ...(Array.isArray(state.jobs) ? state.jobs : []),
-          ...(Array.isArray(jobsCatalog) ? jobsCatalog : [])
-        ].map((job) => [String(job?.id || `${job?.title || ""}`), job])
-      ).values()
-    );
-    const matchedJob = jobs.find((job) => {
-      const jobTitle = normalizeJdMatch(job?.title || "");
-      if (jdId && String(job?.id || "").trim() === jdId) return true;
-      if (jdTitle && jobTitle && jdTitle === jobTitle) return true;
-      if (jdTitle && jobTitle && (jdTitle.includes(jobTitle) || jobTitle.includes(jdTitle))) return true;
-      return false;
-    }) || null;
-
-    const addShortcutOptions = (map = {}, prefix = "shortcut", titleLabel = "") => {
-      Object.entries(map || {}).forEach(([key, template]) => {
-        const safeKey = String(key || "").trim();
-        const displayKey = safeKey.replace(/^\/+/, "");
-        const safeTemplate = String(template || "").trim();
-        if (!displayKey || !safeTemplate) return;
-        const label = titleLabel ? `/${displayKey} (${titleLabel})` : `/${displayKey}`;
-        options.push({ id: `${prefix}:${displayKey}:${titleLabel}`, label, template: safeTemplate, scope: "this_job" });
-      });
-    };
-
-    addShortcutOptions(parseShortcutMap(matchedJob?.jdShortcuts || ""), "shortcut", String(matchedJob?.title || "").trim());
-
-    // Fallback: if JD match is weak/missing, still show recruiter's saved shortcuts from other JDs.
-    if (!matchedJob) {
-      jobs.forEach((job) => {
-        const titleLabel = String(job?.title || "").trim();
-        addShortcutOptions(parseShortcutMap(job?.jdShortcuts || ""), "shortcut", titleLabel);
-      });
-    }
-
-    // Extra fallback: if user is editing a JD in Jobs tab, include draft shortcuts too.
-    addShortcutOptions(parseShortcutMap(jobDraft?.jdShortcuts || ""), "draft", String(jobDraft?.title || "").trim());
 
     return options.filter((item, index, arr) => (
       arr.findIndex((entry) => String(entry.template || "").trim() === String(item.template || "").trim()) === index
@@ -11724,6 +11708,9 @@ function PortalApp({ token, onLogout }) {
       || (resolveRowJobId(row) ? getApplyLink(resolveRowJobId(row)) : "");
     return {
       ...(row || {}),
+      candidate_name: String(row?.candidate_name || row?.name || row?.candidateName || "").trim(),
+      candidate_email: String(row?.candidate_email || row?.email || row?.candidateEmail || "").trim(),
+      candidate_phone: String(row?.candidate_phone || row?.phone || row?.candidatePhone || "").trim(),
       recruiter_name: recruiterContext.name || String(row?.recruiter_name || row?.recruiterName || "").trim(),
       recruiter_email: recruiterContext.email || String(row?.recruiter_email || row?.recruiterEmail || "").trim(),
       recruiter_phone: recruiterContext.phone || String(row?.recruiter_phone || row?.recruiterPhone || row?.recruiter_mobile || row?.recruiterMobile || "").trim(),
@@ -13376,7 +13363,17 @@ function PortalApp({ token, onLogout }) {
       })();
       const eventType = String(payload?.type || payload?.eventType || "").trim();
       if (eventType === "company_shortcuts_changed") {
+        const shortcuts =
+          payload?.shortcuts && typeof payload.shortcuts === "object"
+            ? normalizeShortcutMapKeys(payload.shortcuts)
+            : null;
         const settings = payload?.settings && typeof payload.settings === "object" ? payload.settings : null;
+        if (shortcuts) {
+          setCopySettings((current) =>
+            migrateCopySettings({ ...current, companyWideShortcuts: shortcuts })
+          );
+          return;
+        }
         if (!settings) return;
         setCopySettings((current) => migrateCopySettings({ ...current, ...settings }));
         return;
@@ -23823,32 +23820,20 @@ function PortalApp({ token, onLogout }) {
       setStatus("shortcuts", "Enter company shortcut key and template text.", "error");
       return;
     }
-    const latestSharedSettings = await api("/company/shared-export-presets", token).catch(() => null);
-    const currentSharedSettings = latestSharedSettings && typeof latestSharedSettings === "object"
-      ? { ...copySettings, ...latestSharedSettings }
-      : copySettings;
-    const previousShortcuts = normalizeShortcutMapKeys(
-      currentSharedSettings?.companyWideShortcuts && typeof currentSharedSettings.companyWideShortcuts === "object"
-        ? currentSharedSettings.companyWideShortcuts
-        : {}
+    const latestShortcutsResult = await api("/company/public-shortcuts", token).catch(() => null);
+    const latestShortcuts = normalizeShortcutMapKeys(
+      latestShortcutsResult?.shortcuts && typeof latestShortcutsResult.shortcuts === "object"
+        ? latestShortcutsResult.shortcuts
+        : copySettings?.companyWideShortcuts
     );
-    const previousDeletedSuggested = Array.isArray(currentSharedSettings?.deletedSuggestedShortcuts)
-      ? currentSharedSettings.deletedSuggestedShortcuts
-      : [];
+    const previousShortcuts = normalizeShortcutMapKeys(
+      latestShortcuts && typeof latestShortcuts === "object" ? latestShortcuts : {}
+    );
     const linkedinMeta = getLinkedinShortcutMeta(key);
     const nextShortcuts = { ...previousShortcuts, [linkedinMeta?.key || key]: value };
-    const nextDeletedSuggested = previousDeletedSuggested.filter((item) => normalizeShortcutKey(item) !== (linkedinMeta?.key || key));
-    const optimisticSettings = {
-      ...currentSharedSettings,
-      companyWideShortcuts: nextShortcuts,
-      deletedSuggestedShortcuts: nextDeletedSuggested,
-      ...(linkedinMeta?.mode === "connected" ? { linkedinConnectedTemplate: value } : {}),
-      ...(linkedinMeta?.mode === "request" ? { linkedinConnectionRequestTemplate: value } : {})
-    };
     setCopySettings((current) => ({
       ...current,
       companyWideShortcuts: nextShortcuts,
-      deletedSuggestedShortcuts: nextDeletedSuggested,
       ...(linkedinMeta?.mode === "connected" ? { linkedinConnectedTemplate: value } : {}),
       ...(linkedinMeta?.mode === "request" ? { linkedinConnectionRequestTemplate: value } : {})
     }));
@@ -23856,15 +23841,23 @@ function PortalApp({ token, onLogout }) {
     setShortcutCompanyValue("");
     setStatus("shortcuts", `Saving company shortcut ${formatShortcutLabel(linkedinMeta?.key || key)}...`, "info");
     try {
-      const payload = optimisticSettings;
-      const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
-      setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
+      const result = await api("/company/public-shortcuts", token, "POST", {
+        shortcuts: nextShortcuts
+      });
+      const savedShortcuts = normalizeShortcutMapKeys(
+        result?.shortcuts && typeof result.shortcuts === "object" ? result.shortcuts : nextShortcuts
+      );
+      setCopySettings((current) => ({
+        ...current,
+        companyWideShortcuts: savedShortcuts,
+        ...(linkedinMeta?.mode === "connected" ? { linkedinConnectedTemplate: savedShortcuts[linkedinMeta?.key || key] || value } : {}),
+        ...(linkedinMeta?.mode === "request" ? { linkedinConnectionRequestTemplate: savedShortcuts[linkedinMeta?.key || key] || value } : {})
+      }));
       setStatus("shortcuts", `Saved company shortcut ${formatShortcutLabel(linkedinMeta?.key || key)}.`, "ok");
     } catch (error) {
       setCopySettings((current) => ({
         ...current,
         companyWideShortcuts: previousShortcuts,
-        deletedSuggestedShortcuts: previousDeletedSuggested,
         ...(linkedinMeta?.mode === "connected" ? { linkedinConnectedTemplate: copySettings?.linkedinConnectedTemplate || DEFAULT_COPY_SETTINGS.linkedinConnectedTemplate || "" } : {}),
         ...(linkedinMeta?.mode === "request" ? { linkedinConnectionRequestTemplate: copySettings?.linkedinConnectionRequestTemplate || DEFAULT_COPY_SETTINGS.linkedinConnectionRequestTemplate || "" } : {})
       }));
@@ -23885,31 +23878,30 @@ function PortalApp({ token, onLogout }) {
       setStatus("shortcuts", "LinkedIn shared templates should be edited, not deleted.", "error");
       return;
     }
-    const latestSharedSettings = await api("/company/shared-export-presets", token).catch(() => null);
-    const currentSharedSettings = latestSharedSettings && typeof latestSharedSettings === "object"
-      ? { ...copySettings, ...latestSharedSettings }
-      : copySettings;
-    const previousShortcuts = normalizeShortcutMapKeys(
-      currentSharedSettings?.companyWideShortcuts && typeof currentSharedSettings.companyWideShortcuts === "object"
-        ? currentSharedSettings.companyWideShortcuts
-        : {}
+    const latestShortcutsResult = await api("/company/public-shortcuts", token).catch(() => null);
+    const latestShortcuts = normalizeShortcutMapKeys(
+      latestShortcutsResult?.shortcuts && typeof latestShortcutsResult.shortcuts === "object"
+        ? latestShortcutsResult.shortcuts
+        : copySettings?.companyWideShortcuts
     );
-    const previousDeletedSuggested = Array.isArray(currentSharedSettings?.deletedSuggestedShortcuts)
-      ? currentSharedSettings.deletedSuggestedShortcuts
-      : [];
+    const previousShortcuts = normalizeShortcutMapKeys(
+      latestShortcuts && typeof latestShortcuts === "object" ? latestShortcuts : {}
+    );
     const nextShortcuts = { ...previousShortcuts };
     delete nextShortcuts[normalized];
-    const nextDeletedSuggested = Array.from(new Set([...previousDeletedSuggested, normalized]));
-    const optimisticSettings = { ...currentSharedSettings, companyWideShortcuts: nextShortcuts, deletedSuggestedShortcuts: nextDeletedSuggested };
-    setCopySettings((current) => ({ ...current, companyWideShortcuts: nextShortcuts, deletedSuggestedShortcuts: nextDeletedSuggested }));
+    setCopySettings((current) => ({ ...current, companyWideShortcuts: nextShortcuts }));
     setStatus("shortcuts", `Deleting company shortcut ${formatShortcutLabel(normalized)}...`, "info");
     try {
-      const payload = optimisticSettings;
-      const result = await api("/company/shared-export-presets", token, "POST", { settings: payload });
-      setCopySettings((current) => ({ ...DEFAULT_COPY_SETTINGS, ...current, ...result }));
+      const result = await api("/company/public-shortcuts", token, "POST", {
+        shortcuts: nextShortcuts
+      });
+      const savedShortcuts = normalizeShortcutMapKeys(
+        result?.shortcuts && typeof result.shortcuts === "object" ? result.shortcuts : nextShortcuts
+      );
+      setCopySettings((current) => ({ ...current, companyWideShortcuts: savedShortcuts }));
       setStatus("shortcuts", `Deleted company shortcut ${formatShortcutLabel(normalized)}.`, "ok");
     } catch (error) {
-      setCopySettings((current) => ({ ...current, companyWideShortcuts: previousShortcuts, deletedSuggestedShortcuts: previousDeletedSuggested }));
+      setCopySettings((current) => ({ ...current, companyWideShortcuts: previousShortcuts }));
       setStatus("shortcuts", String(error?.message || error), "error");
     }
   }
@@ -24062,6 +24054,12 @@ function PortalApp({ token, onLogout }) {
     const clientName = String(job?.clientName || "").trim();
     const jdLink = jobId ? getApplyLink(jobId) : "";
     return {
+      name: "",
+      candidate_name: "",
+      phone: "",
+      candidate_phone: "",
+      email: "",
+      candidate_email: "",
       recruiter_name: recruiterName,
       recruiter_email: recruiterEmail,
       recruiter_phone: recruiterPhone,
@@ -29342,61 +29340,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 </div>
                 </div>
 
-                <div className="settings-subsection direct-share-admin-preset shortcut-builder">
-                  <div className="shortcut-builder__head">
-                    <div>
-                      <div className="info-label">JD shortcuts</div>
-                      <div className="muted">These save per recruiter for this JD (so one recruiter's shortcuts don't overwrite others). Extension templates use the same shortcuts.</div>
-                    </div>
-                  </div>
-                  <div className="form-grid two-col shortcut-builder__form">
-                    <label className="shortcut-builder__key-field">
-                      <span>Shortcut key</span>
-                      <input placeholder="/intro" value={jobShortcutKey} onChange={(e) => setJobShortcutKey(e.target.value)} />
-                    </label>
-                    <label>
-                      <span>Shortcut text / template</span>
-                      <textarea ref={jdWorkspaceShortcutTextareaRef} value={jobShortcutValue} onChange={(e) => setJobShortcutValue(e.target.value)} />
-                      <span className="field-help">Click placeholders to insert:</span>
-                      <div className="placeholder-selector">
-                        {SHORTCUT_TEMPLATE_PLACEHOLDERS.map((token) => (
-                          <button
-                            key={`job-workspace-${token}`}
-                            type="button"
-                            className="ghost-btn placeholder-chip"
-                            onClick={() => insertPlaceholderAtCursor(jdWorkspaceShortcutTextareaRef, jobShortcutValue, setJobShortcutValue, token)}
-                          >
-                            {token}
-                          </button>
-                        ))}
-                      </div>
-                    </label>
-                  </div>
-                  <div className="button-row">
-                    <button
-                      disabled={!String(selectedJobId || jobDraft.id || "").trim()}
-                      title={!String(selectedJobId || jobDraft.id || "").trim() ? "Select an existing JD first" : ""}
-                      onClick={() => saveShortcutDraft()}
-                    >
-                      {jobShortcutKey ? "Update shortcut" : "Add shortcut"}
-                    </button>
-                  </div>
-                  <div className="shortcut-note">Saved format stays extension-compatible in backend. Recruiters only see this simplified editor.</div>
-                  <div className="stack-list compact">
-                    {jdShortcutEntries.length ? jdShortcutEntries.map(([key, value]) => (
-                      <article className="item-card compact-card" key={key}>
-                        <div className="item-card__top compact-top">
-                          <strong>{key}</strong>
-                          <div className="button-row tight">
-                            <button className="ghost-btn" onClick={() => editShortcutDraft(key)}>Edit</button>
-                            <button className="ghost-btn" onClick={() => deleteShortcutDraft(key)}>Delete</button>
-                          </div>
-                        </div>
-                        <div className="candidate-snippet no-top-border">{String(value || "")}</div>
-                      </article>
-                    )) : <div className="empty-state">No JD shortcuts yet.</div>}
-                  </div>
-                </div>
                 </Section>
               </div>
             } />
@@ -29408,8 +29351,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   {statuses.shortcuts ? <div className={`status ${statuses.shortcutsKind || ""}`}>{statuses.shortcuts}</div> : null}
                 </Section>
 
-                <Section kicker="Personal" title="General Template (All Jobs)" className="shortcuts-section shortcuts-section--personal">
-                  <p className="muted">Private to the recruiter. Syncs instantly for all jobs.</p>
+                <Section kicker="Private" title="Private Shortcuts" className="shortcuts-section shortcuts-section--personal">
+                  <p className="muted">Private to the recruiter. Syncs instantly across portal + extension.</p>
                   <div className="form-grid two-col">
                     <label>
                       <span>Shortcut key</span>
@@ -29419,15 +29362,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <span>Template text</span>
                       <textarea ref={personalTemplateTextareaRef} value={shortcutPersonalValue} onChange={(e) => setShortcutPersonalValue(e.target.value)} rows={4} />
                       <span className="field-help">Click placeholders to insert:</span>
-                      <div className="placeholder-selector">
-                        {SHORTCUT_TEMPLATE_PLACEHOLDERS.map((token) => (
-                          <button key={`personal-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(personalTemplateTextareaRef, shortcutPersonalValue, setShortcutPersonalValue, token)}>{token}</button>
-                        ))}
-                      </div>
+                      {renderPlaceholderChipGroups(
+                        SHORTCUT_TEMPLATE_PLACEHOLDER_GROUPS,
+                        "personal-shortcut",
+                        (token) => insertPlaceholderAtCursor(personalTemplateTextareaRef, shortcutPersonalValue, setShortcutPersonalValue, token)
+                      )}
                     </label>
                   </div>
                   <div className="button-row">
-                    <button onClick={() => void savePersonalShortcutTemplate()}>{normalizeShortcutKey(shortcutPersonalKey) ? "Save personal shortcut" : "Add personal shortcut"}</button>
+                    <button onClick={() => void savePersonalShortcutTemplate()}>{normalizeShortcutKey(shortcutPersonalKey) ? "Save private shortcut" : "Add private shortcut"}</button>
                   </div>
                   <div className="stack-list compact">
                     {Object.entries(personalShortcuts || {}).length ? (
@@ -29446,14 +29389,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <div className="candidate-snippet no-top-border">{String(value || "")}</div>
                           </article>
                         ))
-                    ) : <div className="empty-state">No personal shortcuts yet.</div>}
+                    ) : <div className="empty-state">No private shortcuts yet.</div>}
                   </div>
                 </Section>
 
-                <Section kicker="Company" title="Company Shortcuts" className="shortcuts-section shortcuts-section--company">
+                <Section kicker="Public" title="Public Shortcuts" className="shortcuts-section shortcuts-section--company">
                   <p className="muted">Shared across the workspace for everyone on the team.</p>
                   <p className="muted">LinkedIn reserved keys: <strong>/LC</strong> for already connected outreach and <strong>/LNC</strong> for first connection request. These stay hidden from WhatsApp and appear only inside LinkedIn outreach.</p>
-                  {!isSettingsAdmin ? <p className="muted">Read-only for recruiters. Admin-defined shortcuts appear automatically in your template pickers.</p> : null}
+                  {!isSettingsAdmin ? <p className="muted">Read-only for recruiters. Public shortcuts appear automatically in your template pickers.</p> : null}
                   {isSettingsAdmin ? (
                     <>
                       <div className="form-grid two-col">
@@ -29465,15 +29408,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           <span>Template text</span>
                           <textarea ref={companyTemplateTextareaRef} value={shortcutCompanyValue} onChange={(e) => setShortcutCompanyValue(e.target.value)} rows={4} />
                           <span className="field-help">Click placeholders to insert:</span>
-                          <div className="placeholder-selector">
-                            {SHORTCUT_TEMPLATE_PLACEHOLDERS.map((token) => (
-                              <button key={`company-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(companyTemplateTextareaRef, shortcutCompanyValue, setShortcutCompanyValue, token)}>{token}</button>
-                            ))}
-                          </div>
+                          {renderPlaceholderChipGroups(
+                            SHORTCUT_TEMPLATE_PLACEHOLDER_GROUPS,
+                            "company-shortcut",
+                            (token) => insertPlaceholderAtCursor(companyTemplateTextareaRef, shortcutCompanyValue, setShortcutCompanyValue, token)
+                          )}
                         </label>
                       </div>
                       <div className="button-row">
-                        <button onClick={() => void saveCompanyShortcutTemplate()}>{normalizeShortcutKey(shortcutCompanyKey) ? "Save company specific shortcut" : "Add company specific shortcut"}</button>
+                        <button onClick={() => void saveCompanyShortcutTemplate()}>{normalizeShortcutKey(shortcutCompanyKey) ? "Save public shortcut" : "Add public shortcut"}</button>
                       </div>
                     </>
                   ) : null}
@@ -29500,7 +29443,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             <div className="candidate-snippet no-top-border">{String(value || "")}</div>
                           </article>
                         ))
-                    ) : <div className="empty-state">No company shortcuts yet.</div>}
+                    ) : <div className="empty-state">No public shortcuts yet.</div>}
                   </div>
                 </Section>
               </div>
@@ -30940,7 +30883,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             <label className="full">
               <span>Customize message</span>
               <textarea value={whatsappTemplatePicker.customText || ""} onChange={(e) => setWhatsappTemplatePicker((current) => ({ ...current, customText: e.target.value }))} />
-              <span className="field-help">Use placeholders like {`{{name}} {{recruiter_name}} {{recruiter_email}} {{recruiter_phone}} {{logged_in_recruiter_name}} {{logged_in_recruiter_email}} {{logged_in_recruiter_phone}} {{interview_at}} {{jd_title}} {{client_name}} {{anonymous_client_name}} {{company_name}} {{phone}} {{jd_link}} {{recruiter_jd_link}} {{anonymous_jd_link}}`}</span>
+              <span className="field-help">Use placeholders like {`{{candidate_name}} {{candidate_email}} {{candidate_phone}} {{recruiter_name}} {{recruiter_email}} {{recruiter_phone}} {{logged_in_recruiter_name}} {{logged_in_recruiter_email}} {{logged_in_recruiter_phone}} {{interview_at}} {{jd_title}} {{client_name}} {{anonymous_client_name}} {{company_name}} {{jd_link}} {{recruiter_jd_link}} {{anonymous_jd_link}}`}</span>
             </label>
             <div className="form-grid two-col">
               <label>
@@ -31052,7 +30995,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             <label className="full">
               <span>Customize message</span>
               <textarea value={linkedinTemplatePicker.customText || ""} onChange={(e) => setLinkedinTemplatePicker((current) => ({ ...current, customText: e.target.value }))} />
-              <span className="field-help">Use placeholders like {`{{name}} {{recruiter_name}} {{recruiter_email}} {{recruiter_phone}} {{logged_in_recruiter_name}} {{logged_in_recruiter_email}} {{logged_in_recruiter_phone}} {{interview_at}} {{jd_title}} {{client_name}} {{anonymous_client_name}} {{company_name}} {{phone}} {{jd_link}} {{recruiter_jd_link}} {{anonymous_jd_link}}`}</span>
+              <span className="field-help">Use placeholders like {`{{candidate_name}} {{candidate_email}} {{candidate_phone}} {{recruiter_name}} {{recruiter_email}} {{recruiter_phone}} {{logged_in_recruiter_name}} {{logged_in_recruiter_email}} {{logged_in_recruiter_phone}} {{interview_at}} {{jd_title}} {{client_name}} {{anonymous_client_name}} {{company_name}} {{jd_link}} {{recruiter_jd_link}} {{anonymous_jd_link}}`}</span>
             </label>
             <div className="button-row">
               <button className="ghost-btn" onClick={() => setLinkedinTemplatePicker({ open: false, options: [], selectedId: "", row: null, statusKey: "workspace", customText: "", linkedinUrl: "", outreachMode: "connected" })}>Cancel</button>
@@ -31324,7 +31267,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <div className="full-span">
                   <span className="field-label">Template body</span>
                   <div className="input-like" style={{ marginTop: 6, minHeight: 88 }}>
-                    Bulk JD body auto-generates from the selected JD plus the admin-defined `Bulk JD Mail Template`. Raw HTML is hidden here; use the preview below to verify the final email.
+                    Bulk JD body auto-generates from the selected JD plus the admin-defined Bulk JD Mail Template. Use the preview below to verify the final email.
                   </div>
                 </div>
               ) : (

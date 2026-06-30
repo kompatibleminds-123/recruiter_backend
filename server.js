@@ -62,6 +62,7 @@ const {
   getPlatformSessionUser,
   getCompanySharedExportPresets,
   getCompanyEmailThreadByKey,
+  getCompanyPublicShortcuts,
   getCompanyPersonalShortcuts,
   getCompanyRecruiterCampaignTemplates,
   getPublicCompanyJob,
@@ -130,6 +131,7 @@ const {
   appendAuditLog,
   listCompanyAuditLogs,
   upsertCompanyEmailThread,
+  saveCompanyPublicShortcuts,
   saveCompanyPersonalShortcuts,
   saveCompanyRecruiterCampaignTemplates,
   setCompanyExtensionPlan,
@@ -16720,6 +16722,37 @@ const server = http.createServer(async (req, res) => {
         settings
       });
       sendJson(res, 200, { ok: true, result: settings });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/company/public-shortcuts") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const shortcuts = await getCompanyPublicShortcuts(actor.companyId);
+      sendJson(res, 200, { ok: true, result: { shortcuts } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/public-shortcuts") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const shortcuts = await saveCompanyPublicShortcuts({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        shortcuts: body?.shortcuts || {}
+      });
+      emitShortcutStreamEvent(actor.companyId, "company_shortcuts_changed", {
+        scope: "company",
+        shortcuts
+      });
+      sendJson(res, 200, { ok: true, result: { shortcuts } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
