@@ -7587,6 +7587,22 @@ function JdEmailModal({ open, jobs, value, ccSuggestions = [], onChange, onClose
   if (!open) return null;
   const jobOptions = Array.isArray(jobs) ? jobs : [];
   const suggestionList = Array.isArray(ccSuggestions) ? ccSuggestions : [];
+  const selectedJob = jobOptions.find((job) => String(job?.id || "") === String(value?.jobId || "")) || null;
+  const previewSubject = String(value?.subject || "").trim() || `JD: ${String(selectedJob?.title || "Job Description").trim()}`;
+  const previewIntroHtml = String(value?.introText || "").trim()
+    ? escapeHtml(String(value?.introText || "").trim()).replace(/\n/g, "<br/>")
+    : "<span class='muted'>No intro message added.</span>";
+  const previewSignatureHtml = String(value?.signatureHtml || "").trim()
+    || (String(value?.signatureText || "").trim()
+      ? escapeHtml(String(value?.signatureText || "").trim()).replace(/\n/g, "<br/>")
+      : "");
+  const previewBodyHtml = `
+    <div>${previewIntroHtml}</div>
+    <div style="margin-top:12px;padding:10px 12px;border:1px dashed #cbd5e1;border-radius:10px;background:#f8fafc;color:#475569;font-size:13px;">
+      Full JD content will be inserted below in the standard JD-share mail format${value?.attachJdFile !== false ? ", and the Word attachment will also go with this email." : "."}
+    </div>
+    ${previewSignatureHtml ? `<div style="margin-top:14px;">${previewSignatureHtml}</div>` : ""}
+  `.trim();
   return (
     <div className="overlay" onClick={() => { if (!busy) onClose(); }}>
       <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
@@ -7628,6 +7644,17 @@ function JdEmailModal({ open, jobs, value, ccSuggestions = [], onChange, onClose
             <input type="checkbox" checked={value.attachJdFile !== false} onChange={(e) => onChange("attachJdFile", e.target.checked)} />
             <span>Attach JD as Word (.docx)</span>
           </label>
+        </div>
+        <div className="item-card compact-card" style={{ marginTop: 14 }}>
+          <div className="item-subtitle">Preview</div>
+          <div className="muted" style={{ marginTop: 6 }}>
+            {`To: ${String(value?.to || "").trim() || "candidate@example.com"}${String(value?.cc || "").trim() ? ` | CC: ${String(value.cc).trim()}` : ""}`}
+          </div>
+          <div style={{ marginTop: 10 }}><strong>Subject:</strong> {previewSubject}</div>
+          <div style={{ marginTop: 10 }}>
+            <strong>Body:</strong>
+            <div className="input-like" style={{ marginTop: 6, minHeight: 180 }} dangerouslySetInnerHTML={{ __html: previewBodyHtml }} />
+          </div>
         </div>
         <div className="button-row">
           <button disabled={busy} onClick={onSend}>{busy ? "Sending..." : "Send email"}</button>
@@ -9252,6 +9279,7 @@ function PortalApp({ token, onLogout }) {
   const [savedBulkMailTemplates, setSavedBulkMailTemplates] = useState([]);
   const [savedBulkMailTemplatesLoading, setSavedBulkMailTemplatesLoading] = useState(false);
   const [selectedSavedBulkMailTemplateId, setSelectedSavedBulkMailTemplateId] = useState("");
+  const [loadedSavedBulkMailTemplateId, setLoadedSavedBulkMailTemplateId] = useState("");
   const [emailTemplatesPanel, setEmailTemplatesPanel] = useState("jd_share");
   const [bulkMailSharedDefaultSnapshot, setBulkMailSharedDefaultSnapshot] = useState({ subject: "", body: "" });
   const createEmptyDbCampaignAttachModal = () => ({
@@ -9259,6 +9287,7 @@ function PortalApp({ token, onLogout }) {
     mode: "new",
     contentSource: "template",
     jdShareMode: "normal",
+    attachJdFile: true,
     templates: [],
     selectedTemplateId: "",
     savedTemplateId: "",
@@ -20663,6 +20692,12 @@ function PortalApp({ token, onLogout }) {
     });
   }, [copySettings.bulkMailSubjectTemplate, copySettings.bulkMailBodyTemplate]);
 
+  useEffect(() => {
+    if (!selectedSavedBulkMailTemplateId || selectedSavedBulkMailTemplateId !== loadedSavedBulkMailTemplateId) {
+      setLoadedSavedBulkMailTemplateId("");
+    }
+  }, [selectedSavedBulkMailTemplateId, loadedSavedBulkMailTemplateId]);
+
   function applyDbCampaignModalTemplate(template = null, totalCandidates = 0) {
     const safeTemplate = template && typeof template === "object" ? template : null;
     return {
@@ -20754,12 +20789,36 @@ function PortalApp({ token, onLogout }) {
     const selectedTemplate = (dbCampaignAttachModal?.templates || []).find((item) => String(item?.id || "") === selectedTemplateId) || null;
     const templateTag = String(dbCampaignAttachModal?.templateTag || "").trim();
     const templateSubject = String(dbCampaignAttachModal?.templateSubject || "").trim();
-    const templateBodyText = String(dbCampaignAttachModal?.templateBodyText || "").trim();
+    const templateBodyTextRaw = String(dbCampaignAttachModal?.templateBodyText || "").trim();
     const templateName = String(dbCampaignAttachModal?.templateName || "").trim();
     const campaignName = String(dbCampaignAttachModal?.campaignName || "").trim() || templateName || String(selectedTemplate?.campaignName || selectedTemplate?.name || "").trim();
     if (!campaignName) throw new Error("Campaign name is required.");
     if (!templateSubject) throw new Error("Template subject is required.");
-    if (!templateBodyText) throw new Error("Template body is required.");
+    if (!templateBodyTextRaw) throw new Error("Template body is required.");
+    const isJdMode = String(dbCampaignAttachModal?.contentSource || "").trim().toLowerCase() === "jd";
+    const templateBodyText = isJdMode
+      ? appendBulkJdRuntimeMetadata(templateBodyTextRaw, {
+          jobId: String(dbCampaignAttachModal?.jdJobId || "").trim(),
+          jdShareMode: String(dbCampaignAttachModal?.jdShareMode || "normal").trim(),
+          introText: fillJdEmailTemplate(
+            String(copySettings.bulkJdMailIntroTemplate || DEFAULT_COPY_SETTINGS.bulkJdMailIntroTemplate || "").trim(),
+            {
+              candidateName: "{{name}}",
+              recruiterName: String(getDbCampaignSenderContext(dbCampaignAttachModal?.senderUserId || "")?.name || "Recruiter").trim(),
+              roleLabel: String(dbCampaignAttachModal?.templateName || dbCampaignAttachModal?.campaignName || "").trim(),
+              companyName: String(getDbCampaignSenderContext(dbCampaignAttachModal?.senderUserId || "")?.companyName || "RecruitDesk").trim(),
+              recruiterEmail: String(getDbCampaignSenderContext(dbCampaignAttachModal?.senderUserId || "")?.email || "").trim(),
+              recruiterPhone: String(getDbCampaignSenderContext(dbCampaignAttachModal?.senderUserId || "")?.phone || "").trim()
+            }
+          ),
+          applyLink: String(
+            String(dbCampaignAttachModal?.jdShareMode || "normal").trim().toLowerCase() === "anonymous"
+              ? getPublicApplyLink(String(dbCampaignAttachModal?.jdJobId || "").trim())
+              : getApplyLink(String(dbCampaignAttachModal?.jdJobId || "").trim())
+          ).trim(),
+          attachJdFile: dbCampaignAttachModal?.attachJdFile !== false
+        })
+      : templateBodyTextRaw;
     const shouldCreateNew = forceNew || modalMode !== "existing" || !selectedTemplateId;
     if (forceNew && selectedTemplate && isBulkMailTemplateUnchanged(selectedTemplate, { campaignName, templateTag, templateSubject, templateBodyText, senderUserId: dbCampaignAttachModal?.senderUserId, sendGapMinutes: dbCampaignAttachModal?.sendGapMinutes, dailyCap: dbCampaignAttachModal?.dailyCap })) {
       setStatus("workspace", "No changes detected. New copy was not created.", "ok");
@@ -21050,7 +21109,25 @@ function PortalApp({ token, onLogout }) {
     `.trim();
   }
 
-  function buildDbCampaignModalJdDraftSync(jobId = "", applyLinkOverride = "", jdShareMode = "normal", senderOverride = null) {
+  function appendBulkJdRuntimeMetadata(bodyText = "", metadata = null) {
+    const source = String(bodyText || "").trim();
+    if (!source || !metadata || typeof metadata !== "object") return source;
+    try {
+      const payload = {
+        jobId: String(metadata.jobId || "").trim(),
+        jdShareMode: String(metadata.jdShareMode || "normal").trim().toLowerCase() === "anonymous" ? "anonymous" : "normal",
+        introText: String(metadata.introText || "").trim(),
+        applyLink: String(metadata.applyLink || "").trim(),
+        attachJdFile: metadata.attachJdFile !== false
+      };
+      if (!payload.jobId) return source;
+      return `${source}\n<!-- RECRUITDESK_BULK_JD_RUNTIME:${encodeURIComponent(JSON.stringify(payload))} -->`;
+    } catch {
+      return source;
+    }
+  }
+
+  function buildDbCampaignModalJdDraftSync(jobId = "", applyLinkOverride = "", jdShareMode = "normal", senderOverride = null, attachJdFile = true) {
     const resolvedJobId = String(jobId || "").trim();
     if (!resolvedJobId) return null;
     const job = (Array.isArray(state.jobs) ? state.jobs : []).find((item) => String(item?.id || "").trim() === resolvedJobId) || null;
@@ -21105,7 +21182,8 @@ function PortalApp({ token, onLogout }) {
       templateSubject: subject || `Job Description - ${roleLabel}`,
       templateBodyText: bodyText,
       jdJobId: resolvedJobId,
-      jdShareMode: isAnonymousMode ? "anonymous" : "normal"
+      jdShareMode: isAnonymousMode ? "anonymous" : "normal",
+      attachJdFile: attachJdFile !== false
     };
   }
 
@@ -21123,7 +21201,8 @@ function PortalApp({ token, onLogout }) {
         resolvedJobId,
         signedLink,
         "normal",
-        getDbCampaignSenderContext(dbCampaignAttachModal?.senderUserId || "")
+        getDbCampaignSenderContext(dbCampaignAttachModal?.senderUserId || ""),
+        dbCampaignAttachModal?.attachJdFile !== false
       );
       if (!draft) return;
       setDbCampaignAttachModal((current) => {
@@ -21280,6 +21359,7 @@ function PortalApp({ token, onLogout }) {
         targetCategories: templateTag
       });
       await loadSavedBulkMailTemplatesForSettings({ force: true });
+      setLoadedSavedBulkMailTemplateId(templateId);
       setStatus("settings", "Saved bulk template updated.", "ok");
     } catch (error) {
       setStatus("settings", `Saved bulk template update failed: ${String(error?.message || error)}`, "error");
@@ -21302,6 +21382,7 @@ function PortalApp({ token, onLogout }) {
       bulkMailSubjectTemplate: String(bulkMailSharedDefaultSnapshot.subject || DEFAULT_COPY_SETTINGS.bulkMailSubjectTemplate || "").trim(),
       bulkMailBodyTemplate: String(bulkMailSharedDefaultSnapshot.body || DEFAULT_COPY_SETTINGS.bulkMailBodyTemplate || "").trim()
     }));
+    setLoadedSavedBulkMailTemplateId("");
     setStatus("settings", "Bulk mail editor reset to shared default.", "ok");
   }
 
@@ -29514,7 +29595,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             <Route path="/admin-settings/email-templates" element={
               !isSettingsAdmin ? <FeatureLockedSection title="Email Templates" /> : <div className="page-grid">
                 <Section kicker="Admin Settings" title="Email Templates">
-                  {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
                   <div className="button-row settings-switcher" style={{ marginTop: 8 }}>
                     <button type="button" className={emailTemplatesPanel === "jd_share" ? "settings-switcher__btn" : "ghost-btn settings-switcher__btn"} onClick={() => setEmailTemplatesPanel("jd_share")}>JD Share</button>
                     <button type="button" className={emailTemplatesPanel === "bulk_share" ? "settings-switcher__btn" : "ghost-btn settings-switcher__btn"} onClick={() => setEmailTemplatesPanel("bulk_share")}>Bulk Share</button>
@@ -29528,6 +29608,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <label className="full"><span>Body template</span><textarea ref={jdEmailBodyTemplateTextareaRef} rows={8} value={copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailIntroTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{JD_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`jd-body-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(jdEmailBodyTemplateTextareaRef, copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate, (next) => setCopySettings((current) => ({ ...current, jdEmailIntroTemplate: next })), token)}>{token}</button>))}</div></label>
                     </div>
                     <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("JD share template saved.")}>Save JD share template</button></div>
+                    {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`} style={{ marginTop: 10 }}>{statuses.settings}</div> : null}
                   </div> : null}
                   {emailTemplatesPanel === "bulk_share" ? <div className="settings-subsection">
                     <div className="section-kicker">Bulk Share</div>
@@ -29596,7 +29677,26 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           </div>
                         </label>
                       </div>
-                      <div className="button-row"><button onClick={() => void saveBulkMailSharedDefaultFromSettings()}>Save bulk mail template</button></div>
+                      <div className="button-row">
+                        <button onClick={() => void saveBulkMailSharedDefaultFromSettings()}>Save bulk mail template</button>
+                        <button
+                          className="ghost-btn"
+                          type="button"
+                          onClick={() => resetBulkMailEditorToSharedDefault()}
+                        >
+                          Reset editor to default template
+                        </button>
+                        {loadedSavedBulkMailTemplateId && loadedSavedBulkMailTemplateId === String(selectedSavedBulkMailTemplate?.id || "").trim() ? (
+                          <button
+                            className="ghost-btn"
+                            type="button"
+                            disabled={!selectedSavedBulkMailTemplate || savedBulkMailTemplatesLoading}
+                            onClick={() => void saveSelectedBulkMailTemplateFromSettings()}
+                          >
+                            {savedBulkMailTemplatesLoading ? "Saving..." : "Save selected template"}
+                          </button>
+                        ) : null}
+                      </div>
                       <div className="item-card compact-card" style={{ marginTop: 12 }}>
                         <div className="item-subtitle">Saved Bulk Email Templates</div>
                         <div className="muted" style={{ marginTop: 6 }}>These are recruiter-created saved templates from the bulk-mail popup, separate from the shared default template above.</div>
@@ -29613,9 +29713,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             </select>
                           </label>
                           <div className="button-row" style={{ alignSelf: "end", justifyContent: "flex-start" }}>
-                            <button className="ghost-btn" type="button" onClick={() => void loadSavedBulkMailTemplatesForSettings({ force: true })} disabled={savedBulkMailTemplatesLoading}>
-                              {savedBulkMailTemplatesLoading ? "Refreshing..." : "Refresh saved templates"}
-                            </button>
                             <button
                               className="ghost-btn"
                               type="button"
@@ -29627,25 +29724,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                   bulkMailSubjectTemplate: String(selectedSavedBulkMailTemplate.subject || "").trim(),
                                   bulkMailBodyTemplate: String(selectedSavedBulkMailTemplate.bodyText || "").trim()
                                 }));
+                                setLoadedSavedBulkMailTemplateId(String(selectedSavedBulkMailTemplate.id || "").trim());
                                 setStatus("settings", "Saved bulk template loaded into shared default editor.", "ok");
                               }}
                             >
                               Load selected template
-                            </button>
-                            <button
-                              className="ghost-btn"
-                              type="button"
-                              onClick={() => resetBulkMailEditorToSharedDefault()}
-                            >
-                              Reset editor to shared default
-                            </button>
-                            <button
-                              className="ghost-btn"
-                              type="button"
-                              disabled={!selectedSavedBulkMailTemplate || savedBulkMailTemplatesLoading}
-                              onClick={() => void saveSelectedBulkMailTemplateFromSettings()}
-                            >
-                              {savedBulkMailTemplatesLoading ? "Saving..." : "Save selected template"}
                             </button>
                           </div>
                         </div>
@@ -29661,6 +29744,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           </div>
                         ) : null}
                       </div>
+                      {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`} style={{ marginTop: 10 }}>{statuses.settings}</div> : null}
                     </div>
                   </div> : null}
                   {emailTemplatesPanel === "direct_share" ? <div className="settings-subsection">
@@ -29692,6 +29776,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <label className="full"><span>Thread mail intro template (manual copy mode)</span><textarea ref={directShareThreadTemplateTextareaRef} rows={6} value={copySettings.clientShareThreadIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareThreadIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareThreadIntroTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{CLIENT_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`direct-thread-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(directShareThreadTemplateTextareaRef, copySettings.clientShareThreadIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareThreadIntroTemplate, (next) => setCopySettings((current) => ({ ...current, clientShareThreadIntroTemplate: next })), token)}>{token}</button>))}</div></label>
                     </div>
                     <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("Direct share template saved.")}>Save direct share template</button></div>
+                    {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`} style={{ marginTop: 10 }}>{statuses.settings}</div> : null}
                   </div> : null}
                   {emailTemplatesPanel === "signature" ? <div className="settings-subsection">
                     <div className="section-kicker">Signature</div>
@@ -29703,9 +29788,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <label><span>Link 2 URL</span><input value={copySettings.clientShareSignatureLinkUrl2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl2: e.target.value }))} /></label>
                     </div>
                     <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("Admin signature settings saved.")}>Save signature settings</button></div>
+                    {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`} style={{ marginTop: 10 }}>{statuses.settings}</div> : null}
                   </div> : null}
                   <div className="button-row">
-                    <button className="secondary" onClick={() => navigate("/mail-settings")}>Open Recruiter Mail Connect</button>
                     <button className="ghost-btn" onClick={() => navigate("/admin-settings")}>Back to Admin Settings</button>
                   </div>
                 </Section>
@@ -31058,7 +31143,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         current?.jdJobId || "",
                         "",
                         current?.jdShareMode || "normal",
-                        getDbCampaignSenderContext(current?.senderUserId || "")
+                        getDbCampaignSenderContext(current?.senderUserId || ""),
+                        current?.attachJdFile !== false
                       );
                       return {
                         ...current,
@@ -31115,7 +31201,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           nextJobId,
                           "",
                           nextMode,
-                          getDbCampaignSenderContext(dbCampaignAttachModal?.senderUserId || "")
+                          getDbCampaignSenderContext(dbCampaignAttachModal?.senderUserId || ""),
+                          dbCampaignAttachModal?.attachJdFile !== false
                         );
                         setDbCampaignAttachModal((current) => ({
                           ...current,
@@ -31149,7 +31236,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           nextJobId,
                           "",
                           nextMode,
-                          getDbCampaignSenderContext(dbCampaignAttachModal?.senderUserId || "")
+                          getDbCampaignSenderContext(dbCampaignAttachModal?.senderUserId || ""),
+                          dbCampaignAttachModal?.attachJdFile !== false
                         );
                         setDbCampaignAttachModal((current) => ({
                           ...current,
@@ -31164,6 +31252,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <option value="normal">Normal JD</option>
                       <option value="anonymous">Anonymous JD</option>
                     </select>
+                  </label>
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={dbCampaignAttachModal.attachJdFile !== false}
+                      onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, attachJdFile: e.target.checked }))}
+                      disabled={dbCampaignAttachModal.busy}
+                    />
+                    <span>Attach JD as Word (.docx)</span>
                   </label>
                 </>
               ) : null}
@@ -31198,7 +31295,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       current?.jdJobId || "",
                       "",
                       current?.jdShareMode || "normal",
-                      getDbCampaignSenderContext(nextSenderUserId)
+                      getDbCampaignSenderContext(nextSenderUserId),
+                      current?.attachJdFile !== false
                     );
                     return {
                       ...current,
@@ -31222,16 +31320,25 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   disabled={dbCampaignAttachModal.busy}
                 />
               </label>
-              <label className="full-span">
-                <span>Template body</span>
-                <textarea
-                  value={dbCampaignAttachModal.templateBodyText || ""}
-                  onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, templateBodyText: e.target.value }))}
-                  placeholder="Write recruiter message template"
-                  rows={8}
-                  disabled={dbCampaignAttachModal.busy}
-                />
-              </label>
+              {dbCampaignAttachModal.contentSource === "jd" ? (
+                <div className="full-span">
+                  <span className="field-label">Template body</span>
+                  <div className="input-like" style={{ marginTop: 6, minHeight: 88 }}>
+                    Bulk JD body auto-generates from the selected JD plus the admin-defined `Bulk JD Mail Template`. Raw HTML is hidden here; use the preview below to verify the final email.
+                  </div>
+                </div>
+              ) : (
+                <label className="full-span">
+                  <span>Template body</span>
+                  <textarea
+                    value={dbCampaignAttachModal.templateBodyText || ""}
+                    onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, templateBodyText: e.target.value }))}
+                    placeholder="Write recruiter message template"
+                    rows={8}
+                    disabled={dbCampaignAttachModal.busy}
+                  />
+                </label>
+              )}
               <label>
                 <span>Send mode</span>
                 <select

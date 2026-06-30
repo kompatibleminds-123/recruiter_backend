@@ -1224,21 +1224,35 @@ function buildJobShareEmail({ job, introText = "", senderName = "", signatureHtm
   return { html, text, applyLink: String(applyLink || "").trim() };
 }
 
-async function buildJobShareDocxBuffer({ job, introText = "", senderName = "", applyLink = "" }) {
+async function buildJobShareDocxBuffer({ job, introText = "", senderName = "", applyLink = "", jdShareMode = "normal" }) {
   if (!docxLib) return null;
-  const title = String(job?.title || "Job Description").trim();
-  const client = String(job?.clientName || "").trim();
+  const anonymous = String(jdShareMode || "").trim().toLowerCase() === "anonymous";
+  const clientName = String(job?.clientName || job?.client_name || "").trim();
+  const publicCompanyLine = String(job?.publicCompanyLine || job?.public_company_line || "").trim();
+  const publicTitle = String(job?.publicTitle || job?.public_title || "").trim();
+  const title = anonymous
+    ? (publicTitle || redactClientNameFromText(String(job?.title || "").trim(), clientName) || String(job?.title || "Job Description").trim())
+    : String(job?.title || "Job Description").trim();
+  const client = anonymous ? (publicCompanyLine || "Confidential company") : clientName;
   const location = String(job?.location || "").trim();
   const workMode = String(job?.workMode || "").trim();
-  const aboutCompany = String(job?.aboutCompany || "").trim();
-  const mustHave = String(job?.mustHaveSkills || "").trim();
-  const jd = richHtmlToReadableText(String(job?.jobDescription || "").trim());
+  const aboutCompany = anonymous
+    ? (publicCompanyLine || "Confidential company")
+    : String(job?.aboutCompany || "").trim();
+  const mustHave = anonymous
+    ? redactClientNameFromText(String(job?.mustHaveSkills || "").trim(), clientName)
+    : String(job?.mustHaveSkills || "").trim();
+  const jd = anonymous
+    ? redactClientNameFromText(richHtmlToReadableText(String(job?.jobDescription || "").trim()), clientName)
+    : richHtmlToReadableText(String(job?.jobDescription || "").trim());
   const redFlags = String(job?.redFlags || "").trim();
-  const recruiterNotes = String(job?.recruiterNotes || "").trim();
+  const recruiterNotes = anonymous
+    ? redactClientNameFromText(String(job?.recruiterNotes || "").trim(), clientName)
+    : String(job?.recruiterNotes || "").trim();
   const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docxLib;
 
   const blocks = [
-    client ? { label: "Client", value: client } : null,
+    client ? { label: anonymous ? "Company" : "Client", value: client } : null,
     location ? { label: "Location", value: location } : null,
     workMode ? { label: "Work mode", value: workMode } : null,
     aboutCompany ? { label: "About company", value: aboutCompany } : null,
@@ -5170,6 +5184,7 @@ function extractSafeFirstName(fullName = "") {
 
 const MARKETING_TEMPLATE_ATTACHMENT_MARKER = "RSD_TEMPLATE_ATTACHMENT_V1";
 const MARKETING_TEMPLATE_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
+const BULK_JD_RUNTIME_MARKER = "RECRUITDESK_BULK_JD_RUNTIME";
 
 function stripMarketingTemplateAttachment(rawBody = "") {
   const source = String(rawBody || "");
@@ -5203,6 +5218,31 @@ function applyMarketingTemplateAttachment(rawBody = "", attachment = null) {
   const mimeType = String(attachment.mimeType || "application/octet-stream").trim() || "application/octet-stream";
   const payload = { filename, mimeType, fileData };
   return `${cleaned}\n<!--${MARKETING_TEMPLATE_ATTACHMENT_MARKER}:${JSON.stringify(payload)}-->`;
+}
+
+function stripBulkJdRuntimeMetadata(rawBody = "") {
+  const source = String(rawBody || "");
+  const pattern = new RegExp(`<!--\\s*${BULK_JD_RUNTIME_MARKER}:(.*?)\\s*-->`, "s");
+  const match = source.match(pattern);
+  if (!match) return { cleanBody: source, metadata: null };
+  let parsed = null;
+  try {
+    parsed = JSON.parse(decodeURIComponent(String(match[1] || "").trim()));
+  } catch {
+    parsed = null;
+  }
+  const cleanBody = source.replace(pattern, "").trim();
+  if (!parsed || typeof parsed !== "object") return { cleanBody, metadata: null };
+  return {
+    cleanBody,
+    metadata: {
+      jobId: String(parsed.jobId || "").trim(),
+      jdShareMode: String(parsed.jdShareMode || "normal").trim().toLowerCase() === "anonymous" ? "anonymous" : "normal",
+      introText: String(parsed.introText || "").trim(),
+      applyLink: String(parsed.applyLink || "").trim(),
+      attachJdFile: parsed.attachJdFile !== false
+    }
+  };
 }
 
 function sanitizeMarketingTemplateAttachment(input = null) {
@@ -5393,6 +5433,7 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
   const userById = new Map((Array.isArray(companyUsers) ? companyUsers : []).map((item) => [String(item?.id || "").trim(), item]));
   const sharedCopySettings = await getCompanySharedExportPresets(String(actor?.companyId || "").trim()).catch(() => ({}));
   const smtpByUserId = new Map();
+  const jobsById = new Map();
   const now = new Date();
   const campaigns = await supabaseTableFetch(
     "marketing_campaigns",
@@ -5429,8 +5470,10 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
     const template = Array.isArray(templateRows) && templateRows.length ? templateRows[0] : null;
     if (!template?.subject || !template?.body_text) continue;
     const templateParsed = stripMarketingTemplateAttachment(String(template.body_text || ""));
-    const templateBody = String(templateParsed.cleanBody || "").trim();
+    const runtimeParsed = stripBulkJdRuntimeMetadata(String(templateParsed.cleanBody || ""));
+    const templateBody = String(runtimeParsed.cleanBody || "").trim();
     const templateAttachment = templateParsed.attachment;
+    const runtimeMeta = runtimeParsed.metadata;
     if (!templateBody) continue;
     const queueRows = await supabaseTableFetch(
       "marketing_campaign_prospects",
@@ -5478,6 +5521,36 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
         ? `${textBase}\n\n${signature.text}`
         : textBase;
       const attachments = [];
+      if (runtimeMeta?.attachJdFile && runtimeMeta?.jobId) {
+        try {
+          if (!jobsById.size) {
+            const items = await listCompanyJobs(String(actor?.companyId || "").trim(), String(senderActor?.id || "").trim()).catch(() => []);
+            (Array.isArray(items) ? items : []).forEach((job) => {
+              const key = String(job?.id || "").trim();
+              if (key) jobsById.set(key, job);
+            });
+          }
+          const job = jobsById.get(String(runtimeMeta.jobId || "").trim()) || null;
+          if (job && docxLib) {
+            const docxBuffer = await buildJobShareDocxBuffer({
+              job,
+              introText: String(runtimeMeta.introText || "").trim(),
+              senderName: String(senderActor?.name || "").trim(),
+              applyLink: String(runtimeMeta.applyLink || "").trim(),
+              jdShareMode: String(runtimeMeta.jdShareMode || "normal").trim()
+            });
+            if (docxBuffer) {
+              attachments.push({
+                filename: `${String(subject || job?.title || "job-description").replace(/[^\w\s.-]+/g, "").slice(0, 80) || "job-description"}.docx`,
+                content: docxBuffer,
+                contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              });
+            }
+          }
+        } catch {
+          // Keep send resilient even if JD attachment generation fails.
+        }
+      }
       if (templateAttachment?.filename && templateAttachment?.fileData) {
         try {
           attachments.push({
