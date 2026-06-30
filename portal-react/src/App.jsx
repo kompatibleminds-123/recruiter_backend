@@ -149,6 +149,4706 @@ function PortalIcon({ name = "dashboard" }) {
   }
 }
 
+function getNavIconName(to = "") {
+  return NAV_ICON_MAP[String(to || "").trim()] || "dashboard";
+}
+
+function isPdfEmbeddableLogoDataUrl(dataUrl = "") {
+  const raw = String(dataUrl || "").trim();
+  return /^data:image\/(?:png|jpe?g);base64,/i.test(raw);
+}
+
+async function convertLogoDataUrlToPng(dataUrl = "") {
+  const raw = String(dataUrl || "").trim();
+  if (!raw) return "";
+  return await new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        const w = Math.max(1, Number(img.naturalWidth || img.width || 1));
+        const h = Math.max(1, Number(img.naturalHeight || img.height || 1));
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Canvas context unavailable"));
+          return;
+        }
+        ctx.clearRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/png"));
+      } catch (error) {
+        reject(error);
+      }
+    };
+    img.onerror = () => reject(new Error("Could not decode logo image"));
+    img.src = raw;
+  });
+}
+
+function useSidebarCollapsed(storageKey = SIDEBAR_PREF_KEY) {
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem(storageKey) === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(storageKey, collapsed ? "1" : "0");
+    } catch {}
+  }, [collapsed, storageKey]);
+
+  return [collapsed, setCollapsed];
+}
+
+function SidebarNavLink({ to, label, collapsed = false }) {
+  const iconName = getNavIconName(to);
+  return (
+    <NavLink
+      key={to}
+      to={to}
+      title={collapsed ? label : undefined}
+      className={({ isActive }) => `nav-btn${collapsed ? " nav-btn--collapsed" : ""}${isActive ? " active" : ""}`}
+    >
+      <span className="nav-btn__icon"><PortalIcon name={iconName} /></span>
+      <span className="nav-btn__label">{label}</span>
+    </NavLink>
+  );
+}
+
+function FeatureLockedSection({ title = "Feature locked" }) {
+  return (
+    <div className="page-grid">
+      <Section kicker="Plan Required" title={title}>
+        <div className="empty-state compact-empty">
+          <div className="empty-state__title">Available on SaaS Unlimited (Rs 4999)</div>
+          <div className="muted">Upgrade to unlock this feature for your workspace.</div>
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+	const DEFAULT_COPY_SETTINGS = {
+	  excelPreset: "compact_recruiter",
+  // When enabled, /company/candidates/search-natural will use embeddings for semantic reranking.
+  // Admin can turn it off for the whole workspace from Preset Settings.
+  semanticSearchEnabled: true,
+  exportPresetLabels: {
+    compact_recruiter: "Default recruiter exports",
+    client_tracker: "Internal tracker",
+    client_submission: "Client submission",
+    screening_focus: "Screening focus"
+  },
+	  exportPresetColumns: {
+	    compact_recruiter: "S.No.|s_no\nName|name\nPh|phone\nEmail|email\nCurrent Company|current_company\nCurrent Designation|current_designation\nTotal Experience|total_experience\nTenure in current company|current_org_tenure\nLocation|location\nReason of change|reason_of_change\nStatus|status\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nOther Standard Questions|other_standard_questions\nRemarks|remarks\nLinkedIn|linkedin",
+    client_tracker: "Client Name|client_name\nTarget Role / Open Position|jd_title\nKey Skills Required|key_skills_required\nAssigned to|recruiter_name\nDate Added|date_added\nCandidate Name|name\nStatus|status\nContact No.|phone\nEmail ID|email\nLocation|location\nCurrent Company|current_company\nCurrent Designation|current_designation\nDomain / Industry|domain_industry\nWork Exp (Total years/months)|total_experience\nHighest Education|highest_education\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nRemarks / Notes|remarks\nLinkedIn Profile Link (Optional)|linkedin",
+	    client_submission: "S.No.|s_no\nName|name\nPh|phone\nEmail|email\nCurrent Company|current_company\nCurrent Designation|current_designation\nTotal Experience|total_experience\nStrong Points|other_pointers\nRemarks|remarks",
+	    screening_focus: "S.No.|s_no\nName|name\nCurrent CTC|current_ctc\nExpected CTC|expected_ctc\nNotice Period|notice_period\nScreening Answers|other_standard_questions\nRemarks|remarks"
+	  },
+  exportPresetClientMap: {},
+  customExportPresets: [],
+  whatsappTemplate: "{{index}}. {{name}}\nRole: {{jd_title}}\nCompany: {{company}}\nOutcome: {{outcome}}\nRecruiter note: {{recruiter_notes}}",
+  linkedinConnectedTemplate: "Hi {{name}},\n\nI came across your profile and wanted to reach out regarding a relevant opportunity for {{jd_title}}.\n\nIf open, I’d be happy to share details.\n\nRegards,\n{{recruiter_name}}\n{{recruiter_email}}",
+  linkedinConnectionRequestTemplate: "Hi {{name}}, came across your profile for {{jd_title}} and would love to connect.",
+  emailTemplate: "{{index}}. {{name}}\nCompany: {{company}}\nRole: {{jd_title}}\nLocation: {{location}}\nOutcome: {{outcome}}\nEmail: {{email}}\nPhone: {{phone}}\nNotes: {{recruiter_notes}}",
+  bulkMailSubjectTemplate: "Opportunity with {Company}",
+  bulkMailBodyTemplate: "Hello {Candidate},\n\nI hope you are doing well.\n\nI came across your profile and wanted to connect regarding a relevant opportunity.",
+  clientDirectory: [],
+  clientShareIntroTemplate: "Hello {{hr_name}},\n\nGreetings !!\n\nThis is {{recruiter_name}} from {{company_name}}.\nPFA the profiles for {{role}}.\nKindly review and share your feedback.",
+  clientShareThreadIntroTemplate: "Hello {{hr_name}},\n\nSharing additional profiles for {{role}} in the same mail chain.\n\nRegards,\n{{recruiter_name}}",
+  clientShareSubjectTemplate: "{{client_name}} - Candidate Profiles for {{role}}",
+  clientShareSignatureText: "Regards,\n{{recruiter_name}}\n{{company_name}}",
+  clientShareSignatureLinkLabel: "",
+  clientShareSignatureLinkUrl: "",
+  clientShareSignatureLinkLabel2: "",
+  clientShareSignatureLinkUrl2: "",
+  resumeFormatting: {
+    headerEnabled: true,
+    footerEnabled: true,
+    watermarkEnabled: false,
+    logoDataUrl: "",
+    templateStyle: "minimal_corporate",
+    headerLayout: "executive",
+    headerShowFields: ["candidate_name", "target_role", "current_designation", "email", "phone", "notice_period", "total_experience"],
+    footerText: "Confidential candidate profile shared by {{company_name}}",
+    sideRibbonText: "Shared by {{company_name}}",
+    footerShowPageNumber: true,
+    watermarkText: "CONFIDENTIAL",
+    watermarkOpacity: 0.12,
+    headerMaxHeightPx: 90,
+    footerMaxHeightPx: 70
+  },
+  companyWideShortcuts: {},
+  jdEmailSubjectTemplate: "Job Description - {Role}",
+  jdEmailIntroTemplate: "Hello {Candidate}.\nGreetings !!\n\nThis is {Recruiter} from {Company}.\nIt was good to interact with you.\n\nAs discussed, please find the Job description for the {Role}.\nPlease acknowledge or confirm so we can take your candidature ahead.",
+  bulkJdMailSubjectTemplate: "Job Description - {Role}",
+  bulkJdMailIntroTemplate: "Hello {Candidate}.\nGreetings !!\n\nThis is {Recruiter} from {Company}.\nIt was good to interact with you.\n\nAs discussed, please find the Job description for the {Role}.\nPlease acknowledge or confirm so we can take your candidature ahead.",
+  interviewAiParsingEnabled: false,
+  jobBoard: {
+    slug: "",
+    pageTitle: "{{company_name}} Jobs",
+    pageSubtitle: "Explore active openings and apply directly.",
+    logoDataUrl: "",
+    faviconDataUrl: "",
+    primaryColor: "#2485a5",
+    buttonColor: "#2485a5",
+    backgroundColor: "#ffffff",
+    cardBackgroundColor: "#fffef8",
+    textColor: "#112143",
+    mutedTextColor: "#7a8496",
+    embedHeightPx: 900
+  },
+  jobApplyFields: [],
+  deletedSuggestedPresets: [],
+  deletedSuggestedShortcuts: [],
+  sheetImportMappingsByUser: {},
+  sheetImportLearnedAliases: {}
+};
+
+const JOB_APPLY_FIELD_TYPES = ["text", "textarea", "select", "checkbox"];
+
+function normalizeJobApplyField(field, index = 0) {
+  const source = field && typeof field === "object" ? field : {};
+  const label = normalizeMojibakeSymbols(String(source.label || source.name || `Custom field ${index + 1}`).trim());
+  const rawId = String(source.id || source.key || label || `custom_field_${index + 1}`).trim();
+  const id = rawId
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 48) || `custom_field_${index + 1}`;
+  const type = JOB_APPLY_FIELD_TYPES.includes(String(source.type || "").trim()) ? String(source.type || "").trim() : "text";
+  const rawOptions = Array.isArray(source.options) ? source.options.join("\n") : String(source.options || "");
+  return {
+    id,
+    label,
+    type,
+    placeholder: normalizeMojibakeSymbols(String(source.placeholder || "").trim()),
+    required: source.required === true,
+    enabled: source.enabled !== false,
+    conditionalOnId: String(source.conditionalOnId || source.conditional_on_id || "").trim(),
+    conditionalValue: normalizeMojibakeSymbols(String(source.conditionalValue || source.conditional_value || "").trim()),
+    options: rawOptions
+      .split(/\r?\n|,/)
+      .map((item) => normalizeMojibakeSymbols(String(item || "").trim()))
+      .filter(Boolean)
+      .slice(0, 30)
+      .join("\n")
+  };
+}
+
+function migrateCopySettings(settings = {}) {
+  const next = { ...DEFAULT_COPY_SETTINGS, ...(settings || {}) };
+  next.clientDirectory = Array.isArray(next.clientDirectory)
+    ? next.clientDirectory
+      .map((item, index) => {
+        const source = item && typeof item === "object" && !Array.isArray(item) ? item : { name: item };
+        const name = String(source?.name || source?.clientName || source?.client_name || source?.label || source?.value || "").trim();
+        if (!name) return null;
+        return {
+          id: String(source?.id || `client_directory_${index + 1}`).trim() || `client_directory_${index + 1}`,
+          name,
+          archived: source?.archived === true || String(source?.status || "").trim().toLowerCase() === "archived",
+          updatedAt: String(source?.updatedAt || source?.updated_at || "").trim(),
+          updatedBy: String(source?.updatedBy || source?.updated_by || "").trim()
+        };
+      })
+      .filter(Boolean)
+    : [];
+  next.deletedSuggestedShortcuts = (Array.isArray(next.deletedSuggestedShortcuts) ? next.deletedSuggestedShortcuts : [])
+    .map((item) => normalizeShortcutKey(item))
+    .filter(Boolean);
+  next.deletedSuggestedPresets = (Array.isArray(next.deletedSuggestedPresets) ? next.deletedSuggestedPresets : [])
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+	  next.semanticSearchEnabled = next.semanticSearchEnabled !== false;
+  // Fail-safe: only explicit true should turn AI parsing on.
+  // This prevents stale/mobile fallback from showing ON when server settings are unavailable.
+  next.interviewAiParsingEnabled = next.interviewAiParsingEnabled === true;
+	  const presetColumns = { ...(next.exportPresetColumns || {}) };
+	  const attentive = String(presetColumns.attentive_tracker || "").trim();
+	  if (attentive) {
+	    const lines = attentive.split(/\r?\n/).map((line) => String(line || "").trim()).filter(Boolean);
+	    let didChange = false;
+	    const migratedLines = lines.map((line) => {
+	      const parts = line.split("|");
+	      if (parts.length < 2) return line;
+	      const field = String(parts[parts.length - 1] || "").trim();
+	      if (field === "notice_period_indicator") {
+	        parts[parts.length - 1] = "notice_period";
+	        didChange = true;
+	        return parts.join("|");
+	      }
+	      return line;
+	    });
+	    const beforeCount = migratedLines.length;
+	    const cleanedLines = migratedLines.filter((line) => !String(line).includes("|reason_of_change_indicator"));
+	    if (cleanedLines.length !== beforeCount) didChange = true;
+	    if (didChange) presetColumns.attentive_tracker = cleanedLines.join("\n");
+  }
+  // Auto-clean known mojibake from persisted templates/labels so symbols do not reappear.
+  next.whatsappTemplate = normalizeTemplateFormatting(next.whatsappTemplate || DEFAULT_COPY_SETTINGS.whatsappTemplate || "");
+  next.linkedinConnectedTemplate = normalizeTemplateFormatting(next.linkedinConnectedTemplate || DEFAULT_COPY_SETTINGS.linkedinConnectedTemplate || "");
+  next.linkedinConnectionRequestTemplate = normalizeTemplateFormatting(next.linkedinConnectionRequestTemplate || DEFAULT_COPY_SETTINGS.linkedinConnectionRequestTemplate || "");
+  next.emailTemplate = normalizeTemplateFormatting(next.emailTemplate || DEFAULT_COPY_SETTINGS.emailTemplate || "");
+  next.bulkMailSubjectTemplate = normalizeMojibakeSymbols(next.bulkMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkMailSubjectTemplate || "");
+  next.bulkMailBodyTemplate = normalizeTemplateFormatting(next.bulkMailBodyTemplate || DEFAULT_COPY_SETTINGS.bulkMailBodyTemplate || "");
+  next.clientShareIntroTemplate = normalizeTemplateFormatting(next.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "");
+  next.clientShareThreadIntroTemplate = normalizeTemplateFormatting(next.clientShareThreadIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareThreadIntroTemplate || "");
+  next.clientShareSubjectTemplate = normalizeMojibakeSymbols(next.clientShareSubjectTemplate || DEFAULT_COPY_SETTINGS.clientShareSubjectTemplate || "");
+  next.clientShareSignatureText = normalizeTemplateFormatting(next.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || "");
+  next.jdEmailSubjectTemplate = normalizeTemplateFormatting(next.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate || "");
+  next.jdEmailIntroTemplate = normalizeTemplateFormatting(next.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate || "");
+  next.bulkJdMailSubjectTemplate = normalizeTemplateFormatting(next.bulkJdMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkJdMailSubjectTemplate || "");
+  next.bulkJdMailIntroTemplate = normalizeTemplateFormatting(next.bulkJdMailIntroTemplate || DEFAULT_COPY_SETTINGS.bulkJdMailIntroTemplate || "");
+  next.clientShareSignatureLinkLabel = normalizeMojibakeSymbols(next.clientShareSignatureLinkLabel || "");
+  next.clientShareSignatureLinkLabel2 = normalizeMojibakeSymbols(next.clientShareSignatureLinkLabel2 || "");
+  const resumeFormatting = { ...(DEFAULT_COPY_SETTINGS.resumeFormatting || {}), ...(next.resumeFormatting || {}) };
+  resumeFormatting.footerText = normalizeMojibakeSymbols(String(resumeFormatting.footerText || DEFAULT_COPY_SETTINGS.resumeFormatting.footerText || ""));
+  resumeFormatting.sideRibbonText = normalizeMojibakeSymbols(String(resumeFormatting.sideRibbonText || DEFAULT_COPY_SETTINGS.resumeFormatting.sideRibbonText || ""));
+  resumeFormatting.watermarkText = normalizeMojibakeSymbols(String(resumeFormatting.watermarkText || DEFAULT_COPY_SETTINGS.resumeFormatting.watermarkText || ""));
+  resumeFormatting.templateStyle = String(resumeFormatting.templateStyle || DEFAULT_COPY_SETTINGS.resumeFormatting.templateStyle || "minimal_corporate").trim() || "minimal_corporate";
+  resumeFormatting.watermarkOpacity = Math.max(0.05, Math.min(0.15, Number(resumeFormatting.watermarkOpacity || 0.12) || 0.12));
+  resumeFormatting.headerMaxHeightPx = Math.max(56, Math.min(90, Number(resumeFormatting.headerMaxHeightPx || 90) || 90));
+  resumeFormatting.footerMaxHeightPx = Math.max(40, Math.min(70, Number(resumeFormatting.footerMaxHeightPx || 70) || 70));
+  resumeFormatting.headerShowFields = Array.isArray(resumeFormatting.headerShowFields) ? resumeFormatting.headerShowFields : DEFAULT_COPY_SETTINGS.resumeFormatting.headerShowFields;
+  resumeFormatting.headerShowFields = resumeFormatting.headerShowFields.map((key) => {
+    const k = String(key || "").trim();
+    if (k === "candidate_role") return "target_role";
+    return k;
+  });
+  resumeFormatting.logoDataUrl = String(resumeFormatting.logoDataUrl || "").trim();
+  next.resumeFormatting = resumeFormatting;
+  next.exportPresetLabels = Object.fromEntries(
+    Object.entries(next.exportPresetLabels || {}).map(([key, value]) => [key, normalizeMojibakeSymbols(value || "")])
+  );
+  next.customExportPresets = (next.customExportPresets || []).map((preset) => ({
+    ...preset,
+    label: normalizeMojibakeSymbols(preset?.label || ""),
+    clientName: normalizeMojibakeSymbols(preset?.clientName || ""),
+    columns: normalizeMojibakeSymbols(preset?.columns || "")
+  }));
+  next.jobBoard = {
+    ...(DEFAULT_COPY_SETTINGS.jobBoard || {}),
+    ...((next.jobBoard && typeof next.jobBoard === "object") ? next.jobBoard : {})
+  };
+  next.jobBoard.slug = String(next.jobBoard.slug || "").trim().toLowerCase();
+  next.jobBoard.pageTitle = String(next.jobBoard.pageTitle || DEFAULT_COPY_SETTINGS.jobBoard.pageTitle || "Jobs").trim();
+  next.jobBoard.pageSubtitle = String(next.jobBoard.pageSubtitle || DEFAULT_COPY_SETTINGS.jobBoard.pageSubtitle || "").trim();
+  next.jobBoard.logoDataUrl = String(next.jobBoard.logoDataUrl || "").trim();
+  next.jobBoard.faviconDataUrl = String(next.jobBoard.faviconDataUrl || "").trim();
+  next.jobBoard.primaryColor = String(next.jobBoard.primaryColor || DEFAULT_COPY_SETTINGS.jobBoard.primaryColor || "#2485a5").trim();
+  next.jobBoard.buttonColor = String(next.jobBoard.buttonColor || next.jobBoard.primaryColor || "#2485a5").trim();
+  next.jobBoard.backgroundColor = String(next.jobBoard.backgroundColor || DEFAULT_COPY_SETTINGS.jobBoard.backgroundColor || "#ffffff").trim();
+  next.jobBoard.cardBackgroundColor = String(next.jobBoard.cardBackgroundColor || DEFAULT_COPY_SETTINGS.jobBoard.cardBackgroundColor || "#fffef8").trim();
+  next.jobBoard.textColor = String(next.jobBoard.textColor || DEFAULT_COPY_SETTINGS.jobBoard.textColor || "#112143").trim();
+  next.jobBoard.mutedTextColor = String(next.jobBoard.mutedTextColor || DEFAULT_COPY_SETTINGS.jobBoard.mutedTextColor || "#7a8496").trim();
+  next.jobBoard.embedHeightPx = Math.max(480, Math.min(1400, Number(next.jobBoard.embedHeightPx || 900) || 900));
+  next.jobApplyFields = (Array.isArray(next.jobApplyFields) ? next.jobApplyFields : [])
+    .map((field, index) => normalizeJobApplyField(field, index))
+    .filter((field) => field.id && field.label)
+    .slice(0, 12);
+  next.sheetImportMappingsByUser = next.sheetImportMappingsByUser && typeof next.sheetImportMappingsByUser === "object"
+    ? next.sheetImportMappingsByUser
+    : {};
+  next.sheetImportLearnedAliases = next.sheetImportLearnedAliases && typeof next.sheetImportLearnedAliases === "object"
+    ? next.sheetImportLearnedAliases
+    : {};
+  next.exportPresetColumns = presetColumns;
+  return next;
+}
+
+function getClientBuildId() {
+  try {
+    const scripts = Array.from(document.querySelectorAll("script[src]"));
+    for (const script of scripts) {
+      const src = String(script.getAttribute("src") || "").trim();
+      const match = src.match(/index-([^.\/?#]+)\.js/i);
+      if (match?.[1]) return String(match[1]).trim();
+    }
+  } catch {
+    // Ignore and fallback.
+  }
+  return "unknown";
+}
+
+const AI_SEARCH_EXAMPLE_PROMPTS = [
+  "AE in Bangalore",
+  "Head of Sales",
+  "shared last month",
+  "offered Mumbai sales candidates under 18 L",
+  "SaaS sales profiles with notice under 30 days",
+  "profiles sourced by Ankit this week"
+];
+
+const BOOLEAN_SEARCH_EXAMPLE_PROMPTS = [
+  "loan AND sales",
+  '"business development" AND saas',
+  '(sales OR "business development") AND loan',
+  'mumbai AND "account executive"'
+];
+
+const SMART_SEARCH_QUICK_CHIPS = [
+  { id: "interview_history", label: "Throughout interview history", querySuffix: "interview history screening call aligned L1 aligned L2 aligned L3 aligned HR interview aligned interview feedback awaited interview reject offered joined shortlisted interview on hold" },
+  { id: "aligned_interviews", label: "Aligned interviews", querySuffix: "assessment status screening call aligned or L1 aligned or L2 aligned or L3 aligned or HR interview aligned" },
+  { id: "quick_joiners", label: "Quick joiners (<=15 days)", querySuffix: "notice period under 15 days" },
+  { id: "shared_today", label: "Candidates shared today", querySuffix: "converted to assessments today" },
+  { id: "shared_this_week", label: "Shared this week", querySuffix: "converted to assessments this week" },
+  { id: "joined_candidates", label: "Joined candidates", querySuffix: "assessment status joined" },
+  { id: "cv_shared", label: "Active pipeline", querySuffix: "active assessments" }
+];
+const SMART_CHIP_INTERVIEW_ALIGNED_STATUSES = new Set([
+  "screening call aligned",
+  "l1 aligned",
+  "l2 aligned",
+  "l3 aligned",
+  "hr discussion aligned",
+  "hr interview aligned"
+]);
+const SMART_CHIP_INTERVIEW_TIMELINE_STATUSES = new Set([
+  "screening call aligned",
+  "l1 aligned",
+  "l2 aligned",
+  "l3 aligned",
+  "hr discussion aligned",
+  "hr interview aligned",
+  "interview feedback awaited",
+  "interview reject",
+  "offered",
+  "joined",
+  "shortlisted",
+  "interview on hold"
+]);
+const SHORTCUT_TEMPLATE_PLACEHOLDERS = [
+  "{{name}}",
+  "{{recruiter_name}}",
+  "{{recruiter_email}}",
+  "{{recruiter_phone}}",
+  "{{logged_in_recruiter_name}}",
+  "{{logged_in_recruiter_email}}",
+  "{{logged_in_recruiter_phone}}",
+  "{{interview_at}}",
+  "{{jd_title}}",
+  "{{client_name}}",
+  "{{anonymous_client_name}}",
+  "{{company_name}}",
+  "{{phone}}",
+  "{{email}}",
+  "{{jd_link}}",
+  "{{recruiter_jd_link}}",
+  "{{anonymous_jd_link}}"
+];
+
+const CLIENT_SHARE_TEMPLATE_PLACEHOLDERS = [
+  "{{client_name}}",
+  "{{role}}",
+  "{{role_line}}",
+  "{{hr_name}}",
+  "{{recruiter_name}}",
+  "{{recruiter_email}}",
+  "{{recruiter_phone}}",
+  "{{logged_in_recruiter_name}}",
+  "{{logged_in_recruiter_email}}",
+  "{{logged_in_recruiter_phone}}",
+  "{{company_name}}"
+];
+const BULK_MAIL_TEMPLATE_PLACEHOLDERS = [
+  "{Candidate}",
+  "{CandidateFirstName}",
+  "{Role}",
+  "{Recruiter}",
+  "{Company}",
+  "{RecruiterEmail}",
+  "{RecruiterPhone}",
+  "{LoggedInRecruiter}",
+  "{LoggedInRecruiterEmail}",
+  "{LoggedInRecruiterPhone}"
+];
+const JD_SHARE_TEMPLATE_PLACEHOLDERS = [
+  "{Candidate}",
+  "{CandidateFirstName}",
+  "{Role}",
+  "{Recruiter}",
+  "{Company}",
+  "{RecruiterEmail}",
+  "{RecruiterPhone}",
+  "{LoggedInRecruiter}",
+  "{LoggedInRecruiterEmail}",
+  "{LoggedInRecruiterPhone}"
+];
+
+function parseEmailTokens(value = "") {
+  return String(value || "")
+    .split(/[;,]/)
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .filter((item) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item));
+}
+
+function uniqueEmails(values = []) {
+  const seen = new Set();
+  const out = [];
+  (values || []).forEach((value) => {
+    const email = String(value || "").trim().toLowerCase();
+    if (!email || seen.has(email)) return;
+    seen.add(email);
+    out.push(email);
+  });
+  return out;
+}
+
+const PRESET_INDICATOR_LIBRARY = [
+  { key: "s_no", label: "S.No." },
+  { key: "name", label: "Candidate Name" },
+  { key: "status", label: "Status" },
+  { key: "phone", label: "Phone" },
+  { key: "email", label: "Email" },
+  { key: "location", label: "Location" },
+  { key: "client_name", label: "Client Name" },
+  { key: "jd_title", label: "Role / Position" },
+  { key: "current_company", label: "Current Company" },
+  { key: "current_designation", label: "Current Designation" },
+  { key: "total_experience", label: "Total Experience" },
+  { key: "highest_education", label: "Highest Education" },
+  { key: "current_ctc", label: "Current CTC" },
+  { key: "expected_ctc", label: "Expected CTC" },
+  { key: "notice_period", label: "Notice Period (+ LWD/DOJ + Offer)" },
+  { key: "reason_of_change", label: "Reason of Change" },
+  { key: "other_pointers", label: "Optional Pointers" },
+  { key: "other_standard_questions", label: "Screening Q&A" },
+  { key: "screening_remarks", label: "Screening Remarks (Screening Q&A + Reason of change)" },
+  { key: "remarks", label: "Recruiter Notes (general)" },
+  { key: "lwd_or_doj", label: "LWD / DOJ" },
+  { key: "offer_in_hand", label: "Offer in hand" },
+  { key: "linkedin", label: "LinkedIn" },
+  { key: "date_added", label: "Date Added" }
+];
+
+const REPORT_PENDING_FEEDBACK_STATUSES = new Set([
+  "cv shared",
+  "test or assignment shared",
+  "feedback awaited"
+]);
+
+const REPORT_ACTIVE_PIPELINE_STATUSES = new Set([
+  "cv shared",
+  "test or assignment shared",
+  "screening call aligned",
+  "l1 aligned",
+  "l2 aligned",
+  "l3 aligned",
+  "hr interview aligned",
+  "feedback awaited",
+  "hold",
+  "cv put on hold",
+  "interview on hold",
+  "offered",
+  "shortlisted",
+  "joined"
+]);
+
+function parseKeywordBarTokens(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function formatBooleanToken(token) {
+  const value = String(token || "").trim();
+  if (!value) return "";
+  if (/^".*"$/.test(value)) return value;
+  return /\s/.test(value) ? `"${value}"` : value;
+}
+
+function buildBooleanFromKeywordBars({ must = "", any = "", anyGroups = [], exclude = "" } = {}) {
+  const mustTokens = parseKeywordBarTokens(must).map(formatBooleanToken).filter(Boolean);
+  const normalizedAnyGroups = Array.isArray(anyGroups)
+    ? anyGroups.map((group) => parseKeywordBarTokens(group).map(formatBooleanToken).filter(Boolean)).filter((group) => group.length)
+    : [];
+  // Backward compatibility for legacy single "any" bar.
+  const legacyAnyTokens = parseKeywordBarTokens(any).map(formatBooleanToken).filter(Boolean);
+  if (legacyAnyTokens.length) normalizedAnyGroups.unshift(legacyAnyTokens);
+  const excludeTokens = parseKeywordBarTokens(exclude).map(formatBooleanToken).filter(Boolean);
+  const positiveParts = [];
+  if (mustTokens.length) positiveParts.push(mustTokens.join(" AND "));
+  if (normalizedAnyGroups.length) {
+    normalizedAnyGroups.forEach((group) => {
+      positiveParts.push(`(${group.join(" OR ")})`);
+    });
+  }
+  const positiveQuery = positiveParts.join(" AND ").trim();
+  const excludeQuery = excludeTokens.length ? `NOT (${excludeTokens.join(" OR ")})` : "";
+  return [positiveQuery, excludeQuery].filter(Boolean).join(" ").trim();
+}
+
+function toIsoDateOnly(value) {
+  return String(value || "").trim().slice(0, 10);
+}
+
+function safeTime(value) {
+  const parsed = Date.parse(String(value || "").trim());
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isDateWithinRange(value, dateFrom = "", dateTo = "") {
+  const dateOnly = toIsoDateOnly(value);
+  if (!dateOnly) return false;
+  if (dateFrom && dateOnly < dateFrom) return false;
+  if (dateTo && dateOnly > dateTo) return false;
+  return true;
+}
+
+function uniqueNonEmpty(values = []) {
+  return Array.from(new Set((values || []).map((item) => String(item || "").trim()).filter(Boolean)));
+}
+
+function formatPercent(value) {
+  if (!Number.isFinite(value)) return "0%";
+  return `${Math.round(value * 100)}%`;
+}
+
+const PORTAL_APPLICANT_METADATA_PREFIX = "[APPLICANT_META]";
+
+const DEFAULT_PIPELINE_STAGE_OPTIONS = [
+  "HR screening",
+  "Recruiter screening",
+  "Shortlisted",
+  "Submitted",
+  "Interview Scheduled",
+  "Offer Extended",
+  "Joined",
+  "On Hold",
+  "Rejected"
+];
+
+const DEFAULT_STATUS_OPTIONS = [
+  "CV shared",
+  "CV feedback awaited",
+  "Test or Assignment shared",
+  "Screening call aligned",
+  "L1 aligned",
+  "L2 aligned",
+  "L3 aligned",
+  "HR interview aligned",
+  "Offered",
+  "Interview feedback awaited",
+  "CV put on hold",
+  "Interview On Hold",
+  "Not responding",
+  "Dropped",
+  "Screening Reject",
+  "Interview Reject",
+  "Duplicate",
+  "Shortlisted",
+  "Joined"
+];
+
+const APPLIED_OUTCOME_FILTER_ORDER = [
+  "No outcome",
+  "Not responding",
+  "Busy",
+  "Switch Off",
+  "Disconnected",
+  "Not reachable",
+  "Call later",
+  "Duplicate",
+  "JD shared",
+  "Interested",
+  "Hold by recruiter",
+  "Not interested",
+  "Screening reject",
+  "Revisit for other role"
+];
+const ATTEMPT_OUTCOME_OPTIONS = APPLIED_OUTCOME_FILTER_ORDER;
+
+function normalizeAttemptOutcomeLabel(outcome) {
+  const value = String(outcome || "").trim();
+  const key = value.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+  const map = {
+    "": "No outcome",
+    "no outcome": "No outcome",
+    "not responding": "Not responding",
+    "nr": "Not responding",
+    "no response": "Not responding",
+    "busy": "Busy",
+    "duplicate": "Duplicate",
+    "jd shared": "JD shared",
+    "shared jd": "JD shared",
+    "switch off": "Switch Off",
+    "switched off": "Switch Off",
+    "disconnected": "Disconnected",
+    "not reachable": "Not reachable",
+    "call back later": "Call later",
+    "callback later": "Call later",
+    "call later": "Call later",
+    "interested": "Interested",
+    "hold": "Hold by recruiter",
+    "hold by recruiter": "Hold by recruiter",
+    "not interested": "Not interested",
+    "screening reject": "Screening reject",
+    "revisit for other role": "Revisit for other role"
+  };
+  return map[key] || value;
+}
+
+const EMPTY_CANDIDATE_STRUCTURED_FILTERS = {
+  minExperience: "",
+  maxExperience: "",
+  location: "",
+  targetLabel: "",
+  keySkills: "",
+  currentCompany: "",
+  client: "",
+  minCurrentCtc: "",
+  maxCurrentCtc: "",
+  minExpectedCtc: "",
+  maxExpectedCtc: "",
+  qualification: "",
+  maxNoticeDays: "",
+  noticeBucket: "",
+  recruiter: "",
+  gender: "",
+  assessmentStatus: "",
+  attemptOutcome: "",
+  sourceTypeFilter: ""
+};
+
+const EMPTY_CANDIDATE_QUICK_FILTERS = {
+  dateFrom: "",
+  dateTo: "",
+  recruiter: "",
+  client: "",
+  jd: ""
+};
+
+const DASHBOARD_METRIC_COLUMNS = [
+  ["totalCandidates", "Total Candidates"],
+  ["sharedProfiles", "Shared Profiles"],
+  ["interviews", "Interviews"],
+  ["shortlisted", "Shortlisted"],
+  ["offered", "Offered"],
+  ["joined", "Joined"]
+];
+
+const DASHBOARD_METRIC_TILES = [
+  ["totalCandidates", "Total Candidates"],
+  ["sharedProfiles", "Shared Profiles"],
+  ["interviews", "Interviews"],
+  ["shortlisted", "Shortlisted"],
+  ["offered", "Offered"],
+  ["joined", "Joined"]
+];
+
+const DASHBOARD_TOP_NON_CLICKABLE_METRICS = new Set(["totalCandidates", "sharedProfiles"]);
+const DASHBOARD_DRILLDOWN_STATUS_ACTION_METRICS = new Set(["sharedProfiles", "interviews", "shortlisted", "offered", "joined"]);
+
+const CLIENT_PORTAL_METRICS = [
+  ["total_shared", "Total Shared"],
+  ["in_interview_stage", "In Interview Stage"],
+  ["to_be_reviewed", "To Be Reviewed"],
+  ["rejected", "Rejected"],
+  ["duplicates", "Duplicates"],
+  ["put_on_hold", "Put on Hold"],
+  ["interview_dropout", "Interview Dropout"]
+];
+
+const CLIENT_PORTAL_STATUS_LABELS = {
+  to_be_reviewed: "Under Review",
+  in_interview_stage: "Under Interview",
+  rejected: "Rejected",
+  duplicates: "Duplicates",
+  put_on_hold: "On Hold",
+  interview_dropout: "Interview Dropout"
+};
+
+function formatEmployeeLocationStatusLabel(value) {
+  const key = String(value || "").trim().toLowerCase();
+  if (!key) return "-";
+  if (key === "on_site") return "Active";
+  if (key === "outside_radius") return "Outside Geofence";
+  if (key === "remote") return "Remote";
+  if (key === "unknown") return "Unknown";
+  return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+function formatEmployeeCoordinatePair(latitude, longitude) {
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return "-";
+  return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+}
+function formatDistanceFromOffice(value) {
+  const meters = Number(value);
+  if (!Number.isFinite(meters) || meters < 0) return "";
+  if (meters >= 1000) return `${(meters / 1000).toFixed(2)} km`;
+  return `${Math.round(meters)} m`;
+}
+function formatAccuracyWithOfficeDistance({ accuracyMeters, locationStatus, distanceFromSiteMeters }) {
+  const accuracy = Number(accuracyMeters);
+  const status = String(locationStatus || "").trim().toLowerCase();
+  const base = Number.isFinite(accuracy) ? `${Math.round(accuracy)} m` : "-";
+  if (status !== "outside_radius") return base;
+  const distanceLabel = formatDistanceFromOffice(distanceFromSiteMeters);
+  if (!distanceLabel) return `${base} | Outside geofence`;
+  return `${base} | ${distanceLabel} from office`;
+}
+
+function formatClientPortalStatusLabel(value) {
+  const normalized = normalizeAssessmentStatusLabel(value);
+  if (!normalized) return "";
+  if (normalized.toLowerCase() === "cv to be shared") return "CV Shared";
+  return normalized;
+}
+
+class PortalErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, errorMessage: "" };
+  }
+
+  static getDerivedStateFromError(error) {
+    return {
+      hasError: true,
+      errorMessage: String(error?.message || error || "Portal crashed.")
+    };
+  }
+
+  componentDidCatch(error) {
+    console.error("Portal render error", error);
+    try {
+      const payload = {
+        ts: new Date().toISOString(),
+        scope: "portal",
+        message: String(error?.message || error || ""),
+        stack: String(error?.stack || "")
+      };
+      window.localStorage.setItem("rd_last_render_error", JSON.stringify(payload));
+    } catch {}
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="app-shell">
+          <main className="content">
+            <Section kicker="Portal Error" title="Screen crashed">
+              <p className="muted">A temporary UI error occurred. Please reload and try again.</p>
+              <div className="status error">Temporary screen error. Please reload once.</div>
+              {this.state.errorMessage ? <div className="muted">{`Error: ${this.state.errorMessage}`}</div> : null}
+              <div className="button-row">
+                <button onClick={() => window.location.reload()}>Reload portal</button>
+              </div>
+            </Section>
+          </main>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+class RouteErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, errorMessage: "" };
+  }
+
+  static getDerivedStateFromError(error) {
+    return {
+      hasError: true,
+      errorMessage: String(error?.message || error || "Page crashed.")
+    };
+  }
+
+  componentDidCatch(error, info) {
+    console.error("Portal route render error", error, info);
+    try {
+      const payload = {
+        ts: new Date().toISOString(),
+        scope: "route",
+        routeKey: String(this.props?.routeKey || ""),
+        message: String(error?.message || error || ""),
+        stack: String(error?.stack || ""),
+        componentStack: String(info?.componentStack || "")
+      };
+      window.localStorage.setItem("rd_last_render_error", JSON.stringify(payload));
+    } catch {}
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.routeKey !== this.props.routeKey && this.state.hasError) {
+      this.setState({ hasError: false, errorMessage: "" });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Section kicker="Page Error" title="This page crashed">
+          <p className="muted">Portal baaki pages ke saath working rehna chahiye. Kisi aur tab par ja sakte ho, aur is page ko baad me retry kar sakte ho.</p>
+          <div className="status error">Temporary page error. Please reload once.</div>
+          <div className="button-row">
+            <button onClick={() => window.location.reload()}>Reload portal</button>
+          </div>
+        </Section>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function isTerminalStatus(status) {
+  return [
+    "shortlisted",
+    "offered",
+    "hold",
+    "cv put on hold",
+    "interview on hold",
+    "did not attend",
+    "dropped",
+    "screening reject",
+    "interview reject",
+    "duplicate",
+    "joined"
+  ].includes(String(status || "").trim().toLowerCase());
+}
+
+function normalizeAssessmentStatusLabel(status) {
+  const value = String(status || "").trim();
+  if (!value) return "";
+  if (/^cv shared$/i.test(value)) return "CV shared";
+  if (/^cv to be shared$/i.test(value)) return "CV shared";
+  if (/^test\b/i.test(value)) return "Test or Assignment shared";
+  if (/\bassignment\b/i.test(value)) return "Test or Assignment shared";
+  if (/^did not attend$/i.test(value)) return "Not responding";
+  return value;
+}
+
+function isFeedbackAwaitedStatus(status) {
+  const lower = String(normalizeAssessmentStatusLabel(status) || "").trim().toLowerCase();
+  return lower === "feedback awaited" || lower === "cv feedback awaited" || lower === "interview feedback awaited";
+}
+
+class PayrollRouteBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, errorMessage: "" };
+  }
+  static getDerivedStateFromError(error) {
+    return {
+      hasError: true,
+      errorMessage: String(error?.message || error || "Payroll page crashed.")
+    };
+  }
+  componentDidCatch(error, info) {
+    console.error("Payroll route render error", error, info);
+    try {
+      const payload = {
+        ts: new Date().toISOString(),
+        scope: "payroll",
+        message: String(error?.message || error || ""),
+        stack: String(error?.stack || ""),
+        componentStack: String(info?.componentStack || "")
+      };
+      window.localStorage.setItem("rd_last_render_error", JSON.stringify(payload));
+    } catch {}
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Section kicker="Payroll Error" title="Payroll module temporarily unavailable">
+          <p className="muted">Blank screen avoid karne ke liye payroll-specific fallback dikhaya gaya hai.</p>
+          <div className="status error">Temporary payroll screen error. Please reload once.</div>
+          <div className="button-row">
+            <button onClick={() => window.location.reload()}>Reload portal</button>
+          </div>
+        </Section>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function formatAssessmentStatusDisplay(status) {
+  const label = normalizeAssessmentStatusLabel(status);
+  if (!label) return "";
+  return label
+    .replace(/\bl(\d)\b/gi, "L$1")
+    .replace(/\bhr\b/gi, "HR");
+}
+
+function resetPortalFirstOpenRuntimeState() {
+  try {
+    const state = globalThis.__recruitdeskPortalTabFirstOpenRuntimeState;
+    if (state && typeof state === "object") {
+      state.captured = false;
+      state.applicants = false;
+      state.assessments = false;
+    }
+  } catch {}
+}
+
+function normalizeShortcutKey(raw) {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  const stripped = value.replace(/^\/+/, "");
+  if (!stripped) return "";
+  return `/${stripped}`;
+}
+
+function formatShortcutLabel(raw) {
+  const normalized = normalizeShortcutKey(raw);
+  if (!normalized) return "/";
+  return normalized;
+}
+
+function normalizeShortcutMapKeys(map = {}) {
+  const source = map && typeof map === "object" ? map : {};
+  const next = {};
+  Object.entries(source).forEach(([rawKey, rawValue]) => {
+    const key = normalizeShortcutKey(rawKey);
+    const value = normalizeTemplateFormatting(rawValue);
+    if (!key || !value.trim()) return;
+    next[key] = value;
+  });
+  return next;
+}
+
+const LINKEDIN_CONNECTED_SHORTCUT_KEY = "/LC";
+const LINKEDIN_REQUEST_SHORTCUT_KEY = "/LNC";
+
+function normalizeShortcutKeyLower(raw) {
+  return normalizeShortcutKey(raw).toLowerCase();
+}
+
+function isLinkedinShortcutKey(raw) {
+  const normalized = normalizeShortcutKeyLower(raw);
+  return normalized === LINKEDIN_CONNECTED_SHORTCUT_KEY.toLowerCase()
+    || normalized === LINKEDIN_REQUEST_SHORTCUT_KEY.toLowerCase();
+}
+
+function getLinkedinShortcutMeta(raw) {
+  const normalized = normalizeShortcutKeyLower(raw);
+  if (normalized === LINKEDIN_CONNECTED_SHORTCUT_KEY.toLowerCase()) {
+    return {
+      key: LINKEDIN_CONNECTED_SHORTCUT_KEY,
+      label: "LinkedIn connected",
+      mode: "connected"
+    };
+  }
+  if (normalized === LINKEDIN_REQUEST_SHORTCUT_KEY.toLowerCase()) {
+    return {
+      key: LINKEDIN_REQUEST_SHORTCUT_KEY,
+      label: "LinkedIn connection request",
+      mode: "request"
+    };
+  }
+  return null;
+}
+
+function getNonLinkedinShortcutEntries(map = {}) {
+  return Object.entries(normalizeShortcutMapKeys(map || {}))
+    .filter(([key, value]) => !isLinkedinShortcutKey(key) && String(value || "").trim());
+}
+
+function hasNonLinkedinShortcuts(map = {}) {
+  return getNonLinkedinShortcutEntries(map).length > 0;
+}
+
+function parseAmountToLpa(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return null;
+  const match = raw.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount)) return null;
+  if (/\bcr|crore\b/.test(raw)) return amount * 100;
+  if (/\bk\b/.test(raw) && !/\bl|lpa|lakh|lac\b/.test(raw)) return amount / 100;
+  return amount;
+}
+
+function parseExperienceToYears(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return null;
+  const yearsMatch = raw.match(/(\d+(?:\.\d+)?)\s*years?/);
+  const monthsMatch = raw.match(/(\d+(?:\.\d+)?)\s*months?/);
+  if (!yearsMatch && !monthsMatch) return null;
+  const years = yearsMatch ? Number(yearsMatch[1]) : 0;
+  const months = monthsMatch ? Number(monthsMatch[1]) : 0;
+  return years + (months / 12);
+}
+
+function parseNoticePeriodToDays(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return null;
+  if (/immediate|immediately|serving notice|available now/.test(raw)) return 0;
+  if (/\b(lwd|doj)\b/.test(raw) && /\bnext week\b/.test(raw)) return 7;
+  if (/(less than|under|within)\s*15\s*days?/.test(raw) || /<=\s*15\s*days?/.test(raw)) return 15;
+  const dayRangeMatch = raw.match(/(\d+(?:\.\d+)?)\s*[-\u2013\u2014]\s*(\d+(?:\.\d+)?)\s*days?/);
+  const monthRangeMatch = raw.match(/(\d+(?:\.\d+)?)\s*[-\u2013\u2014]\s*(\d+(?:\.\d+)?)\s*months?/);
+  const daysMatch = raw.match(/(\d+(?:\.\d+)?)\s*days?/);
+  if (daysMatch) return Number(daysMatch[1]);
+  const monthsMatch = raw.match(/(\d+(?:\.\d+)?)\s*months?/);
+  if (monthsMatch) return Number(monthsMatch[1]) * 30;
+  const monthMap = {
+    jan: 0, january: 0,
+    feb: 1, february: 1,
+    mar: 2, march: 2,
+    apr: 3, april: 3,
+    may: 4,
+    jun: 5, june: 5,
+    jul: 6, july: 6,
+    aug: 7, august: 7,
+    sep: 8, sept: 8, september: 8,
+    oct: 9, october: 9,
+    nov: 10, november: 10,
+    dec: 11, december: 11
+  };
+  const cleaned = raw
+    .replace(/\b(\d{1,2})(st|nd|rd|th)\b/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let targetDate = null;
+
+  // Formats: 30/04/2026 or 30-04-2026 or 30/04
+  const numericMatch = cleaned.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
+  if (numericMatch) {
+    const day = Number(numericMatch[1]);
+    const month = Number(numericMatch[2]) - 1;
+    let year = numericMatch[3] ? Number(numericMatch[3]) : now.getFullYear();
+    if (year < 100) year += 2000;
+    if (day >= 1 && day <= 31 && month >= 0 && month <= 11) {
+      targetDate = new Date(year, month, day);
+    }
+  }
+
+  // Formats: 30 april / april 30
+  if (!targetDate) {
+    const dmyMatch = cleaned.match(/\b(\d{1,2})\s+([a-z]{3,9})(?:\s+(\d{4}))?\b/);
+    if (dmyMatch) {
+      const day = Number(dmyMatch[1]);
+      const monthKey = dmyMatch[2].toLowerCase();
+      const month = monthMap[monthKey];
+      let year = dmyMatch[3] ? Number(dmyMatch[3]) : now.getFullYear();
+      if (day >= 1 && day <= 31 && Number.isInteger(month)) {
+        targetDate = new Date(year, month, day);
+      }
+    }
+  }
+  if (!targetDate) {
+    const mdyMatch = cleaned.match(/\b([a-z]{3,9})\s+(\d{1,2})(?:\s*,?\s*(\d{4}))?\b/);
+    if (mdyMatch) {
+      const monthKey = mdyMatch[1].toLowerCase();
+      const month = monthMap[monthKey];
+      const day = Number(mdyMatch[2]);
+      let year = mdyMatch[3] ? Number(mdyMatch[3]) : now.getFullYear();
+      if (day >= 1 && day <= 31 && Number.isInteger(month)) {
+        targetDate = new Date(year, month, day);
+      }
+    }
+  }
+  if (targetDate && Number.isFinite(targetDate.getTime())) {
+    // If year was omitted and parsed date already passed significantly, assume next year.
+    if (!/\b\d{4}\b/.test(cleaned) && targetDate.getTime() < startOfToday.getTime() - (2 * 24 * 60 * 60 * 1000)) {
+      targetDate = new Date(targetDate.getFullYear() + 1, targetDate.getMonth(), targetDate.getDate());
+    }
+    const dayDiff = Math.ceil((targetDate.getTime() - startOfToday.getTime()) / (24 * 60 * 60 * 1000));
+    return Math.max(0, dayDiff);
+  }
+  return null;
+}
+
+function parseLocationFilterTokens(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return [];
+  // Support comma-separated lists and simple OR usage.
+  return raw
+    .replace(/\s+or\s+/g, ",")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeApplicantLocationLabel(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const compact = raw
+    .replace(/\s+/g, " ")
+    .replace(/\s*,\s*/g, ", ")
+    .trim();
+  if (!compact) return "";
+  const lower = compact.toLowerCase();
+  if (lower.length <= 1) return "";
+  if (["engineer", "developer", "manager", "executive", "consultant", "analyst"].includes(lower)) return "";
+
+  const firstPart = compact.split(",")[0].trim();
+  const cityLike = firstPart
+    .replace(/\./g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  if (!cityLike || cityLike.length <= 1) return "";
+
+  const cityMap = new Map([
+    ["bangalore", "Bengaluru"],
+    ["bengaluru", "Bengaluru"],
+    ["bengaluru urban", "Bengaluru"],
+    ["gurgaon", "Gurugram"],
+    ["gurugram", "Gurugram"],
+    ["bombay", "Mumbai"],
+    ["mumbai", "Mumbai"],
+    ["new delhi", "New Delhi"],
+    ["delhi", "Delhi"],
+    ["noida", "Noida"],
+    ["pune", "Pune"],
+    ["hyderabad", "Hyderabad"],
+    ["kolkata", "Kolkata"],
+    ["calcutta", "Kolkata"],
+    ["chennai", "Chennai"],
+    ["indore", "Indore"],
+    ["lucknow", "Lucknow"],
+    ["surat", "Surat"],
+    ["thane", "Thane"]
+  ]);
+  if (cityMap.has(cityLike)) return cityMap.get(cityLike) || "";
+
+  return cityLike
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function normalizeApplicantVisibleRow(item = {}) {
+  if (!item || typeof item !== "object") return item;
+  const meta = decodePortalApplicantMetadata(item);
+  const toBooleanLike = (value) => {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value === 1;
+    const raw = String(value || "").trim().toLowerCase();
+    return raw === "true" || raw === "1" || raw === "yes";
+  };
+  const candidateName = String(item.candidateName || item.name || item.candidate_name || "").trim();
+  const jdTitle = String(
+    item.jdTitle
+    || item.jd_title
+    || item.assignedJdTitle
+    || item.assigned_jd_title
+    || item.role
+    || item.position
+    || item.currentDesignation
+    || item.current_designation
+    || ""
+  ).trim();
+  const role = String(item.role || item.currentDesignation || item.current_designation || jdTitle || "").trim();
+  const assignedToName = String(item.assignedToName || item.assigned_to_name || "").trim();
+  const linkedin = String(item.linkedin || item.linkedinUrl || item.linkedin_url || "").trim();
+  const relevantExperience = String(item.relevantExperience || item.relevant_experience || "").trim();
+  const createdAt = String(item.createdAt || item.created_at || "").trim();
+  const assignedAt = String(item.assignedAt || item.assigned_at || createdAt || "").trim();
+  const hiddenFromCaptured = toBooleanLike(item.hidden_from_captured) || toBooleanLike(item.hiddenFromCaptured);
+  const appliedToo = Boolean(
+    toBooleanLike(item.applied_too)
+    || toBooleanLike(item.appliedToo)
+    || toBooleanLike(meta.applied_too)
+    || toBooleanLike(meta.appliedToo)
+    || String(item.application_source || item.applicationSource || meta.application_source || meta.applicationSource || meta.sourcePlatform || "").trim()
+    || String(meta.applyAssignedToUserId || "").trim()
+    || String(meta.applyAssignedToName || "").trim()
+    || String(meta.applyAssignedVia || "").trim()
+  );
+  const applicationSource = String(
+    item.application_source
+    || item.applicationSource
+    || meta.application_source
+    || meta.applicationSource
+    || ""
+  ).trim();
+  const sourcePlatform = String(item.sourcePlatform || meta.sourcePlatform || item.source || "").trim();
+  return {
+    ...item,
+    candidateName,
+    name: String(item.name || candidateName || "").trim(),
+    candidate_name: String(item.candidate_name || candidateName || "").trim(),
+    jdTitle,
+    jd_title: String(item.jd_title || jdTitle || "").trim(),
+    assignedJdTitle: String(item.assignedJdTitle || item.assigned_jd_title || jdTitle || "").trim(),
+    assigned_jd_title: String(item.assigned_jd_title || item.assignedJdTitle || jdTitle || "").trim(),
+    role,
+    position: String(item.position || jdTitle || role || "").trim(),
+    currentDesignation: String(item.currentDesignation || item.current_designation || role || "").trim(),
+    current_designation: String(item.current_designation || item.currentDesignation || role || "").trim(),
+    assignedToName,
+    assigned_to_name: String(item.assigned_to_name || assignedToName || "").trim(),
+    linkedin,
+    linkedinUrl: linkedin,
+    linkedin_url: linkedin,
+    relevantExperience,
+    relevant_experience: relevantExperience,
+    createdAt,
+    created_at: String(item.created_at || createdAt || "").trim(),
+    assignedAt,
+    assigned_at: String(item.assigned_at || assignedAt || "").trim(),
+    sourcePlatform,
+    sourceLabel: String(item.sourceLabel || meta.sourceLabel || "").trim(),
+    applyAssignedToUserId: String(item.applyAssignedToUserId || item.apply_assigned_to_user_id || meta.applyAssignedToUserId || "").trim(),
+    apply_assigned_to_user_id: String(item.apply_assigned_to_user_id || item.applyAssignedToUserId || meta.applyAssignedToUserId || "").trim(),
+    applyAssignedToName: String(item.applyAssignedToName || item.apply_assigned_to_name || meta.applyAssignedToName || "").trim(),
+    apply_assigned_to_name: String(item.apply_assigned_to_name || item.applyAssignedToName || meta.applyAssignedToName || "").trim(),
+    applyAssignedVia: String(item.applyAssignedVia || item.apply_assigned_via || meta.applyAssignedVia || "").trim(),
+    apply_assigned_via: String(item.apply_assigned_via || item.applyAssignedVia || meta.applyAssignedVia || "").trim(),
+    appliedToo,
+    applied_too: appliedToo,
+    applicationSource,
+    application_source: applicationSource,
+    hidden_from_captured: hiddenFromCaptured,
+    hiddenFromCaptured
+  };
+}
+
+function resolveCandidateDisplayName(...sources) {
+  for (const source of sources.flatMap((value) => (value && typeof value === "object" ? [value] : []))) {
+    const candidateName = String(
+      source?.candidateName
+      || source?.name
+      || source?.candidate_name
+      || source?.candidate?.candidateName
+      || source?.candidate?.name
+      || source?.candidate?.candidate_name
+      || source?.fullName
+      || source?.full_name
+      || ""
+    ).trim();
+    if (candidateName) return candidateName;
+  }
+  return "Candidate";
+}
+
+function isApplicantHiddenForCard(item = {}, linkedCandidate = null) {
+  const toBooleanLike = (value) => {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value === 1;
+    const raw = String(value || "").trim().toLowerCase();
+    return raw === "true" || raw === "1" || raw === "yes";
+  };
+  return Boolean(
+    toBooleanLike(item?.hidden_from_captured)
+    || toBooleanLike(item?.hiddenFromCaptured)
+    || toBooleanLike(linkedCandidate?.hidden_from_captured)
+    || toBooleanLike(linkedCandidate?.hiddenFromCaptured)
+  );
+}
+
+function isInboundApplicantSource(value = "") {
+  const source = String(value || "").trim().toLowerCase();
+  return ["website_apply", "hosted_apply", "google_sheet", "website", "hosted"].includes(source);
+}
+
+function formatAppliedPlacardDateTime(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "NA";
+  const date = new Date(raw);
+  if (!Number.isFinite(date.getTime())) return raw;
+  const dateText = date.toLocaleDateString("en-GB");
+  const timeText = date.toLocaleTimeString("en-GB", { hour12: false });
+  return `${dateText}, ${timeText}`;
+}
+
+function formatAppliedPlacardText(value) {
+  if (value == null) return "";
+  if (typeof value === "string") return normalizeMojibakeSymbols(value).trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value).trim();
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => formatAppliedPlacardText(entry))
+      .filter(Boolean)
+      .join("\n\n")
+      .trim();
+  }
+  if (typeof value === "object") {
+    const preferredKeys = [
+      "remarks",
+      "remark",
+      "note",
+      "notes",
+      "comment",
+      "comments",
+      "message",
+      "text",
+      "screening_remarks",
+      "screeningRemarks",
+      "other_standard_questions",
+      "otherStandardQuestions",
+      "candidate_remarks",
+      "candidateRemarks"
+    ];
+    for (const key of preferredKeys) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        const extracted = formatAppliedPlacardText(value[key]);
+        if (extracted) return extracted;
+      }
+    }
+    const lines = Object.entries(value)
+      .map(([key, entryValue]) => {
+        const formattedValue = formatAppliedPlacardText(entryValue);
+        if (!formattedValue) return "";
+        const cleanKey = String(key || "").trim();
+        return cleanKey ? `${cleanKey}: ${formattedValue}` : formattedValue;
+      })
+      .filter(Boolean);
+    return lines.join("\n").trim();
+  }
+  return String(value).trim();
+}
+
+function normalizeAppliedPlacardCompareText(value) {
+  return normalizeMojibakeSymbols(String(value || ""))
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function shouldTreatApplicantRecruiterNoteAsCandidateRemarks(item = {}) {
+  const source = String(item?.source || item?.sourcePlatform || "").trim().toLowerCase();
+  if (!isInboundApplicantSource(source)) return false;
+  const recruiterNote = formatAppliedPlacardText(item?.recruiter_context_notes);
+  if (!recruiterNote) return false;
+  const explicitRemarks = [
+    item?.screening_answers,
+    item?.screeningAnswers,
+    item?.remarks,
+    item?.notes
+  ].some((value) => Boolean(formatAppliedPlacardText(value)));
+  if (explicitRemarks) return false;
+  const hasExtraRecruiterFields = [
+    item?.other_pointers,
+    item?.otherPointers,
+    item?.expected_ctc,
+    item?.expectedCtc,
+    item?.current_ctc,
+    item?.currentCtc,
+    item?.notice_period,
+    item?.noticePeriod,
+    item?.lwd_or_doj,
+    item?.lwdOrDoj
+  ].some((value) => Boolean(String(value || "").trim()));
+  return !hasExtraRecruiterFields;
+}
+
+function getApplicantRemarksText(item = {}) {
+  const candidates = [
+    item?.screening_answers,
+    item?.screeningAnswers,
+    item?.remarks,
+    item?.notes,
+    shouldTreatApplicantRecruiterNoteAsCandidateRemarks(item) ? item?.recruiter_context_notes : ""
+  ];
+  for (const candidate of candidates) {
+    const text = formatAppliedPlacardText(candidate);
+    if (text) return text;
+  }
+  return "";
+}
+
+function getApplicantRecruiterNoteText(item = {}) {
+  if (shouldTreatApplicantRecruiterNoteAsCandidateRemarks(item)) return "";
+  const note = formatAppliedPlacardText([
+    item?.recruiter_context_notes,
+    item?.other_pointers
+  ].filter(Boolean).join("\n\n"));
+  const remarks = getApplicantRemarksText(item);
+  if (note && normalizeAppliedPlacardCompareText(note) === normalizeAppliedPlacardCompareText(remarks)) {
+    return "";
+  }
+  return note;
+}
+
+function parseMultiChipTokens(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function toTimestampSafe(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return NaN;
+  const direct = Date.parse(raw);
+  if (Number.isFinite(direct)) return direct;
+  // Support: DD/MM/YYYY, HH:mm:ss (or HH:mm)
+  const m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:,\s*(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (!m) return NaN;
+  const day = Number(m[1]);
+  const month = Number(m[2]) - 1;
+  const year = Number(m[3]);
+  const hours = Number(m[4] || 0);
+  const minutes = Number(m[5] || 0);
+  const seconds = Number(m[6] || 0);
+  const dt = new Date(year, month, day, hours, minutes, seconds);
+  return dt.getTime();
+}
+
+function toggleMultiChipValue(value, option) {
+  const current = parseMultiChipTokens(value);
+  if (option === "__all__") return "";
+  if (current.includes(option)) {
+    return current.filter((item) => item !== option).join(", ");
+  }
+  return [...current, option].join(", ");
+}
+
+const NOTICE_BUCKET_OPTIONS = [
+  { value: "", label: "Any notice period" },
+  { value: "immediate", label: "Immediate" },
+  { value: "15_or_less", label: "15 days or less" },
+  { value: "15_30", label: "15-30 days" },
+  { value: "30_60", label: "30-60 days" },
+  { value: "60_90", label: "60-90 days" },
+  { value: "90_plus", label: "90+ days" }
+];
+
+function bucketNoticeDays(days) {
+  if (days == null || !Number.isFinite(Number(days))) return "";
+  const value = Number(days);
+  if (value <= 0) return "immediate";
+  if (value <= 15) return "15_or_less";
+  if (value <= 30) return "15_30";
+  if (value <= 60) return "30_60";
+  if (value <= 90) return "60_90";
+  return "90_plus";
+}
+
+function mapMaxNoticeDaysToBucket(maxNoticeDays) {
+  const value = Number(maxNoticeDays);
+  if (!Number.isFinite(value)) return "";
+  if (value <= 0) return "immediate";
+  if (value <= 15) return "15_or_less";
+  if (value <= 30) return "15_30";
+  if (value <= 60) return "30_60";
+  if (value <= 90) return "60_90";
+  return "90_plus";
+}
+
+function parseShortcutMap(value) {
+  if (!String(value || "").trim()) return {};
+  try {
+    const parsed = JSON.parse(String(value || ""));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function stringifyShortcutMap(value) {
+  return JSON.stringify(value || {}, null, 2);
+}
+
+function parseQuestionList(value) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function decodePortalApplicantMetadata(item = {}) {
+  const candidate = item?.raw?.candidate || item;
+  const raw = String(candidate?.raw_note || "").trim();
+  if (!raw.startsWith(PORTAL_APPLICANT_METADATA_PREFIX)) return {};
+  try {
+    return JSON.parse(raw.slice(PORTAL_APPLICANT_METADATA_PREFIX.length));
+  } catch {
+    return {};
+  }
+}
+
+function encodePortalApplicantMetadata(metadata = {}) {
+  return `${PORTAL_APPLICANT_METADATA_PREFIX}${JSON.stringify(metadata || {})}`;
+}
+
+function parsePortalObjectField(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  const raw = String(value || "").trim();
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function getCandidateDraftState(candidate = {}) {
+  const source = candidate?.raw?.candidate || candidate;
+  const meta = decodePortalApplicantMetadata(source);
+  const draftPayload = parsePortalObjectField(source?.draft_payload || source?.draftPayload);
+  const screeningAnswers = parsePortalObjectField(source?.screening_answers || source?.screeningAnswers);
+  const normalizedCurrentOrgTenure = String(
+    draftPayload?.currentOrgTenure
+      || draftPayload?.current_org_tenure
+      || source?.current_org_tenure
+      || source?.currentOrgTenure
+      || ""
+  ).trim();
+  const cautiousIndicatorsFallback = String(
+    draftPayload?.cautiousIndicators
+      || meta?.cautiousIndicators
+      || meta?.cautious_indicators
+      || meta?.cautiousIndicatorNote
+      || meta?.cautious_indicator_note
+      || ""
+  ).trim();
+  return {
+    ...draftPayload,
+    ...(normalizedCurrentOrgTenure ? {
+      currentOrgTenure: normalizedCurrentOrgTenure,
+      current_org_tenure: normalizedCurrentOrgTenure
+    } : {}),
+    ...(cautiousIndicatorsFallback ? { cautiousIndicators: cautiousIndicatorsFallback } : {}),
+    jdScreeningAnswers: Object.keys(screeningAnswers).length
+      ? screeningAnswers
+      : draftPayload?.jdScreeningAnswers && typeof draftPayload.jdScreeningAnswers === "object"
+        ? draftPayload.jdScreeningAnswers
+        : meta?.jdScreeningAnswers || {}
+  };
+}
+
+function resolveCandidateContext(input = {}) {
+  // Canonical resolver so indicators/presets do not have to guess between:
+  // - plain candidate rows
+  // - universe rows (raw.candidate/raw.assessment)
+  // - assessment-only rows
+  const raw = input || {};
+  const candidate = raw?.raw?.candidate || raw?.candidate || raw;
+  const assessment = raw?.raw?.assessment || raw?.assessment || null;
+  const draft = getCandidateDraftState(candidate);
+  const buildAssessmentStandardQaMap = (assessmentRow = null) => {
+    if (!assessmentRow || typeof assessmentRow !== "object") return null;
+    const rawQuestions =
+      assessmentRow?.standardQuestions
+      ?? assessmentRow?.standard_questions
+      ?? assessmentRow?.payload?.standardQuestions
+      ?? assessmentRow?.payload?.standard_questions
+      ?? [];
+    const rawAnswers =
+      assessmentRow?.standardAnswers
+      ?? assessmentRow?.standard_answers
+      ?? assessmentRow?.payload?.standardAnswers
+      ?? assessmentRow?.payload?.standard_answers
+      ?? [];
+    const questionList = Array.isArray(rawQuestions)
+      ? rawQuestions
+        .map((entry) => {
+          if (typeof entry === "string") return String(entry || "").trim();
+          if (entry && typeof entry === "object") return String(entry.question || entry.label || entry.title || "").trim();
+          return "";
+        })
+        .filter(Boolean)
+      : String(rawQuestions || "")
+        .split(/\r?\n|[,;]+/g)
+        .map((entry) => String(entry || "").trim())
+        .filter(Boolean);
+    const answerRows = Array.isArray(rawAnswers) ? rawAnswers : [];
+    if (!questionList.length && !answerRows.length) return null;
+    const map = {};
+    if (answerRows.length) {
+      answerRows.forEach((entry, index) => {
+        if (entry && typeof entry === "object") {
+          const question = String(entry.question || questionList[index] || "").trim();
+          const answer = String(entry.answer ?? "").trim();
+          if (question && answer) map[question] = answer;
+          return;
+        }
+        const question = String(questionList[index] || "").trim();
+        const answer = String(entry ?? "").trim();
+        if (question && answer) map[question] = answer;
+      });
+    }
+    if (!Object.keys(map).length && questionList.length) {
+      questionList.forEach((question) => {
+        if (question) map[question] = "";
+      });
+    }
+    return Object.keys(map).length ? map : null;
+  };
+  const assessmentStandardQaMap = buildAssessmentStandardQaMap(assessment);
+
+  const screeningMap =
+    assessmentStandardQaMap
+    || (draft?.jdScreeningAnswers && typeof draft.jdScreeningAnswers === "object" ? draft.jdScreeningAnswers : null)
+    || (assessment?.jdScreeningAnswers && typeof assessment.jdScreeningAnswers === "object" ? assessment.jdScreeningAnswers : null)
+    || (assessment?.screening_answers && typeof assessment.screening_answers === "object" ? assessment.screening_answers : null)
+    || (assessment?.screeningAnswers && typeof assessment.screeningAnswers === "object" ? assessment.screeningAnswers : null)
+    || (candidate?.screening_answers && typeof candidate.screening_answers === "object" ? candidate.screening_answers : null)
+    || (candidate?.screeningAnswers && typeof candidate.screeningAnswers === "object" ? candidate.screeningAnswers : null)
+    || null;
+
+  const otherStandardQuestions = String(
+    assessment?.other_standard_questions
+      || assessment?.otherStandardQuestions
+      || assessment?.otherStandardQuestionAnswers
+      || candidate?.other_standard_questions
+      || candidate?.otherStandardQuestions
+      || candidate?.last_contact_notes
+      || candidate?.lastContactNotes
+      || ""
+  ).trim();
+
+  const meta = decodePortalApplicantMetadata(candidate);
+  const cvResult = meta?.cvAnalysisCache?.result && typeof meta.cvAnalysisCache.result === "object" ? meta.cvAnalysisCache.result : null;
+  const highlights = Array.isArray(candidate?.cv_highlights)
+    ? candidate.cv_highlights
+    : Array.isArray(candidate?.highlights)
+      ? candidate.highlights
+      : Array.isArray(candidate?.cvAnalysis?.highlights)
+        ? candidate.cvAnalysis.highlights
+        : Array.isArray(cvResult?.highlights)
+          ? cvResult.highlights
+          : [];
+
+  const phone = String(candidate?.phone || candidate?.phoneNumber || assessment?.phoneNumber || assessment?.phone || draft?.phoneNumber || "").trim();
+  const email = String(candidate?.email || candidate?.emailId || assessment?.emailId || assessment?.email || draft?.emailId || "").trim();
+  const linkedin = String(candidate?.linkedin || assessment?.linkedinUrl || draft?.linkedin || "").trim();
+
+  return {
+    candidate,
+    assessment,
+    draft,
+    screeningMap,
+    otherStandardQuestions,
+    highlights: highlights.map((v) => String(v || "").trim()).filter(Boolean),
+    phone,
+    email,
+    linkedin
+  };
+}
+
+function buildCandidateDraftPayloadPatch(candidate = {}, patch = {}) {
+  const current = getCandidateDraftState(candidate);
+  const next = { ...current };
+  if (Object.prototype.hasOwnProperty.call(patch, "name") || Object.prototype.hasOwnProperty.call(patch, "candidateName")) next.candidateName = patch.candidateName ?? patch.name ?? next.candidateName ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "phone") || Object.prototype.hasOwnProperty.call(patch, "phoneNumber")) next.phoneNumber = patch.phoneNumber ?? patch.phone ?? next.phoneNumber ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "email") || Object.prototype.hasOwnProperty.call(patch, "emailId")) next.emailId = patch.emailId ?? patch.email ?? next.emailId ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "linkedin") || Object.prototype.hasOwnProperty.call(patch, "linkedinUrl")) next.linkedin = patch.linkedin ?? patch.linkedinUrl ?? next.linkedin ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "location")) next.location = patch.location ?? next.location ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "company") || Object.prototype.hasOwnProperty.call(patch, "currentCompany")) next.currentCompany = patch.currentCompany ?? patch.company ?? next.currentCompany ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "role") || Object.prototype.hasOwnProperty.call(patch, "currentDesignation")) next.currentDesignation = patch.currentDesignation ?? patch.role ?? next.currentDesignation ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "experience") || Object.prototype.hasOwnProperty.call(patch, "totalExperience")) next.totalExperience = patch.totalExperience ?? patch.experience ?? next.totalExperience ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "relevantExperience") || Object.prototype.hasOwnProperty.call(patch, "relevant_experience")) next.relevantExperience = patch.relevantExperience ?? patch.relevant_experience ?? next.relevantExperience ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "highest_education") || Object.prototype.hasOwnProperty.call(patch, "highestEducation")) next.highestEducation = patch.highestEducation ?? patch.highest_education ?? next.highestEducation ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "current_ctc") || Object.prototype.hasOwnProperty.call(patch, "currentCtc")) next.currentCtc = patch.currentCtc ?? patch.current_ctc ?? next.currentCtc ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "expected_ctc") || Object.prototype.hasOwnProperty.call(patch, "expectedCtc")) next.expectedCtc = patch.expectedCtc ?? patch.expected_ctc ?? next.expectedCtc ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "notice_period") || Object.prototype.hasOwnProperty.call(patch, "noticePeriod")) next.noticePeriod = patch.noticePeriod ?? patch.notice_period ?? next.noticePeriod ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "lwd_or_doj") || Object.prototype.hasOwnProperty.call(patch, "lwdOrDoj")) next.lwdOrDoj = patch.lwdOrDoj ?? patch.lwd_or_doj ?? next.lwdOrDoj ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "recruiter_context_notes") || Object.prototype.hasOwnProperty.call(patch, "recruiterNotes")) next.recruiterNotes = patch.recruiterNotes ?? patch.recruiter_context_notes ?? next.recruiterNotes ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "notes") || Object.prototype.hasOwnProperty.call(patch, "callbackNotes")) next.callbackNotes = patch.callbackNotes ?? patch.notes ?? next.callbackNotes ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "other_pointers") || Object.prototype.hasOwnProperty.call(patch, "otherPointers")) next.otherPointers = patch.otherPointers ?? patch.other_pointers ?? next.otherPointers ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "jd_title") || Object.prototype.hasOwnProperty.call(patch, "jdTitle")) next.jdTitle = patch.jdTitle ?? patch.jd_title ?? next.jdTitle ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "client_name") || Object.prototype.hasOwnProperty.call(patch, "clientName")) next.clientName = patch.clientName ?? patch.client_name ?? next.clientName ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "next_follow_up_at") || Object.prototype.hasOwnProperty.call(patch, "nextFollowUpAt")) next.followUpAt = patch.nextFollowUpAt ?? patch.next_follow_up_at ?? next.followUpAt ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "skills")) next.tags = Array.isArray(patch.skills) ? patch.skills.join(", ") : next.tags ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "screening_answers") || Object.prototype.hasOwnProperty.call(patch, "screeningAnswers")) {
+    next.jdScreeningAnswers = patch.screeningAnswers ?? patch.screening_answers ?? next.jdScreeningAnswers ?? {};
+  }
+  return next;
+}
+
+function sanitizeLwdOrDojValue(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^(?:lwd\s*\/\s*doj|lwd|doj|last working day)\s*(?:is|:|-)?\s*/i, "")
+    .replace(/^(?:\/\s*)?(?:lwd|doj)\s*(?:is|:|-)?\s*/i, "")
+    .trim();
+}
+
+function candidateHasStoredCv(item = {}) {
+  const candidateRaw = item?.raw?.candidate || item;
+  const candidate = candidateRaw && typeof candidateRaw === "object" ? candidateRaw : {};
+  const meta = decodePortalApplicantMetadata(candidate);
+  const storedFile = candidate.cvAnalysis?.storedFile || candidate.cv_analysis?.storedFile || meta?.cvAnalysisCache?.storedFile || {};
+  return Boolean(
+    candidate.cv_url
+    || candidate.cvUrl
+    || candidate.cv_key
+    || candidate.cvKey
+    || candidate.cv_filename
+    || candidate.cvFilename
+    || meta?.fileProvider
+    || meta?.fileKey
+    || meta?.fileUrl
+    || storedFile?.key
+    || storedFile?.url
+  );
+}
+
+function getCandidateProfileCvMeta(item = {}) {
+  const candidateRaw = item?.raw?.candidate || item;
+  const candidate = candidateRaw && typeof candidateRaw === "object" ? candidateRaw : {};
+  const meta = decodePortalApplicantMetadata(candidate);
+  const storedFile = candidate.cvAnalysis?.storedFile || candidate.cv_analysis?.storedFile || meta?.cvAnalysisCache?.storedFile || {};
+  return {
+    candidateId: candidate.candidate_id || candidate.candidateId || candidate.id || "",
+    url: candidate.cv_url || candidate.cvUrl || meta?.fileUrl || storedFile?.url || "",
+    filename: candidate.cv_filename || candidate.cvFilename || meta?.filename || storedFile?.filename || "",
+    key: candidate.cv_key || candidate.cvKey || meta?.fileKey || storedFile?.key || "",
+    provider: candidate.cv_provider || candidate.cvProvider || meta?.fileProvider || storedFile?.provider || ""
+  };
+}
+
+function buildVisibleTagList(item = {}) {
+  const explicit = Array.isArray(item.skills) ? item.skills : [];
+  const inferred = Array.isArray(item.inferredTags) ? item.inferredTags : [];
+  return Array.from(new Set([...explicit, ...inferred].map((tag) => String(tag || "").trim()).filter(Boolean)));
+}
+
+function parseTagInputValue(raw = "") {
+  return String(raw || "")
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function isLikelyRoleLikeLocation(value = "") {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return false;
+  if (/\b(assistant|manager|engineer|developer|estimator|executive|analyst|technician|consultant|specialist|trainee|intern|head|lead)\b/.test(text)) {
+    return true;
+  }
+  return false;
+}
+
+function parseCvYm(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  if (/present|current|ongoing|till\s*date/i.test(text)) {
+    const now = new Date();
+    return { y: now.getFullYear(), m: now.getMonth() + 1, present: true };
+  }
+  const iso = text.match(/(\d{4})\s*[-/]\s*(\d{1,2})/);
+  if (iso) return { y: Number(iso[1]), m: Math.min(12, Math.max(1, Number(iso[2]))), present: false };
+  const rev = text.match(/(\d{1,2})\s*[-/]\s*(\d{4})/);
+  if (rev) return { y: Number(rev[2]), m: Math.min(12, Math.max(1, Number(rev[1]))), present: false };
+  return null;
+}
+
+function cvMonthIndex(parsed = null) {
+  if (!parsed || !Number.isInteger(parsed.y) || !Number.isInteger(parsed.m)) return null;
+  return (parsed.y * 12) + (parsed.m - 1);
+}
+
+function formatCvMonths(totalMonths = 0) {
+  const months = Number(totalMonths || 0);
+  if (!Number.isFinite(months) || months <= 0) return "";
+  const years = Math.floor(months / 12);
+  const rem = months % 12;
+  if (years && rem) return `${years} years ${rem} months`;
+  if (years) return `${years} years`;
+  return `${rem} months`;
+}
+
+function shouldExcludeFromCvExperience(row = {}) {
+  const text = `${String(row?.designation || "").trim()} ${String(row?.company_name || "").trim()}`.toLowerCase();
+  if (!text) return false;
+  if (/\bintern(ship)?\b/.test(text)) return true;
+  if (/\bfreelanc(?:e|er|ing)\b/.test(text)) return true;
+  return false;
+}
+
+function rankEducationDegree(value = "") {
+  const d = String(value || "").trim().toLowerCase();
+  if (!d) return 0;
+  if (/\b(ph\.?\s*d|doctorate)\b/.test(d)) return 9;
+  if (/\b(masters?|mba|mca|m[\s.-]*tech|m[\s.-]*e\.?|m[\s.-]*sc|m[\s.-]*com|m[\s.-]*a|pgdm)\b/.test(d)) return 8;
+  if (/\b(bachelor|graduat(?:ion)?|b[\s.-]*tech|b[\s.-]*e\.?|bca|b[\s.-]*sc|b[\s.-]*com|b[\s.-]*a)\b/.test(d)) return 7;
+  if (/\b(diploma|iti|polytechnic)\b/.test(d)) return 6;
+  if (/\b(12th|hsc|intermediate)\b/.test(d)) return 5;
+  if (/\b(10th|ssc|matric)\b/.test(d)) return 4;
+  return 0;
+}
+
+function deriveStrictCvSummaryFromRows(experienceRows = [], educationRows = []) {
+  const rawRows = Array.isArray(experienceRows) ? experienceRows : [];
+  // Recover missing company on adjacent role rows within the same timeline block.
+  // Many CVs list one company heading followed by multiple role stints.
+  const rowsWithCompany = rawRows.map((row, index) => {
+    const ownCompany = String(row?.company_name || row?.company || "").trim();
+    if (ownCompany) return row;
+    const prevCompany = String(rawRows[index - 1]?.company_name || rawRows[index - 1]?.company || "").trim();
+    const nextCompany = String(rawRows[index + 1]?.company_name || rawRows[index + 1]?.company || "").trim();
+    const fallbackCompany = prevCompany || nextCompany;
+    if (!fallbackCompany) return row;
+    return { ...row, company_name: fallbackCompany };
+  });
+  const rows = rowsWithCompany.filter((row) => !shouldExcludeFromCvExperience(row));
+  const datedRows = rows
+    .map((row) => {
+      const start = parseCvYm(row?.start_date || row?.startDate || "");
+      const end = parseCvYm(row?.end_date || row?.endDate || "");
+      const hasPresent = /present|current|ongoing|till\s*date/i.test(String(row?.end_date || row?.endDate || ""));
+      return { row, start, end, hasPresent };
+    })
+    .filter((item) => item.start && item.end && cvMonthIndex(item.end) != null && cvMonthIndex(item.start) != null && cvMonthIndex(item.end) >= cvMonthIndex(item.start));
+
+  const ranges = datedRows.map((item) => [cvMonthIndex(item.start), cvMonthIndex(item.end)]).sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const [s, e] of ranges) {
+    if (!merged.length || s > merged[merged.length - 1][1] + 1) merged.push([s, e]);
+    else merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], e);
+  }
+  const totalMonths = merged.reduce((sum, [s, e]) => sum + (e - s + 1), 0);
+
+  const currentRow = datedRows.filter((item) => item.hasPresent).sort((a, b) => (cvMonthIndex(b.start) || 0) - (cvMonthIndex(a.start) || 0))[0]
+    || datedRows.sort((a, b) => (cvMonthIndex(b.end) || 0) - (cvMonthIndex(a.end) || 0))[0]
+    || null;
+  // Current tenure should include contiguous stints in the same company
+  // (e.g., Trainee -> Assistant Manager -> Manager in one org).
+  let currentOrgMonths = 0;
+  if (currentRow) {
+    const companyKey = String(currentRow?.row?.company_name || "").trim().toLowerCase();
+    const companyRows = datedRows
+      .filter((item) => String(item?.row?.company_name || "").trim().toLowerCase() === companyKey)
+      .sort((a, b) => (cvMonthIndex(b.start) || 0) - (cvMonthIndex(a.start) || 0));
+    if (companyRows.length) {
+      const mergedCompany = [];
+      for (const item of companyRows) {
+        const s = cvMonthIndex(item.start);
+        const e = cvMonthIndex(item.end);
+        if (s == null || e == null || e < s) continue;
+        if (!mergedCompany.length || s > mergedCompany[mergedCompany.length - 1][1] + 1) mergedCompany.push([s, e]);
+        else mergedCompany[mergedCompany.length - 1][1] = Math.max(mergedCompany[mergedCompany.length - 1][1], e);
+      }
+      currentOrgMonths = mergedCompany.reduce((sum, [s, e]) => sum + (e - s + 1), 0);
+    }
+  }
+
+  const eduRanked = (Array.isArray(educationRows) ? educationRows : [])
+    .map((row) => {
+      const degree = String(row?.degree || "").trim();
+      const rank = rankEducationDegree(degree);
+      const yrText = `${String(row?.end_date || row?.endDate || "").trim()} ${String(row?.year || "").trim()} ${String(row?.start_date || row?.startDate || "").trim()}`;
+      const years = Array.from(String(yrText).matchAll(/\b(19\d{2}|20\d{2})\b/g)).map((m) => Number(m[1])).filter(Number.isFinite);
+      const year = years.length ? Math.max(...years) : 0;
+      return { degree, rank, year };
+    })
+    .filter((item) => item.degree && item.rank > 0)
+    .sort((a, b) => (b.rank - a.rank) || (b.year - a.year));
+
+  return {
+    currentCompany: String(currentRow?.row?.company_name || "").trim(),
+    currentDesignation: String(currentRow?.row?.designation || "").trim(),
+    totalExperience: formatCvMonths(totalMonths),
+    currentOrgTenure: formatCvMonths(currentOrgMonths),
+    highestEducation: String(eduRanked[0]?.degree || "").trim()
+  };
+}
+
+function getDeterministicSummaryFromResult(result = null) {
+  const s = result?.deterministic_summary && typeof result.deterministic_summary === "object"
+    ? result.deterministic_summary
+    : null;
+  if (!s) return null;
+  return {
+    currentCompany: String(s.currentCompany || "").trim(),
+    currentDesignation: String(s.currentDesignation || "").trim(),
+    totalExperience: String(s.totalExperience || "").trim(),
+    currentOrgTenure: String(s.currentOrgTenure || "").trim(),
+    highestEducation: String(s.highestQualification || s.highestEducation || "").trim(),
+    location: String(s.location || "").trim()
+  };
+}
+
+function getPreferredCvSummaryFromResult(result = null, experienceRows = [], educationRows = []) {
+  const preferDeterministicForCv = String(result?.sourceType || "").trim().toLowerCase() === "cv";
+  const backendSummary = {
+    currentCompany: String(result?.currentCompany || "").trim(),
+    currentDesignation: String(result?.currentDesignation || "").trim(),
+    totalExperience: String(result?.totalExperience || result?.exactTotalExperience || "").trim(),
+    currentOrgTenure: String(result?.currentOrgTenure || "").trim(),
+    highestEducation: String(result?.highestQualification || result?.highestEducation || "").trim(),
+    location: String(result?.location || "").trim()
+  };
+  const deterministicSummary = getDeterministicSummaryFromResult(result) || {};
+  const strictSummary = deriveStrictCvSummaryFromRows(experienceRows, educationRows);
+  return {
+    currentCompany: preferDeterministicForCv
+      ? (backendSummary.currentCompany || deterministicSummary.currentCompany || strictSummary.currentCompany || "")
+      : (backendSummary.currentCompany || deterministicSummary.currentCompany || strictSummary.currentCompany || ""),
+    currentDesignation: preferDeterministicForCv
+      ? (backendSummary.currentDesignation || deterministicSummary.currentDesignation || strictSummary.currentDesignation || "")
+      : (backendSummary.currentDesignation || deterministicSummary.currentDesignation || strictSummary.currentDesignation || ""),
+    totalExperience: preferDeterministicForCv
+      ? (backendSummary.totalExperience || deterministicSummary.totalExperience || strictSummary.totalExperience || "")
+      : (backendSummary.totalExperience || deterministicSummary.totalExperience || strictSummary.totalExperience || ""),
+    currentOrgTenure: preferDeterministicForCv
+      ? (backendSummary.currentOrgTenure || deterministicSummary.currentOrgTenure || strictSummary.currentOrgTenure || "")
+      : (backendSummary.currentOrgTenure || deterministicSummary.currentOrgTenure || strictSummary.currentOrgTenure || ""),
+    highestEducation: preferDeterministicForCv
+      ? (backendSummary.highestEducation || deterministicSummary.highestEducation || strictSummary.highestEducation || "")
+      : (backendSummary.highestEducation || deterministicSummary.highestEducation || strictSummary.highestEducation || ""),
+    location: preferDeterministicForCv
+      ? (backendSummary.location || deterministicSummary.location || strictSummary.location || "")
+      : (backendSummary.location || deterministicSummary.location || strictSummary.location || "")
+  };
+}
+
+function looksMaskedContactValue(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  // Treat only strong masking tokens as masked; do not reject normal values containing x.
+  if (/[*_\u2022\u2023\u25AA\u25FC\u25A0\u25CF]/.test(text)) return true;
+  if (/[*_\u2022\u2023\u25AA\u25FC\u25A0\u25CF]/.test(text)) return true;
+}
+
+function sanitizeInterviewParsedEmail(value = "") {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text || looksMaskedContactValue(text)) return "";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) return "";
+  return text;
+}
+
+function sanitizeInterviewParsedPhone(value = "") {
+  const text = String(value || "").trim();
+  if (!text || looksMaskedContactValue(text)) return "";
+  const compact = text.replace(/[^\d+]/g, "");
+  const digits = compact.replace(/\D/g, "");
+  if (digits.length < 10 || digits.length > 15) return "";
+  return compact.startsWith("+") ? `+${digits}` : digits;
+}
+
+function buildInterviewCvAnalysis(baseForm = {}, result = {}, storedFile = null, normalizedExperience = [], normalizedEducation = []) {
+  const strictSummary = getPreferredCvSummaryFromResult(result, normalizedExperience, normalizedEducation);
+  const rawConfidence = String(
+    result?.timelineConfidence?.level || result?.parseDebug?.timelineConfidence || ""
+  ).trim().toLowerCase();
+  const timelineConfidenceLevel =
+    rawConfidence === "medium" ? "mid" : (rawConfidence === "high" || rawConfidence === "low" ? rawConfidence : "");
+  const timelineConfidenceLabel =
+    String(result?.timelineConfidence?.label || result?.parseDebug?.timelineConfidenceLabel || "").trim()
+    || (timelineConfidenceLevel ? `Timeline confidence ${timelineConfidenceLevel}` : "");
+  const parsedEmail = sanitizeInterviewParsedEmail(result.emailId || "");
+  const parsedPhone = sanitizeInterviewParsedPhone(result.phoneNumber || "");
+  return {
+    exactTotalExperience: strictSummary.totalExperience || "",
+    currentCompany: strictSummary.currentCompany || "",
+    currentDesignation: strictSummary.currentDesignation || "",
+    currentOrgTenure: strictSummary.currentOrgTenure || "",
+    highestEducation: strictSummary.highestEducation || "",
+    candidateName: result.candidateName || "",
+    emailId: parsedEmail || String(baseForm.emailId || "").trim(),
+    phoneNumber: parsedPhone || String(baseForm.phoneNumber || "").trim(),
+    linkedin: result.linkedinUrl || "",
+    location: strictSummary.location || result.location || "",
+    timelineConfidenceLevel,
+    timelineConfidenceLabel,
+    storedFile: storedFile || result.storedFile || null,
+    cached: Boolean(result.cached),
+    contradictions: [
+      baseForm.currentCompany && strictSummary.currentCompany && String(baseForm.currentCompany).trim().toLowerCase() !== String(strictSummary.currentCompany).trim().toLowerCase()
+        ? `Current company: existing "${baseForm.currentCompany}" vs CV "${strictSummary.currentCompany}"`
+        : "",
+      baseForm.currentDesignation && strictSummary.currentDesignation && String(baseForm.currentDesignation).trim().toLowerCase() !== String(strictSummary.currentDesignation).trim().toLowerCase()
+        ? `Current designation: existing "${baseForm.currentDesignation}" vs CV "${strictSummary.currentDesignation}"`
+        : "",
+      baseForm.totalExperience && strictSummary.totalExperience && String(baseForm.totalExperience).trim().toLowerCase() !== String(strictSummary.totalExperience).trim().toLowerCase()
+        ? `Total experience: existing "${baseForm.totalExperience}" vs CV "${strictSummary.totalExperience}"`
+        : "",
+      baseForm.currentOrgTenure && strictSummary.currentOrgTenure && String(baseForm.currentOrgTenure).trim().toLowerCase() !== String(strictSummary.currentOrgTenure).trim().toLowerCase()
+        ? `Tenure in current org: existing "${baseForm.currentOrgTenure}" vs CV "${strictSummary.currentOrgTenure}"`
+        : ""
+    ].filter(Boolean)
+  };
+}
+
+function getInterviewCvStoredFileLabel(analysis = null) {
+  const stored = analysis?.storedFile || null;
+  if (!stored) return "";
+  return String(stored.filename || stored.key || stored.url || "").trim();
+}
+
+function getInterviewCvStoredFilePath(analysis = null) {
+  const stored = analysis?.storedFile || null;
+  if (!stored) return "";
+  return String(stored.key || stored.url || "").trim();
+}
+
+function splitStructuredDraftLines(rawText) {
+  return String(rawText || "")
+    .replace(/\r/g, "")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function toSentenceCasePreservingContent(text) {
+  const value = String(text || "").trim();
+  if (!value) return "";
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function normalizeMojibakeSymbols(text) {
+  return String(text || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/[\u2022\u2023\u25AA\u25FC\u25A0\u25CF]/g, "\u2022")
+    .replace(/[\uFFFD]/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function normalizeTemplateFormatting(text) {
+  return String(text ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\u00a0/g, " ")
+    .replace(/[\u2022\u2023\u25AA\u25FC\u25A0\u25CF]/g, "\u2022")
+    .replace(/[\uFFFD]/g, "");
+}
+
+function sanitizeMojibakeApiText(text) {
+  return String(text ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\u00a0/g, " ")
+    .replace(/[\u2022\u2023\u25AA\u25FC\u25A0\u25CF]/g, "\u2022")
+    .replace(/[\uFFFD]/g, "");
+}
+
+
+
+
+
+function sanitizeMojibakeDeep(value) {
+  if (value == null) return value;
+  if (typeof value === "string") return sanitizeMojibakeApiText(value);
+  if (Array.isArray(value)) return value.map((item) => sanitizeMojibakeDeep(item));
+  if (typeof value === "object") {
+    const next = {};
+    Object.entries(value).forEach(([key, val]) => {
+      next[key] = sanitizeMojibakeDeep(val);
+    });
+    return next;
+  }
+  return value;
+}
+
+function extractSafeFirstName(fullName = "") {
+  const raw = String(fullName || "").trim();
+  if (!raw) return "";
+  const titles = new Set(["mr", "mrs", "ms", "miss", "sh", "shri", "smt", "dr"]);
+  const tokens = raw
+    .split(/\s+/)
+    .map((token) => String(token || "").trim())
+    .filter(Boolean);
+  for (const token of tokens) {
+    const cleaned = token.replace(/[.,]/g, "").trim();
+    const lower = cleaned.toLowerCase();
+    if (!cleaned) continue;
+    if (titles.has(lower)) continue;
+    if (cleaned.length <= 1) continue;
+    if (!/[a-z]/i.test(cleaned)) continue;
+    return cleaned;
+  }
+  return "";
+}
+function polishStructuredBulletSentence(line) {
+  const text = normalizeMojibakeSymbols(line).trim().replace(/\s+/g, " ");
+  if (!text) return "";
+  const sentence = toSentenceCasePreservingContent(text);
+  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
+}
+
+function getRecruiterNoteLineKey(line) {
+  const lower = String(line || "").toLowerCase().trim();
+  if (!lower) return "";
+  if (lower.startsWith("expected ctc") || lower.startsWith("expectation") || /^expected\b/.test(lower)) return "expected_ctc";
+  if (lower.startsWith("current ctc") || /^current\b/.test(lower)) return "current_ctc";
+  if (lower.startsWith("notice period")) return "notice_period";
+  if (lower.startsWith("official notice period")) return "official_notice_period";
+  if (lower.startsWith("lwd")) return "lwd_or_doj";
+  if (lower.startsWith("doj")) return "lwd_or_doj";
+  if (lower.startsWith("last working day")) return "lwd_or_doj";
+  if (lower.includes("serving notice") && lower.includes("lwd")) return "lwd_or_doj";
+  if (lower.startsWith("offer in hand")) return "offer_in_hand";
+  if (lower.includes("holds an offer") || lower.includes("holds offer") || lower.includes("got an offer") || lower.includes("offer of")) return "offer_in_hand";
+  if (lower.startsWith("location")) return "location";
+  if (lower.startsWith("working model")) return "working_model";
+  if (lower.startsWith("shift")) return "shift";
+  if (lower.startsWith("relocation")) return "relocation";
+  if (lower.startsWith("communication")) return "communication";
+  return `free:${lower}`;
+}
+
+function extractFreeRecruiterLines(text) {
+  return normalizeRecruiterNotesBody(text)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => getRecruiterNoteLineKey(line).startsWith("free:"));
+}
+
+function normalizeParsedRecruiterValue(value) {
+  return normalizeMojibakeSymbols(value)
+    .trim()
+    .replace(/^[\s\-:;]+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildCanonicalRecruiterNotes(baseText, currentText, mergedValues = {}) {
+  const lines = [];
+  const pushStructured = (label, value) => {
+    const clean = label === "LWD / DOJ" ? sanitizeLwdOrDojValue(value) : normalizeParsedRecruiterValue(value);
+    if (!clean) return;
+    lines.push(`${label}: ${clean}`);
+  };
+
+  pushStructured("Current CTC", mergedValues.current_ctc);
+  pushStructured("Expected CTC", mergedValues.expected_ctc);
+  pushStructured("Notice period", mergedValues.notice_period);
+  pushStructured("LWD / DOJ", mergedValues.lwd_or_doj);
+  pushStructured("Offer in hand", mergedValues.offer_in_hand);
+  pushStructured("Location", mergedValues.location);
+
+  // Keep free-text lines strictly from current editor content so removed legacy lines do not reappear.
+  const freeLines = [...extractFreeRecruiterLines(currentText)];
+  freeLines.forEach((line) => {
+    if (!lines.some((existing) => existing.toLowerCase() === line.toLowerCase())) {
+      lines.push(line);
+    }
+  });
+
+  return lines.join("\n");
+}
+
+function normalizeRecruiterNotesBody(rawText) {
+  const normalizedLines = splitStructuredDraftLines(rawText)
+    .map((line) => normalizeMojibakeSymbols(line).replace(/^[\-\*\u2022]\s*/, "").trim())
+    .map((line) => line.replace(/^recruiter notes\s*:?\s*/i, "").trim())
+    .map((line) => line.replace(/^[.:;-]+/, "").trim())
+    .map(polishStructuredBulletSentence)
+    .filter(Boolean);
+
+  const orderedKeys = [];
+  const valuesByKey = new Map();
+  normalizedLines.forEach((line) => {
+    const key = getRecruiterNoteLineKey(line);
+    if (!orderedKeys.includes(key)) orderedKeys.push(key);
+    valuesByKey.set(key, line);
+  });
+
+  return orderedKeys.map((key) => valuesByKey.get(key) || "").filter(Boolean).join("\n");
+}
+
+function normalizeOtherPointersBody(rawText) {
+  const prepared = normalizeMojibakeSymbols(rawText)
+    .replace(/\bother pointers\s*:?\s*/gi, "\n")
+    .replace(/\.\s+(?=[A-Z])/g, ".\n");
+
+  return splitStructuredDraftLines(prepared)
+    .map((line) => normalizeMojibakeSymbols(line).replace(/^[\-\*\u2022]\s*/, "").trim())
+    .map((line) => line.replace(/^[.:;-]+/, "").trim())
+    .map(polishStructuredBulletSentence)
+    .filter(Boolean)
+    .filter((line, index, array) => array.findIndex((item) => item.toLowerCase() === line.toLowerCase()) === index)
+    .map((line) => `\u2022 ${line.replace(/^\u2022\s*/, "")}`)
+    .join("\n");
+}
+
+function buildStructuredRecruiterRawNote(sections = {}, extraText = "") {
+  const lines = [];
+  const pushLine = (label, value) => {
+    const clean = normalizeParsedRecruiterValue(value);
+    if (!clean) return;
+    lines.push(`${label}: ${clean}`);
+  };
+  pushLine("Current CTC", sections.current_ctc);
+  pushLine("Expected CTC", sections.expected_ctc);
+  pushLine("Notice period", sections.notice_period);
+  pushLine("Offer in hand", sections.offer_in_hand);
+  pushLine("LWD / DOJ", sections.lwd_or_doj);
+  const extra = splitStructuredDraftLines(extraText).join("\n");
+  return [...lines, extra].filter(Boolean).join("\n");
+}
+
+function buildStructuredRecruiterSectionOverrides(sections = {}) {
+  const normalizeSectionValue = (value) => {
+    const clean = normalizeParsedRecruiterValue(value);
+    if (!clean) return "";
+    const lowered = clean.toLowerCase();
+    if (["0", "-", "--", "na", "n/a", "nil", "none", "same", "same as existing", "unchanged"].includes(lowered)) {
+      return "";
+    }
+    return clean;
+  };
+  const direct = {};
+  // Always emit structured keys so blanking a field is treated as an explicit clear.
+  direct.current_ctc = normalizeSectionValue(sections.current_ctc);
+  direct.expected_ctc = normalizeSectionValue(sections.expected_ctc);
+  direct.notice_period = normalizeSectionValue(sections.notice_period);
+  direct.offer_in_hand = normalizeSectionValue(sections.offer_in_hand);
+  direct.lwd_or_doj = normalizeSectionValue(sections.lwd_or_doj);
+  return direct;
+}
+
+function mergeRecruiterNotes(existingText, incomingText) {
+  const existing = normalizeRecruiterNotesBody(existingText);
+  const incoming = normalizeRecruiterNotesBody(incomingText);
+  if (!existing) return incoming;
+  if (!incoming) return existing;
+  const existingLines = existing.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const incomingLines = incoming.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const keyed = new Map();
+  const order = [];
+  [...existingLines, ...incomingLines].forEach((line) => {
+    const key = getRecruiterNoteLineKey(line);
+    if (!order.includes(key)) order.push(key);
+    keyed.set(key, line);
+  });
+  return order.map((key) => keyed.get(key) || "").filter(Boolean).join("\n");
+}
+
+function extractLastMeaningfulLine(text) {
+  const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return lines.length ? lines[lines.length - 1] : "";
+}
+
+function parseNaturalFollowUpDate(text, baseDate = new Date()) {
+  const value = String(text || "").toLowerCase();
+  if (!value) return "";
+  const hasRelativeDate = /\btoday\b|\btomorrow\b|\bday after tomorrow\b|\bnext week\b|\bthis week\b|\b1st week\b|\b2nd week\b|\byesterday\b/.test(value);
+  const hasWeekday = /\b(?:this|next)?\s*(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(value);
+  const hasExplicitDate = /\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/.test(value);
+  const hasTime = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b|\bmorning\b|\bevening\b/.test(value);
+  if (!hasRelativeDate && !hasWeekday && !hasExplicitDate && !hasTime) return "";
+  const result = new Date(baseDate);
+  result.setSeconds(0, 0);
+
+  if (/\bday after tomorrow\b/.test(value)) result.setDate(result.getDate() + 2);
+  else if (/\btomorrow\b/.test(value)) result.setDate(result.getDate() + 1);
+  else if (/\bnext week\b/.test(value)) result.setDate(result.getDate() + 7);
+  else if (/\bthis week\b/.test(value)) result.setDate(result.getDate() + 3);
+  else if (/\b1st week\b/.test(value)) result.setDate(result.getDate() + 7);
+  else if (/\b2nd week\b/.test(value)) result.setDate(result.getDate() + 14);
+  else if (/\byesterday\b/.test(value)) result.setDate(result.getDate() - 1);
+
+  const weekdayMatch = value.match(/\b(?:(this|next)\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/);
+  if (weekdayMatch) {
+    const modifier = String(weekdayMatch[1] || "").trim();
+    const weekdayName = weekdayMatch[2];
+    const weekdayMap = {
+      sunday: 0,
+      monday: 1,
+      tuesday: 2,
+      wednesday: 3,
+      thursday: 4,
+      friday: 5,
+      saturday: 6
+    };
+    const targetDay = weekdayMap[weekdayName];
+    const currentDay = result.getDay();
+    let diff = targetDay - currentDay;
+    if (modifier === "next") {
+      diff = diff <= 0 ? diff + 7 : diff + 7;
+    } else {
+      diff = diff < 0 ? diff + 7 : diff;
+    }
+    result.setDate(result.getDate() + diff);
+  }
+
+  const dateMatch = value.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/);
+  if (dateMatch) {
+    const day = Number(dateMatch[1]);
+    const monthMap = {
+      jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3, may: 4,
+      jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7, sep: 8, sept: 8, september: 8,
+      oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11
+    };
+    result.setMonth(monthMap[dateMatch[2]]);
+    result.setDate(day);
+  }
+
+  const timeMatch = value.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/);
+  if (timeMatch) {
+    let hours = Number(timeMatch[1]) % 12;
+    const minutes = Number(timeMatch[2] || 0);
+    if (timeMatch[3] === "pm") hours += 12;
+    result.setHours(hours, minutes, 0, 0);
+  } else if (/\bmorning\b/.test(value)) {
+    result.setHours(10, 0, 0, 0);
+  } else if (/\bevening\b/.test(value)) {
+    result.setHours(17, 0, 0, 0);
+  } else if (hasTime) {
+    result.setHours(17, 0, 0, 0);
+  }
+
+  return toDateInputValue(result);
+}
+
+function inferAttemptOutcomeAndFollowUp(text) {
+  const value = String(text || "").toLowerCase();
+  if (!value) return { outcome: "", followUpAt: "", candidateStatus: "" };
+  if (/\breject\b|\brejected\b|\bscreening reject\b|\bsr\b|\bpoor communication\b|\bbad communication\b/.test(value)) return { outcome: "Screening reject", followUpAt: "", candidateStatus: "Screening Reject" };
+  if (/\bnot interested\b/.test(value)) return { outcome: "Not interested", followUpAt: "", candidateStatus: "Not interested" };
+  if (/\brevisit\b/.test(value)) return { outcome: "Revisit for other role", followUpAt: "", candidateStatus: "Revisit for other role" };
+  if (/\bhold\b|\bon hold\b|\bhigh ctc\b|\bhigh notice\b|\bhigh np\b|\bout of budget\b/.test(value)) return { outcome: "Hold by recruiter", followUpAt: "", candidateStatus: "CV put on hold" };
+  if (/\binterested\b/.test(value)) return { outcome: "Interested", followUpAt: "", candidateStatus: "Interested" };
+  if (/\bcall later\b|\bcall next\b|\bnext call\b|\bfollow up\b|\bcall tomorrow\b|\bcall today\b|\bcall day after tomorrow\b|\bcall next week\b|\bcall this week\b|\bcall on\b|\bcall at\b|\bcall (monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\bcall this (monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\bcall next (monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(value)) return { outcome: "Call later", followUpAt: parseNaturalFollowUpDate(value), candidateStatus: "Follow-up" };
+  if (/\bduplicate\b/.test(value)) return { outcome: "Duplicate", followUpAt: "", candidateStatus: "Duplicate" };
+  if (/\bjd shared\b|\bshared jd\b/.test(value)) return { outcome: "JD shared", followUpAt: "", candidateStatus: "" };
+  if (/\bnot reachable\b|\bnot able to connect\b/.test(value)) return { outcome: "Not reachable", followUpAt: "", candidateStatus: "" };
+  if (/\bswitch off\b|\bswitched off\b/.test(value)) return { outcome: "Switch Off", followUpAt: "", candidateStatus: "" };
+  if (/\bdisconnected\b|\bdisconnecting\b|\bcutting the call\b|\bcall cut\b/.test(value)) return { outcome: "Disconnected", followUpAt: "", candidateStatus: "" };
+  if (/\bbusy\b/.test(value)) return { outcome: "Busy", followUpAt: "", candidateStatus: "" };
+  if (/\bno response\b|\bnot responding\b|\bnr\b|\bdid not pick up\b/.test(value)) return { outcome: "Not responding", followUpAt: "", candidateStatus: "" };
+  return { outcome: "", followUpAt: "", candidateStatus: "" };
+}
+
+function isAssessmentStatusLine(line) {
+  const value = String(line || "").trim().toLowerCase();
+  if (!value) return false;
+  return [
+    "cv shared",
+    "cv to be shared",
+    "test",
+    "assignment",
+    "screening call aligned",
+    "l1 aligned",
+    "l2 aligned",
+    "l3 aligned",
+    "hr interview aligned",
+    "feedback awaited",
+    "cv feedback awaited",
+    "interview feedback awaited",
+    "cv put on hold",
+    "interview on hold",
+    "hold",
+    "did not attend",
+    "not responding",
+    "dropped",
+    "duplicate",
+    "screening reject",
+    "interview reject",
+    "shortlisted",
+    "joined",
+    "offered"
+  ].some((item) => value.includes(item));
+}
+
+function inferAssessmentStatusAndSchedule(text, baseDate = new Date()) {
+  const value = String(text || "").trim().toLowerCase();
+  if (!value) return { candidateStatus: "", atValue: "", offerAmount: "", expectedDoj: "", dateOfJoining: "" };
+
+  const hasOffer = /\boffer\b|\boffered\b/.test(value);
+  const hasDropped = /\bdropout\b|\bdropped\b|\bbackout\b/.test(value);
+  const hasReject = /\breject\b|\brejected\b|\brejct\b|\brject\b|\brejecte?d?\b/.test(value);
+  const hasScreening = /\bscreening\b/.test(value);
+  const hasHr = /\bhr\b/.test(value);
+  const hasL2 = /\bl2\b/.test(value);
+  const hasL1 = /\bl1\b/.test(value);
+  const hasL3 = /\bl3\b/.test(value);
+  const hasScreeningCall = /\bscreening\b/.test(value);
+  const hasFeedback = /\bfeedback\b/.test(value);
+  const hasHold = /\bon hold\b|\bhold\b|\bhigh notice\b|\bhigh ctc\b|\bhigh np\b|\bout of budget\b/.test(value);
+  const hasInterviewContext = hasScreening || hasScreeningCall || hasL1 || hasL2 || hasL3 || hasHr || /\binterview\b/.test(value);
+  const hasTestOrAssignment = /\btest\b|\bassignment\b|\bassignment shared\b/.test(value);
+  const hasNotResponding = /\bnr\b|\bnot responding\b|\bno response\b|\bno answer\b|\bdid not pick up\b|\bdid not join\b|\bdid not attend\b/.test(value);
+  const hasDuplicate = /\bduplicate\b/.test(value);
+  const hasShortlisted = /\bshortlisted\b|\bselected\b/.test(value);
+  const hasJoined = /\bjoined\b/.test(value);
+
+  let candidateStatus = "";
+  if (hasOffer && hasDropped) candidateStatus = "Dropped";
+  else if (hasScreening && (hasReject || /\bsr\b/.test(value))) candidateStatus = "Screening Reject";
+  else if (hasNotResponding) candidateStatus = "Not responding";
+  else if (hasDropped) candidateStatus = "Dropped";
+  else if (hasDuplicate) candidateStatus = "Duplicate";
+  else if (hasJoined) candidateStatus = "Joined";
+  else if (hasShortlisted) candidateStatus = "Shortlisted";
+  else if (hasOffer) candidateStatus = "Offered";
+  else if (hasReject) candidateStatus = "Interview Reject";
+  else if (hasFeedback) candidateStatus = hasInterviewContext ? "Interview feedback awaited" : "CV feedback awaited";
+  else if (hasHold) candidateStatus = "CV put on hold";
+  else if (hasTestOrAssignment) candidateStatus = "Test or Assignment shared";
+  else if (hasHr) candidateStatus = "HR interview aligned";
+  else if (hasL2) candidateStatus = "L2 aligned";
+  else if (hasL1) candidateStatus = "L1 aligned";
+  else if (hasScreeningCall) candidateStatus = "Screening call aligned";
+
+  const shouldTrackDate = Boolean(candidateStatus) && (
+    isInterviewAlignedStatus(candidateStatus) ||
+    ["offered", "joined"].includes(candidateStatus.toLowerCase())
+  );
+
+  const parsedAt = shouldTrackDate ? parseNaturalFollowUpDate(value, baseDate) : "";
+  const defaultAt = shouldTrackDate && !parsedAt ? toDateInputValue(baseDate) : "";
+
+  const extractAmount = () => {
+    const match = value.match(/(\d+(?:\.\d+)?)\s*l\b/);
+    return match ? `${match[1]} L` : "";
+  };
+
+  const statusLower = String(candidateStatus || "").trim().toLowerCase();
+  return {
+    candidateStatus,
+    atValue: parsedAt || defaultAt,
+    offerAmount: (statusLower === "offered" || statusLower === "joined") ? extractAmount() : "",
+    expectedDoj: statusLower === "offered" ? (parsedAt || defaultAt) : "",
+    dateOfJoining: statusLower === "joined" ? (parsedAt || defaultAt) : ""
+  };
+}
+
+function buildAssessmentStatusNoteLine(statusValue, atValue = "", extra = {}) {
+  const status = String(statusValue || "").trim();
+  const lowered = status.toLowerCase();
+  if (!status) return "";
+  if (lowered === "offered") {
+    const bits = ["Offered"];
+    if (extra.offerAmount) bits.push(`Offer amount ${extra.offerAmount}`);
+    if (atValue) bits.push(`Expected DOJ ${formatAssessmentStatusCalendarNoteDate(atValue)}`);
+    return `${bits.join(" | ")}.`;
+  }
+  if (lowered === "joined") {
+    const bits = ["Joined"];
+    if (extra.offerAmount) bits.push(`Offer amount ${extra.offerAmount}`);
+    if (atValue) bits.push(`Joined on ${formatAssessmentStatusCalendarNoteDate(atValue)}`);
+    return `${bits.join(" | ")}.`;
+  }
+  return buildAssessmentStatusCalendarNote(status, atValue);
+}
+
+function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candidate = null) {
+  const entries = [];
+  const normalizeJourneyText = (value = "") => String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const isDuplicateJourneyEntry = (list, next) => {
+    const nextAt = Date.parse(String(next?.at || ""));
+    const nextTextNorm = normalizeJourneyText(next?.text || "");
+    if (!Number.isFinite(nextAt) || !nextTextNorm) return false;
+    return list.some((existing) => {
+      const existingTextNorm = normalizeJourneyText(existing?.text || "");
+      if (!existingTextNorm) return false;
+      // Global dedupe for same assessment-movement text (even if repeated at later times).
+      const bothAssessmentMove = existingTextNorm.startsWith("assessment movement |") && nextTextNorm.startsWith("assessment movement |");
+      if (bothAssessmentMove && existingTextNorm === nextTextNorm) return true;
+      const existingAt = Date.parse(String(existing?.at || ""));
+      if (!Number.isFinite(existingAt)) return false;
+      const withinWindow = Math.abs(existingAt - nextAt) <= 2 * 60 * 1000; // 2 minutes
+      if (!withinWindow) return false;
+      // Collapse exact duplicates and repeated same "log attempt"/"assessment movement" records.
+      if (existingTextNorm === nextTextNorm) return true;
+      const bothLogAttempt = existingTextNorm.startsWith("log attempt |") && nextTextNorm.startsWith("log attempt |");
+      return bothLogAttempt || bothAssessmentMove;
+    });
+  };
+  const pushJourneyEntry = (entry) => {
+    if (!entry?.at || !entry?.text) return;
+    if (isDuplicateJourneyEntry(entries, entry)) return;
+    entries.push(entry);
+  };
+  const candidateCreatedAt = candidate?.created_at || candidate?.createdAt || "";
+  if (candidateCreatedAt) {
+    const sourceValue = String(candidate?.source || "").trim();
+    const isApplied = ["website_apply", "hosted_apply", "google_sheet", "website", "hosted"].includes(sourceValue);
+    pushJourneyEntry({
+      at: candidateCreatedAt,
+      text: `${isApplied ? "Applied" : "Captured note created"}${sourceValue ? ` | ${sourceValue}` : ""}`
+    });
+  }
+  (contactAttempts || []).forEach((item) => {
+    const when = item?.created_at || item?.at || "";
+    if (!when) return;
+    const outcomeLabel = String(item?.outcome || "Attempt").trim();
+    const manualRemarks = extractAttemptManualRemarksFromNotes(item?.notes || "", outcomeLabel);
+    pushJourneyEntry({
+      at: when,
+      text: `Log attempt | ${outcomeLabel}${manualRemarks ? ` | Remarks: ${manualRemarks}` : ""}`
+    });
+  });
+
+  const latestAttemptMissing = candidate?.last_contact_at && !(contactAttempts || []).some((item) => String(item?.created_at || "") === String(candidate.last_contact_at || ""));
+  if (latestAttemptMissing) {
+    const outcomeLabel = String(candidate?.last_contact_outcome || "Attempt").trim();
+    const latestLine = extractLatestAttemptLine(candidate?.last_contact_notes || "");
+    const manualRemarks = extractAttemptRemarks(latestLine);
+    pushJourneyEntry({
+      at: candidate.last_contact_at,
+      text: `Log attempt | ${outcomeLabel}${manualRemarks ? ` | Remarks: ${manualRemarks}` : ""}`
+    });
+  }
+
+  const statusHistory = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
+  const statusHistoryAsc = statusHistory
+    .slice()
+    .filter((item) => item?.at)
+    .sort((a, b) => new Date(a?.at || 0) - new Date(b?.at || 0));
+  const initialStatusText = String(
+    statusHistoryAsc.find((item) => String(item?.status || "").trim())?.status
+    || "CV shared"
+  ).trim();
+
+  if (assessment?.generatedAt) {
+    pushJourneyEntry({
+      at: assessment.generatedAt,
+      text: `Assessment created | ${normalizeAssessmentStatusLabel(initialStatusText) || "CV shared"}`
+    });
+  }
+
+  const generatedAtTs = Date.parse(String(assessment?.generatedAt || ""));
+  statusHistory.forEach((item, historyIndex) => {
+    if (!item?.at) return;
+    const statusText = String(item?.status || "Status update").trim();
+    const statusNorm = normalizeJourneyText(statusText);
+    // Avoid duplicate opener:
+    // "Assessment created | CV shared" + immediate first statusHistory "Assessment | CV shared".
+    if (historyIndex === 0 && Number.isFinite(generatedAtTs)) {
+      const itemTs = Date.parse(String(item?.at || ""));
+      const sameInitialStatus = statusNorm === normalizeJourneyText(initialStatusText);
+      const nearCreatedAt = Number.isFinite(itemTs) && Math.abs(itemTs - generatedAtTs) <= 5 * 60 * 1000;
+      if (sameInitialStatus && nearCreatedAt) return;
+    }
+    const bits = [statusText];
+    const manual = String(item?.manualRemarks || "").trim();
+    const manualNorm = normalizeJourneyText(manual);
+    if (manual && manualNorm !== statusNorm) bits.push(`Remarks: ${manual}`);
+    if (item?.offerAmount) bits.push(`Offer amount ${item.offerAmount}`);
+    const statusAt = String(item?.statusAt || item?.atValue || "").trim();
+    let scheduleText = "";
+    if (statusAt) {
+      const parsedAt = Date.parse(statusAt);
+      scheduleText = Number.isFinite(parsedAt) ? new Date(parsedAt).toLocaleString() : "";
+    } else {
+      const atLabel = String(item?.atLabel || "").trim();
+      if (atLabel) {
+        const lowerLabel = atLabel.toLowerCase();
+        if (lowerLabel.startsWith(`${statusNorm} on `)) {
+          scheduleText = atLabel.slice(`${statusText} on `.length).trim().replace(/\.$/, "");
+        } else if (lowerLabel !== statusNorm) {
+          scheduleText = atLabel.replace(/\.$/, "").trim();
+        }
+      }
+    }
+    if (scheduleText && normalizeJourneyText(scheduleText) === statusNorm) {
+      scheduleText = "";
+    }
+    if (scheduleText) bits.push(scheduleText);
+    pushJourneyEntry({
+      at: item.at,
+      text: `Assessment | ${bits.filter(Boolean).join(" | ")}`
+    });
+  });
+
+  const feedbackHistory = Array.isArray(assessment?.clientFeedbackHistory) ? assessment.clientFeedbackHistory : [];
+  feedbackHistory.forEach((item) => {
+    const when = item?.updatedAt || item?.at || "";
+    if (!when) return;
+    pushJourneyEntry({
+      at: when,
+      text: `Client feedback | ${[item?.status, item?.feedback, item?.interviewAt ? `Interview ${new Date(item.interviewAt).toLocaleString()}` : "", item?.updatedBy].filter(Boolean).join(" | ")}`
+    });
+  });
+
+  return entries
+    .filter((item) => item.at && item.text)
+    .sort((a, b) => new Date(a.at) - new Date(b.at));
+}
+
+function getLatestAssessmentStatusPreview(assessment = {}) {
+  const statusHistory = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
+  const latest = statusHistory.length ? statusHistory[statusHistory.length - 1] : null;
+  const status = String(latest?.status || assessment?.candidateStatus || "").trim();
+  const statusLower = status.toLowerCase();
+  const alignedAt = String(assessment?.interviewAt || "").trim();
+  const offeredAt = String(assessment?.expectedDoj || "").trim();
+  const joinedAt = String(assessment?.dateOfJoining || "").trim();
+  return {
+    status,
+    remarks: String(latest?.manualRemarks || "").trim(),
+    at: String(
+      (isInterviewAlignedStatus(status) ? alignedAt : "")
+      || (statusLower === "offered" ? offeredAt : "")
+      || (statusLower === "joined" ? joinedAt : "")
+      || latest?.at
+      || assessment?.updatedAt
+      || ""
+    ).trim()
+  };
+}
+
+function mergeAssessmentsByFreshness(currentList = [], incomingList = []) {
+  const current = Array.isArray(currentList) ? currentList : [];
+  const incoming = Array.isArray(incomingList) ? incomingList : [];
+  const byId = new Map();
+  current.forEach((item) => {
+    const id = String(item?.id || "").trim();
+    if (!id) return;
+    byId.set(id, item);
+  });
+  incoming.forEach((item) => {
+    const id = String(item?.id || "").trim();
+    if (!id) return;
+    const existing = byId.get(id);
+    if (!existing) {
+      byId.set(id, item);
+      return;
+    }
+    const existingAt = Date.parse(String(existing?.updatedAt || existing?.updated_at || existing?.generatedAt || ""));
+    const incomingAt = Date.parse(String(item?.updatedAt || item?.updated_at || item?.generatedAt || ""));
+    if (!Number.isFinite(existingAt) || (Number.isFinite(incomingAt) && incomingAt >= existingAt)) {
+      const merged = { ...existing, ...item };
+      const preferNonEmpty = (key) => {
+        const incomingVal = merged?.[key];
+        const existingVal = existing?.[key];
+        if ((incomingVal === "" || incomingVal == null) && existingVal !== "" && existingVal != null) {
+          merged[key] = existingVal;
+        }
+      };
+      [
+        "candidateName",
+        "phoneNumber",
+        "emailId",
+        "linkedinUrl",
+        "location",
+        "currentCompany",
+        "currentDesignation",
+        "totalExperience",
+        "currentOrgTenure",
+        "highestEducation",
+        "currentCtc",
+        "expectedCtc",
+        "noticePeriod",
+        "offerInHand",
+        "lwdOrDoj",
+        "clientName",
+        "jdTitle",
+        "recruiterNotes",
+        "otherPointers",
+        "candidateStatus",
+        "status"
+      ].forEach(preferNonEmpty);
+      byId.set(id, merged);
+    }
+  });
+  return Array.from(byId.values());
+}
+
+function mergeCandidatesByFreshness(currentList = [], incomingList = []) {
+  const current = Array.isArray(currentList) ? currentList : [];
+  const incoming = Array.isArray(incomingList) ? incomingList : [];
+  const byId = new Map();
+  const rowTs = (row) => {
+    const t1 = Date.parse(String(row?.updated_at || row?.updatedAt || ""));
+    const t2 = Date.parse(String(row?.last_contact_at || row?.lastContactAt || ""));
+    const t3 = Date.parse(String(row?.assigned_at || row?.assignedAt || ""));
+    return Math.max(Number.isFinite(t1) ? t1 : 0, Number.isFinite(t2) ? t2 : 0, Number.isFinite(t3) ? t3 : 0);
+  };
+  current.forEach((item) => {
+    const id = String(item?.id || "").trim();
+    if (id) byId.set(id, item);
+  });
+  incoming.forEach((item) => {
+    const id = String(item?.id || "").trim();
+    if (!id) return;
+    const existing = byId.get(id);
+    if (!existing) {
+      byId.set(id, item);
+      return;
+    }
+    const existingTs = rowTs(existing);
+    const incomingTs = rowTs(item);
+    // Important: on equal timestamps keep current in-memory row to avoid stale flicker/race
+    // during rapid tab switches where an older fetch can arrive with same-second updated_at.
+    if (incomingTs > existingTs) byId.set(id, { ...existing, ...item });
+  });
+  return Array.from(byId.values());
+}
+
+function replaceCandidatesById(currentList = [], incomingList = []) {
+  const current = Array.isArray(currentList) ? currentList : [];
+  const incoming = Array.isArray(incomingList) ? incomingList : [];
+  const byId = new Map();
+  current.forEach((item) => {
+    const id = String(item?.id || "").trim();
+    if (id) byId.set(id, item);
+  });
+  incoming.forEach((item) => {
+    const id = String(item?.id || "").trim();
+    if (!id) return;
+    byId.set(id, item);
+  });
+  return Array.from(byId.values());
+}
+
+function upsertCandidatesById(currentList = [], incomingList = []) {
+  const current = Array.isArray(currentList) ? currentList : [];
+  const incoming = Array.isArray(incomingList) ? incomingList : [];
+  const byId = new Map();
+  current.forEach((item) => {
+    const id = String(item?.id || "").trim();
+    if (id) byId.set(id, item);
+  });
+  incoming.forEach((item) => {
+    const id = String(item?.id || "").trim();
+    if (!id) return;
+    byId.set(id, item);
+  });
+  return Array.from(byId.values());
+}
+
+function removeCandidatesById(currentList = [], ids = []) {
+  const current = Array.isArray(currentList) ? currentList : [];
+  const removeSet = new Set((Array.isArray(ids) ? ids : []).map((value) => String(value || "").trim()).filter(Boolean));
+  if (!removeSet.size) return current;
+  return current.filter((item) => !removeSet.has(String(item?.id || "").trim()));
+}
+
+function sortCapturedNotesForList(items = [], sortBy = "created") {
+  const sortMode = String(sortBy || "created").trim().toLowerCase();
+  const primaryKeys = sortMode === "updated"
+    ? ["updatedAt", "updated_at", "last_contact_at", "lastContactAt", "assigned_at", "assignedAt", "createdAt", "created_at"]
+    : ["createdAt", "created_at", "generatedAt"];
+  return (Array.isArray(items) ? items : []).slice().sort((a, b) => {
+    const aTime = Date.parse(String(primaryKeys.map((key) => a?.[key]).find((value) => String(value || "").trim()) || ""));
+    const bTime = Date.parse(String(primaryKeys.map((key) => b?.[key]).find((value) => String(value || "").trim()) || ""));
+    const diff = (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+    if (diff) return diff;
+    if (sortMode === "created") return 0;
+    return String(b?.id || "").localeCompare(String(a?.id || ""));
+  });
+}
+
+function sortApplicantsForList(items = [], sortBy = "created") {
+  const sortMode = String(sortBy || "created").trim().toLowerCase();
+  const primaryKeys = sortMode === "updated"
+    ? ["updatedAt", "updated_at", "assigned_at", "assignedAt", "last_contact_at", "lastContactAt", "createdAt", "created_at"]
+    : ["createdAt", "created_at", "appliedAt", "applied_at"];
+  return (Array.isArray(items) ? items : []).slice().sort((a, b) => {
+    const aTime = Date.parse(String(primaryKeys.map((key) => a?.[key]).find((value) => String(value || "").trim()) || ""));
+    const bTime = Date.parse(String(primaryKeys.map((key) => b?.[key]).find((value) => String(value || "").trim()) || ""));
+    const diff = (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+    if (diff) return diff;
+    if (sortMode === "created") return 0;
+    return String(b?.id || "").localeCompare(String(a?.id || ""));
+  });
+}
+
+function sortAssessmentsForList(items = [], sortBy = "updated") {
+  const sortMode = String(sortBy || "updated").trim().toLowerCase();
+  const getAssessmentCreatedAt = (assessment = {}) => String(
+    assessment?.createdAt ||
+    assessment?.created_at ||
+    assessment?.generatedAt ||
+    assessment?.generated_at ||
+    ""
+  ).trim();
+  const primaryKeys = sortMode === "created"
+    ? ["createdAt", "created_at", "generatedAt", "generated_at"]
+    : ["updatedAt", "updated_at", "createdAt", "created_at", "generatedAt"];
+  return (Array.isArray(items) ? items : []).slice().sort((a, b) => {
+    const aTime = Date.parse(sortMode === "created" ? getAssessmentCreatedAt(a) : String(primaryKeys.map((key) => a?.[key]).find((value) => String(value || "").trim()) || ""));
+    const bTime = Date.parse(sortMode === "created" ? getAssessmentCreatedAt(b) : String(primaryKeys.map((key) => b?.[key]).find((value) => String(value || "").trim()) || ""));
+    const diff = (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+    if (diff) return diff;
+    if (sortMode === "created") return 0;
+    return String(b?.id || "").localeCompare(String(a?.id || ""));
+  });
+}
+
+function applyAssessmentFiltersLocal(row = {}, filters = {}) {
+  const safeRow = row && typeof row === "object" ? row : {};
+  const safeFilters = filters && typeof filters === "object" ? filters : {};
+
+  const lane = String(safeFilters?.lane || "active").trim().toLowerCase();
+  const isArchived = Boolean(
+    safeRow?.archived
+    || safeRow?.is_archived
+    || safeRow?.isArchived
+    || safeRow?.archived_flag
+    || safeRow?.payload?.archived
+    || safeRow?.payload?.isArchived
+    || safeRow?.payload?.archived_flag
+    || String(safeRow?.archivedAt || safeRow?.archived_at || safeRow?.payload?.archivedAt || safeRow?.payload?.archived_at || "").trim()
+  );
+  if (lane === "archived") {
+    if (!isArchived) return false;
+  } else if (isArchived) {
+    return false;
+  }
+
+  const q = String(safeFilters?.q || "").trim().toLowerCase();
+  if (q) {
+    const haystack = [
+      safeRow?.candidateName,
+      safeRow?.candidate_name,
+      safeRow?.jdTitle,
+      safeRow?.jd_title,
+      safeRow?.clientName,
+      safeRow?.client_name,
+      safeRow?.recruiterName,
+      safeRow?.recruiter_name,
+      safeRow?.status,
+      safeRow?.candidateStatus,
+      safeRow?.candidate_status
+    ]
+      .map((value) => String(value || "").trim().toLowerCase())
+      .filter(Boolean)
+      .join(" ");
+    if (!haystack.includes(q)) return false;
+  }
+
+  const dateFrom = String(safeFilters?.dateFrom || "").trim();
+  const dateTo = String(safeFilters?.dateTo || "").trim();
+  if (dateFrom || dateTo) {
+    const rowDateRaw = String(
+      safeRow?.updatedAt ||
+      safeRow?.updated_at ||
+      safeRow?.createdAt ||
+      safeRow?.created_at ||
+      safeRow?.generatedAt ||
+      safeRow?.generated_at ||
+      ""
+    ).trim();
+    const rowDate = rowDateRaw ? new Date(rowDateRaw) : null;
+    if (!rowDate || Number.isNaN(rowDate.getTime())) return false;
+    if (dateFrom) {
+      const from = new Date(`${dateFrom}T00:00:00`);
+      if (!Number.isNaN(from.getTime()) && rowDate < from) return false;
+    }
+    if (dateTo) {
+      const to = new Date(`${dateTo}T23:59:59.999`);
+      if (!Number.isNaN(to.getTime()) && rowDate > to) return false;
+    }
+  }
+
+  const clients = Array.isArray(safeFilters?.clients) ? safeFilters.clients : [];
+  if (clients.length) {
+    const clientValue = String(safeRow?.clientName || safeRow?.client_name || "").trim();
+    if (!clients.includes(clientValue)) return false;
+  }
+
+  const jds = Array.isArray(safeFilters?.jds) ? safeFilters.jds : [];
+  if (jds.length) {
+    const jdValue = String(safeRow?.jdTitle || safeRow?.jd_title || "").trim();
+    if (!jds.includes(jdValue)) return false;
+  }
+
+  const recruiters = Array.isArray(safeFilters?.recruiters) ? safeFilters.recruiters : [];
+  if (recruiters.length) {
+    const recruiterValue = String(safeRow?.recruiterName || safeRow?.recruiter_name || "").trim();
+    if (!recruiters.includes(recruiterValue)) return false;
+  }
+
+  const outcomes = Array.isArray(safeFilters?.outcomes) ? safeFilters.outcomes : [];
+  if (outcomes.length) {
+    const outcomeValue = normalizeAssessmentStatusLabel(
+      safeRow?.candidateStatus || safeRow?.candidate_status || safeRow?.status || ""
+    ) || "No outcome";
+    if (!outcomes.includes(outcomeValue)) return false;
+  }
+
+  return true;
+}
+
+function resolveCandidateBucket(candidate = {}, eventType = "", context = {}) {
+  const safeCandidate = candidate && typeof candidate === "object" ? candidate : {};
+  const sourceValue = String(safeCandidate?.source || context?.source || "").trim().toLowerCase();
+  const sourcePlatformValue = String(safeCandidate?.sourcePlatform || context?.sourcePlatform || "").trim().toLowerCase();
+  const explicitBucket = String(
+    safeCandidate?.resolvedBucket
+    || safeCandidate?.resolved_bucket
+    || safeCandidate?.bucket
+    || context?.resolvedBucket
+    || context?.bucket
+    || ""
+  ).trim().toLowerCase();
+  const isHidden = Boolean(
+    safeCandidate?.hidden_from_captured
+    || safeCandidate?.hiddenFromCaptured
+    || context?.hiddenFromCaptured
+  );
+  const isArchived = Boolean(
+    safeCandidate?.archived
+    || safeCandidate?.is_archived
+    || safeCandidate?.isArchived
+    || context?.archived
+  );
+  const appliedToo = Boolean(
+    safeCandidate?.applied_too
+    || safeCandidate?.appliedToo
+    || safeCandidate?.application_source
+    || safeCandidate?.applicationSource
+    || safeCandidate?.applyAssignedToUserId
+    || safeCandidate?.applyAssignedToName
+    || safeCandidate?.applyAssignedVia
+    || safeCandidate?.apply_assigned_to_user_id
+    || safeCandidate?.apply_assigned_to_name
+    || safeCandidate?.apply_assigned_via
+    || context?.appliedToo
+  );
+  if (isHidden) {
+    return { bucket: "hidden", isCanonical: false, appliedToo, reason: "hidden" };
+  }
+  if (isArchived) {
+    return { bucket: "archived", isCanonical: false, appliedToo, reason: "archived" };
+  }
+  if (explicitBucket) {
+    const normalizedBucket = explicitBucket === "applicant" ? "applicants" : explicitBucket;
+    return {
+      bucket: normalizedBucket,
+      isCanonical: true,
+      appliedToo,
+      reason: "explicit"
+    };
+  }
+  if (appliedToo) {
+    return { bucket: "captured", isCanonical: true, appliedToo: true, reason: "applied_too" };
+  }
+  const sourceInbound = isInboundApplicantSource(sourceValue);
+  const sourcePlatformInbound = isInboundApplicantSource(sourcePlatformValue);
+  if (sourceInbound && sourcePlatformInbound) {
+    return { bucket: "applicants", isCanonical: true, appliedToo: false, reason: "inbound_applicant" };
+  }
+  if (!sourceInbound && sourcePlatformInbound) {
+    return { bucket: "captured", isCanonical: true, appliedToo: true, reason: "captured_applied_too" };
+  }
+  if (sourceInbound) {
+    return { bucket: "applicants", isCanonical: true, appliedToo: false, reason: "inbound_applicant" };
+  }
+  if (String(eventType || "").trim() === "candidate_assigned" && sourcePlatformInbound) {
+    return { bucket: "captured", isCanonical: true, appliedToo: true, reason: "candidate_assigned_inbound" };
+  }
+  return { bucket: "captured", isCanonical: true, appliedToo: false, reason: "default_captured" };
+}
+
+function applyCandidateChange(candidate = {}, resolved = {}, source = "MUTATION_SUCCESS", context = {}) {
+  const safeCandidate = candidate && typeof candidate === "object" ? normalizeApplicantVisibleRow(candidate) : {};
+  const candidateId = String(safeCandidate?.id || safeCandidate?.candidateId || resolved?.candidateId || "").trim();
+  if (!candidateId) return null;
+  const {
+    state: currentState = {},
+    setState: setCurrentState = null,
+    setCapturedOptionPool: setCurrentCapturedOptionPool = null,
+    setCapturedListItems: setCurrentCapturedListItems = null,
+    applicantFiltersApplied: currentApplicantFiltersApplied = {},
+    candidateFiltersApplied: currentCandidateFiltersApplied = {},
+    applicantSortBy: currentApplicantSortBy = "created",
+    capturedSortBy: currentCapturedSortBy = "created",
+    applicantUser = null,
+    user = null
+  } = context && typeof context === "object" ? context : {};
+  const currentApplicantUser = applicantUser || user || null;
+  const existingApplicantRow = (Array.isArray(currentState?.applicantListItems) ? currentState.applicantListItems : []).find((item) => String(item?.id || "").trim() === candidateId)
+    || (Array.isArray(currentState?.applicants) ? currentState.applicants : []).find((item) => String(item?.id || "").trim() === candidateId)
+    || null;
+  const existingCapturedRow = (Array.isArray(currentState?.candidates) ? currentState.candidates : []).find((item) => String(item?.id || "").trim() === candidateId)
+    || (Array.isArray(currentState?.databaseCandidates) ? currentState.databaseCandidates : []).find((item) => String(item?.id || "").trim() === candidateId)
+    || null;
+  const mergedCandidate = normalizeApplicantVisibleRow({
+    ...(existingCapturedRow || {}),
+    ...(existingApplicantRow || {}),
+    ...safeCandidate
+  });
+  const nextResolved = resolved && typeof resolved === "object" ? resolved : resolveCandidateBucket(mergedCandidate, source);
+  const normalizedBucket = String(nextResolved?.bucket || "").trim().toLowerCase() || "captured";
+  const isCapturedBucket = normalizedBucket === "captured";
+  const isApplicantBucket = normalizedBucket === "applicants";
+  const preserveExistingApplicantMembership = Boolean(existingApplicantRow) && normalizedBucket !== "hidden" && normalizedBucket !== "archived";
+  const treatAsApplicantBucket = isApplicantBucket || preserveExistingApplicantMembership;
+  const isVisibleInCaptured = isCapturedBucket && isCapturedRowVisibleInCurrentView(mergedCandidate, currentCandidateFiltersApplied, currentApplicantUser);
+  const isVisibleInApplicants = treatAsApplicantBucket && isApplicantRowVisibleInCurrentView(mergedCandidate, currentApplicantFiltersApplied, currentApplicantUser, mergedCandidate, null);
+  const updatedAt = String(mergedCandidate?.updated_at || mergedCandidate?.updatedAt || new Date().toISOString()).trim() || new Date().toISOString();
+  const patchRow = (item) => {
+    if (!item || String(item?.id || "").trim() !== candidateId) return item;
+    const nextItem = {
+      ...item,
+      ...mergedCandidate,
+      updated_at: updatedAt,
+      updatedAt
+    };
+    if (nextResolved?.appliedToo === true) {
+      nextItem.applied_too = true;
+      nextItem.appliedToo = true;
+    }
+    if (nextResolved?.bucket === "applicants") {
+      nextItem.sourcePlatform = String(nextItem.sourcePlatform || nextItem.source || "").trim();
+    }
+    nextItem.last_synced_source = String(source || "").trim();
+    return nextItem;
+  };
+  const patchVisibleList = (items, keepVisible, sortFn, deriveVisibility = null) => {
+    const currentItems = Array.isArray(items) ? items : [];
+    let nextKeepVisible = keepVisible;
+    if (!nextKeepVisible && typeof deriveVisibility === "function") {
+      const existingItem = currentItems.find((item) => String(item?.id || "").trim() === candidateId) || null;
+      if (existingItem) {
+        nextKeepVisible = Boolean(deriveVisibility(existingItem));
+      }
+    }
+    const nextItems = nextKeepVisible
+      ? upsertCandidatesById(currentItems, [patchRow(mergedCandidate)])
+      : removeCandidatesById(currentItems, [candidateId]);
+    return nextKeepVisible ? sortFn(nextItems) : nextItems;
+  };
+  if (typeof setCurrentState === "function") setCurrentState((current) => ({
+    ...current,
+    candidates: upsertCandidatesById(current.candidates, [patchRow(mergedCandidate)]),
+    databaseCandidates: upsertCandidatesById(current.databaseCandidates, [patchRow(mergedCandidate)]),
+    applicants: patchVisibleList(
+      current.applicants,
+      isVisibleInApplicants,
+      (items) => sortApplicantsForList(items, currentApplicantSortBy),
+      (existingItem) => {
+        const mergedExistingApplicant = normalizeApplicantVisibleRow({ ...existingItem, ...mergedCandidate });
+        const resolvedExistingApplicant = resolveCandidateBucket(mergedExistingApplicant, source);
+        const bucket = String(resolvedExistingApplicant?.bucket || "").trim().toLowerCase();
+        if (bucket !== "applicants") return false;
+        return isApplicantRowVisibleInCurrentView(
+          mergedExistingApplicant,
+          currentApplicantFiltersApplied,
+          currentApplicantUser,
+          mergedExistingApplicant,
+          null
+        );
+      }
+    ),
+    applicantListItems: patchVisibleList(
+      current.applicantListItems,
+      isVisibleInApplicants,
+      (items) => sortApplicantsForList(items, currentApplicantSortBy),
+      (existingItem) => {
+        const mergedExistingApplicant = normalizeApplicantVisibleRow({ ...existingItem, ...mergedCandidate });
+        const resolvedExistingApplicant = resolveCandidateBucket(mergedExistingApplicant, source);
+        const bucket = String(resolvedExistingApplicant?.bucket || "").trim().toLowerCase();
+        if (bucket !== "applicants") return false;
+        return isApplicantRowVisibleInCurrentView(
+          mergedExistingApplicant,
+          currentApplicantFiltersApplied,
+          currentApplicantUser,
+          mergedExistingApplicant,
+          null
+        );
+      }
+    )
+  }));
+  if (typeof setCurrentCapturedOptionPool === "function") setCurrentCapturedOptionPool((current) => patchVisibleList(current, isVisibleInCaptured, (items) => sortCapturedNotesForList(items, currentCapturedSortBy)));
+  if (typeof setCurrentCapturedListItems === "function") setCurrentCapturedListItems((current) => patchVisibleList(current, isVisibleInCaptured, (items) => sortCapturedNotesForList(items, currentCapturedSortBy)));
+  if (typeof console?.debug === "function") {
+    console.debug("[candidate-application-resolution]", {
+      candidateId,
+      resolvedBucket: normalizedBucket,
+      preservedApplicantMembership: preserveExistingApplicantMembership,
+      appliedToo: Boolean(nextResolved?.appliedToo),
+      applicationSource: String(mergedCandidate?.application_source || mergedCandidate?.applicationSource || mergedCandidate?.sourcePlatform || mergedCandidate?.source || "").trim(),
+      originalOwnerId: String(mergedCandidate?.recruiter_id || mergedCandidate?.assigned_to_user_id || mergedCandidate?.assignedToUserId || "").trim(),
+      applicationAssignedToUserId: String(mergedCandidate?.applyAssignedToUserId || mergedCandidate?.apply_assigned_to_user_id || mergedCandidate?.assigned_to_user_id || "").trim(),
+      insertedNewApplicant: isApplicantBucket,
+      updatedExistingCaptured: isCapturedBucket
+    });
+  }
+  return nextResolved;
+}
+
+async function syncPostCandidateMutation({
+  candidate = null,
+  candidateId = "",
+  eventType = "candidate_changed",
+  source = "MUTATION_SUCCESS",
+  refreshList = false,
+  context = {}
+} = {}) {
+  const safeCandidate = candidate && typeof candidate === "object" ? candidate : null;
+  const safeCandidateId = String(candidateId || safeCandidate?.id || safeCandidate?.candidateId || "").trim();
+  if (!safeCandidate && !safeCandidateId) return null;
+  const resolved = resolveCandidateBucket(safeCandidate || { id: safeCandidateId }, eventType, { source });
+  applyCandidateChange(safeCandidate || { id: safeCandidateId }, resolved, source, context);
+  if (refreshList) {
+    await reloadCandidatesSlice({
+      includeDatabase: location?.pathname === "/candidates"
+    });
+  }
+  return resolved;
+}
+
+function isCapturedRowVisibleInCurrentView(row = {}, filters = {}, user = null) {
+  if (!row) return false;
+  const isAdmin = String(user?.role || "").toLowerCase() === "admin";
+  const currentUserId = String(user?.id || "").trim();
+  const currentUserName = String(user?.name || "").trim().toLowerCase();
+  const sourceValue = String(row?.source || "").trim();
+  if (["website_apply", "hosted_apply", "google_sheet", "website", "hosted"].includes(sourceValue)) return false;
+  const isConverted = Boolean(row?.used_in_assessment) || Boolean(String(row?.assessment_id || row?.assessmentId || "").trim());
+  const isHidden = row?.hidden_from_captured === true;
+  const stateValue = isHidden ? "Inactive" : (isConverted ? "Converted" : "Active");
+  const activeStates = Array.isArray(filters?.activeStates) ? filters.activeStates : [];
+  if (activeStates.length) {
+    if (!activeStates.includes(stateValue)) return false;
+  } else if (stateValue !== "Active") {
+    return false;
+  }
+  const createdAt = String(row?.created_at || row?.createdAt || "").slice(0, 10);
+  if (filters?.dateFrom && createdAt && createdAt < filters.dateFrom) return false;
+  if (filters?.dateTo && createdAt && createdAt > filters.dateTo) return false;
+  if (Array.isArray(filters?.clients) && filters.clients.length) {
+    const value = String(row?.client_name || "Unassigned").trim();
+    if (!filters.clients.includes(value)) return false;
+  }
+  if (Array.isArray(filters?.jds) && filters.jds.length) {
+    const value = String(row?.jd_title || row?.assigned_jd_title || "").trim();
+    if (!filters.jds.includes(value)) return false;
+  }
+  if (Array.isArray(filters?.assignedTo) && filters.assignedTo.length) {
+    const value = String(row?.assigned_to_name || "Unassigned").trim();
+    if (!filters.assignedTo.includes(value)) return false;
+  }
+  if (Array.isArray(filters?.capturedBy) && filters.capturedBy.length) {
+    const value = String(row?.recruiter_name || row?.assigned_by_name || "Unknown").trim();
+    if (!filters.capturedBy.includes(value)) return false;
+  }
+  if (Array.isArray(filters?.sources) && filters.sources.length) {
+    const value = String(row?.source || "").trim();
+    if (!filters.sources.includes(value)) return false;
+  }
+  if (Array.isArray(filters?.outcomes) && filters.outcomes.length) {
+    const value = String(row?.last_contact_outcome || "").trim() || "No outcome";
+    if (!filters.outcomes.includes(value)) return false;
+  }
+  if (String(filters?.q || "").trim()) {
+    const q = String(filters.q || "").toLowerCase();
+    const hay = [
+      row?.name,
+      row?.company,
+      row?.role,
+      row?.jd_title,
+      row?.client_name,
+      row?.assigned_to_name,
+      row?.recruiter_name,
+      row?.source,
+      row?.phone,
+      row?.email,
+      row?.notes,
+      row?.recruiter_context_notes,
+      row?.other_pointers
+    ].filter(Boolean).join(" ").toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  const view = String(filters?.view || "all").trim();
+  const capturedId = String(row?.recruiter_id || row?.recruiterId || "").trim();
+  const capturedName = String(row?.recruiter_name || row?.recruiterName || "").trim().toLowerCase();
+  const assignedId = String(row?.assigned_to_user_id || row?.assignedToUserId || "").trim();
+  const assignedName = String(row?.assigned_to_name || row?.assignedToName || "").trim().toLowerCase();
+  const firstAssignedToId = String(row?.first_assigned_to_user_id || row?.firstAssignedToUserId || "").trim();
+  if (view !== "all" && user) {
+    if (view === "added_by_me") {
+      const byId = currentUserId && capturedId && capturedId === currentUserId;
+      const byName = currentUserName && capturedName && capturedName === currentUserName;
+      if (!byId && !byName) return false;
+    } else if (view === "assigned_to_me") {
+      const toMe = (currentUserId && assignedId === currentUserId) || (currentUserName && assignedName === currentUserName);
+      const firstToMe = (currentUserId && firstAssignedToId === currentUserId) || false;
+      if (!toMe || !firstToMe) return false;
+    } else if (view === "reassigned_to_me") {
+      const toMe = (currentUserId && assignedId === currentUserId) || (currentUserName && assignedName === currentUserName);
+      const firstToMe = (currentUserId && firstAssignedToId === currentUserId) || false;
+      if (!toMe || firstToMe) return false;
+    }
+    return true;
+  }
+  if (!isAdmin) {
+    const ownsRow = (currentUserId && (capturedId === currentUserId || assignedId === currentUserId))
+      || (currentUserName && (capturedName === currentUserName || assignedName === currentUserName));
+    if (!ownsRow) return false;
+  }
+  return true;
+}
+
+function isCapturedRowOwnedByCurrentView(row = {}, user = null) {
+  if (!row || !user) return false;
+  const isAdmin = String(user?.role || "").toLowerCase() === "admin";
+  if (isAdmin) return true;
+  const currentUserId = String(user?.id || "").trim();
+  const currentUserName = String(user?.name || "").trim().toLowerCase();
+  const capturedId = String(row?.recruiter_id || row?.recruiterId || "").trim();
+  const capturedName = String(row?.recruiter_name || row?.recruiterName || "").trim().toLowerCase();
+  const assignedId = String(row?.assigned_to_user_id || row?.assignedToUserId || "").trim();
+  const assignedName = String(row?.assigned_to_name || row?.assignedToName || "").trim().toLowerCase();
+  const compact = (value) => String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const firstToken = (value) => String(value || "").trim().toLowerCase().split(/\s+/).filter(Boolean)[0] || "";
+  const namesLooselyMatch = (left, right) => {
+    const a = compact(left);
+    const b = compact(right);
+    if (!a || !b) return false;
+    if (a === b) return true;
+    const aFirst = firstToken(a);
+    const bFirst = firstToken(b);
+    return Boolean(
+      (aFirst && aFirst === bFirst) ||
+      (a && b && (a.startsWith(b) || b.startsWith(a) || a.includes(b) || b.includes(a)))
+    );
+  };
+  return Boolean(
+    (currentUserId && (capturedId === currentUserId || assignedId === currentUserId)) ||
+    (currentUserName && (namesLooselyMatch(capturedName, currentUserName) || namesLooselyMatch(assignedName, currentUserName)))
+  );
+}
+
+function syncAssessmentNotesWithStatus(currentNotes, statusValue, atValue = "", extra = {}) {
+  const lines = String(currentNotes || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const nextLine = buildAssessmentStatusNoteLine(statusValue, atValue, extra).trim();
+  if (!nextLine) return lines.join("\n");
+  if (lines.length && isAssessmentStatusLine(lines[lines.length - 1])) {
+    lines[lines.length - 1] = nextLine;
+  } else {
+    lines.push(nextLine);
+  }
+  return lines.join("\n");
+}
+
+function formatReadableUpdateText(rawText) {
+  const raw = String(rawText || "").trim();
+  if (!raw) return "";
+  const lines = raw
+    .split(/\r?\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return "";
+
+  return lines
+    .map((line) => {
+      let text = String(line || "")
+        .replace(/\s+/g, " ")
+        .replace(/\s*,\s*(call(?:\s+next|\s+later|\s+back)?|callback|follow[\s-]*up|connect|speak|talk|revert|check)\b/gi, ". $1")
+        .replace(/\s*,\s*(candidate|he|she)\b/gi, ". $1")
+        .trim();
+      if (!text) return "";
+      text = text
+        .replace(/\bhe was busy\b/i, "Candidate was busy")
+        .replace(/\bshe was busy\b/i, "Candidate was busy")
+        .replace(/\bbusy,\s*call\b/i, "Candidate was busy. Call")
+        .replace(/\bcall next on\b/i, "Follow up on")
+        .replace(/\bcall on\b/i, "Follow up on")
+        .replace(/\bcall next\b/i, "Follow up next")
+        .replace(/\bcallback on\b/i, "Follow up on")
+        .replace(/\bfollowup\b/gi, "follow up");
+      text = toSentenceCasePreservingContent(text);
+      if (!/[.!?]$/.test(text)) text = `${text}.`;
+      return text;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function appendReadableUpdateNote(existingText, incomingText) {
+  const existing = String(existingText || "").trim();
+  const formattedIncoming = formatReadableUpdateText(incomingText);
+  if (!formattedIncoming) return existing;
+  const existingLines = existing.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const incomingLines = formattedIncoming.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const merged = [...existingLines];
+  incomingLines.forEach((line) => {
+    if (!merged.some((existingLine) => existingLine.toLowerCase() === line.toLowerCase())) merged.push(line);
+  });
+  return merged.join("\n");
+}
+
+function formatAttemptLinesWithTimestamp(text, atValue) {
+  const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) return "";
+  const stamp = atValue ? new Date(atValue).toLocaleString() : "";
+  return lines.map((line) => (/^\[[^\]]+\]\s/.test(line) ? line : `${stamp ? `[${stamp}] ` : ""}${line}`)).join("\n");
+}
+
+function buildDefaultAttemptRemark(outcome) {
+  const value = String(outcome || "").trim();
+  if (!value) return "";
+  if (value === "JD shared") return "JD shared";
+  if (value === "Duplicate") return "Duplicate";
+  return "";
+}
+
+function buildAttemptHistoryLine({ outcome = "", remarks = "", followUpAt = "", atValue = "" }) {
+  const bits = [String(outcome || "").trim()].filter(Boolean);
+  const cleanedRemarks = String(remarks || "").trim();
+  if (cleanedRemarks) bits.push(`Remarks: ${cleanedRemarks}`);
+  if (followUpAt) bits.push(`Follow-up: ${new Date(followUpAt).toLocaleString()}`);
+  const line = bits.join(" | ").trim();
+  if (!line) return "";
+  const stamp = atValue ? new Date(atValue).toLocaleString() : "";
+  return stamp ? `[${stamp}] ${line}` : line;
+}
+
+function appendAttemptHistory(existingText, nextLine) {
+  const existingLines = String(existingText || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const line = String(nextLine || "").trim();
+  if (!line) return existingLines.join("\n");
+  return [...existingLines, line].join("\n");
+}
+
+function extractLatestAttemptLine(text) {
+  const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return lines.length ? lines[lines.length - 1] : "";
+}
+
+function extractAttemptRemarks(text) {
+  const value = String(text || "").trim();
+  if (!value) return "";
+  // Support both pipe-separated and newline-separated storage:
+  // "Outcome | Remarks: ... | Follow-up: ..."
+  // "Outcome\nRemarks: ...\nFollow-up: ..."
+  const remarksMatch = value.match(/(?:^|\||\n)\s*remarks:\s*(.+?)(?:\s*(?:\|\s*follow-up:|\n\s*follow-up:)|\s*$)/i);
+  return String(remarksMatch?.[1] || "").trim();
+}
+
+function extractAttemptManualRemarksFromNotes(notes, outcome = "") {
+  const raw = String(notes || "").trim();
+  if (!raw) return "";
+  const explicit = extractAttemptRemarks(raw);
+  if (explicit) return explicit;
+  const firstLine = raw.split(/\r?\n/).map((line) => line.trim()).find(Boolean) || "";
+  if (!firstLine) return "";
+  if (firstLine.toLowerCase() === String(outcome || "").trim().toLowerCase()) return "";
+  return "";
+}
+
+function normalizeRecruiterMergeBase(item) {
+  const source = item || {};
+  const base = {
+    name: String(source.name || source.candidateName || "").trim(),
+    company: String(source.company || source.currentCompany || "").trim(),
+    role: String(source.role || source.currentDesignation || "").trim(),
+    experience: String(source.experience || source.totalExperience || "").trim(),
+    location: String(source.location || "").trim(),
+    current_ctc: normalizeParsedRecruiterValue(source.current_ctc || source.currentCtc || ""),
+    expected_ctc: normalizeParsedRecruiterValue(source.expected_ctc || source.expectedCtc || ""),
+    notice_period: normalizeParsedRecruiterValue(source.notice_period || source.noticePeriod || ""),
+    lwd_or_doj: sanitizeLwdOrDojValue(source.lwd_or_doj || source.lwdOrDoj || ""),
+    offer_in_hand: normalizeParsedRecruiterValue(source.offer_in_hand || source.offerInHand || ""),
+    phone: String(source.phone || source.phoneNumber || "").trim(),
+    email: String(source.email || source.emailId || "").trim(),
+    linkedin: String(source.linkedin || source.linkedinUrl || "").trim(),
+    highest_education: String(source.highest_education || source.highestEducation || "").trim(),
+    next_action: ""
+  };
+  const savedRecruiterNote = String(source.recruiter_context_notes || source.recruiterContextNotes || "").trim();
+  if (!savedRecruiterNote) return base;
+  const savedFallbacks = extractRecruiterNoteFieldFallbacks(savedRecruiterNote);
+  const savedMentionedKeys = detectRecruiterMentionedKeys(savedRecruiterNote);
+  Object.keys(savedFallbacks).forEach((key) => {
+    if (savedMentionedKeys.has(key) && String(savedFallbacks[key] || "").trim()) {
+      base[key] = String(savedFallbacks[key] || "").trim();
+    }
+  });
+  return base;
+}
+
+function normalizeRecruiterConflictValue(key, value) {
+  let normalized = String(value || "")
+    .trim()
+    .replace(/^[\s\-.\u2022\u2023\u25AA\u25FC\u25A0\u25CF:]+/, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s+\./g, ".")
+    .toLowerCase();
+  normalized = normalized.replace(/^[^a-z0-9]+/i, "").trim();
+  if (!normalized) return "";
+  if (["current_ctc", "expected_ctc", "offer_in_hand"].includes(key)) {
+    const amount = normalized.match(/(\d+(?:\.\d+)?)/);
+    if (amount) return `${Number(amount[1])}l`;
+  }
+  if (key === "notice_period") {
+    const days = normalized.match(/(\d+(?:\.\d+)?)\s*(?:days?|d)\b/);
+    if (days) return `${Number(days[1])}days`;
+    const months = normalized.match(/(\d+(?:\.\d+)?)\s*(?:months?|m)\b/);
+    if (months) return `${Number(months[1])}months`;
+    normalized = normalized.replace(/^notice\s*period\s*(?:is|:|-)?\s*/i, "").trim();
+  }
+  if (key === "lwd_or_doj") normalized = normalized.replace(/^(lwd|doj|last working day)\s*(?:is|:|-)?\s*/i, "").trim();
+  return normalized.replace(/[.\s]+$/g, "");
+}
+
+function isMeaningfulRecruiterConflict(key, fromValue, toValue) {
+  const fromNormalized = normalizeRecruiterConflictValue(key, fromValue);
+  const toNormalized = normalizeRecruiterConflictValue(key, toValue);
+  return Boolean(fromNormalized && toNormalized && fromNormalized !== toNormalized);
+}
+
+function extractRecruiterNoteFieldFallbacks(rawNote = "") {
+  const text = String(rawNote || "").trim();
+  if (!text) return { current_ctc: "", expected_ctc: "", notice_period: "", lwd_or_doj: "", offer_in_hand: "" };
+  const findLineValue = (patterns) => {
+    const lines = text.split(/\r?\n/).map((line) => String(line || "").trim()).filter(Boolean);
+    for (const line of lines) {
+      for (const pattern of patterns) {
+        const match = line.match(pattern);
+        if (match?.[1]) {
+          const extracted = normalizeParsedRecruiterValue(match[1]);
+          return extracted;
+        }
+      }
+    }
+    return "";
+  };
+  const lwdExplicitPatterns = [
+    /^\s*lwd(?:\s*is|:)?\s*([^\n]+)/i,
+    /^\s*lwd\s*-\s*([^\n]+)/i,
+    /^\s*doj(?:\s*is|:)?\s*([^\n]+)/i,
+    /^\s*doj\s*-\s*([^\n]+)/i,
+    /^\s*last\s*working\s*day(?:\s*is|:)?\s*([^\n]+)/i
+  ];
+  const lwdHeuristicPatterns = [
+    /\blwd\s*(?:as|is|=)\s*([^\n]+)/i,
+    /\bdoj\s*(?:as|is|=)\s*([^\n]+)/i,
+    /\bserving\s*notice.*?\blwd\s*(?:as|is|=)?\s*([^\n]+)/i
+  ];
+return {
+  current_ctc: findLineValue([
+    /^\s*current\s*ctc(?:\s*is|:)?\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
+    /^\s*current\s*ctc\s*-\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
+    /^\s*current\s*[-:]\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
+    /\bcurrent\s*ctc\s*is\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
+    /\bcurrent\s*ctc\s*(?:as|=)\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i
+  ]),
+  expected_ctc: findLineValue([
+    /^\s*expected\s*ctc(?:\s*is|:)?\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
+    /^\s*expected\s*ctc\s*-\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
+    /^\s*expected\s*[-:]\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
+    /^\s*expectation(?:\s*is|:)?\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
+    /^\s*expectation\s*-\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
+    /\bexpected\s*ctc\s*is\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i,
+    /\bexpectation\s*(?:is|as|=)\s*(\d+(?:\.\d+)?\s*(?:lpa|l|lac|lakh|lakhs)?)\.?$/i
+  ]),
+    notice_period: findLineValue([
+      /^\s*notice\s*period(?:\s*is|:)?\s*([^\n]+)/i,
+      /^\s*notice\s*period\s*-\s*([^\n]+)/i,
+      /^\s*notice\s*[-:]\s*([^\n]+)/i,
+      /^\s*np(?:\s*is|:)?\s*([^\n]+)/i
+    ]),
+    lwd_or_doj: sanitizeLwdOrDojValue(findLineValue(lwdExplicitPatterns) || findLineValue(lwdHeuristicPatterns)),
+    offer_in_hand: findLineValue([
+      /^\s*offer\s*in\s*hand(?:\s*is|:)?\s*([^\n]+)/i,
+      /^\s*offer\s*in\s*hand\s*-\s*([^\n]+)/i,
+      /^\s*offers?\s*in\s*hand(?:\s*is|:)?\s*([^\n]+)/i,
+      /\bholds?\s+an?\s+offer\s+of\s*([^\n,;.]+)/i,
+      /\bgot\s+an?\s+offer\s+of\s*([^\n,;.]+)/i,
+      /\boffer\s+of\s*([^\n,;.]+)/i
+    ])
+  };
+}
+
+function detectRecruiterMentionedKeys(rawNote = "") {
+  const lines = String(rawNote || "")
+    .split(/\r?\n/)
+    .map((line) => String(line || "").trim().toLowerCase())
+    .filter(Boolean);
+  const mentioned = new Set();
+  lines.forEach((line) => {
+    if (/^current\s*ctc\b|^current\s*[-:]/i.test(line)) mentioned.add("current_ctc");
+    if (/^expected\s*ctc\b|^expected\s*[-:]|^expectation\b/i.test(line)) mentioned.add("expected_ctc");
+    if (/^notice\s*period\b|^np\b/i.test(line)) mentioned.add("notice_period");
+    if (/^lwd\b|^doj\b|^last\s*working\s*day\b|\bserving\s*notice\b.*\blwd\b/i.test(line)) mentioned.add("lwd_or_doj");
+    if (/^offer\s*in\s*hand\b|^offers?\s*in\s*hand\b|\bholds?\s+an?\s+offer\b|\bgot\s+an?\s+offer\b|\boffer\s+of\b/i.test(line)) mentioned.add("offer_in_hand");
+    if (/^location\b/i.test(line)) mentioned.add("location");
+    if (/^communication\b/i.test(line)) mentioned.add("communication");
+    if (/^working\s*model\b/i.test(line)) mentioned.add("working_model");
+    if (/^shift\b/i.test(line)) mentioned.add("shift");
+    if (/^relocation\b/i.test(line)) mentioned.add("relocation");
+  });
+  return mentioned;
+}
+
+function buildRecruiterMerge(item, parsed, rawNote = "") {
+  const base = normalizeRecruiterMergeBase(item);
+  const incoming = normalizeRecruiterMergeBase(parsed);
+  const fallbacks = extractRecruiterNoteFieldFallbacks(rawNote);
+  const mentionedKeys = detectRecruiterMentionedKeys(rawNote);
+  const merged = {};
+  const overwritten = [];
+  for (const key of Object.keys(base)) {
+    const explicitIncoming = fallbacks[key] || (mentionedKeys.has(key) ? incoming[key] || "" : "");
+    const nextIncoming = explicitIncoming || "";
+    merged[key] = nextIncoming || base[key] || "";
+    if (nextIncoming && base[key] && isMeaningfulRecruiterConflict(key, base[key], nextIncoming)) {
+      overwritten.push({ key, from: base[key], to: nextIncoming });
+    }
+  }
+  merged.notes_append = String(rawNote || "").trim();
+  return { base, incoming, fallbacks, merged, overwritten, mentionedKeys: Array.from(mentionedKeys) };
+}
+
+function buildRecruiterFieldPatchFromMerge(mergedPatch) {
+  const extractedFieldPatch = {};
+  // Structured fields are authoritative in recruiter-note modal, including explicit clears.
+  ["current_ctc", "expected_ctc", "notice_period", "lwd_or_doj", "offer_in_hand"].forEach((key) => {
+    const value = String(mergedPatch?.merged?.[key] ?? "").trim();
+    extractedFieldPatch[key] = key === "lwd_or_doj" ? sanitizeLwdOrDojValue(value) : value;
+  });
+  // Keep non-structured extracted fields only when parser has a value.
+  ["company", "role", "experience", "location", "phone", "email", "linkedin", "highest_education"].forEach((key) => {
+    const value = String(mergedPatch?.incoming?.[key] || mergedPatch?.fallbacks?.[key] || "").trim();
+    if (!value) return;
+    extractedFieldPatch[key] = value;
+  });
+  return extractedFieldPatch;
+}
+
+function formatRecruiterOverwriteLabel(key) {
+  const labels = {
+    name: "Candidate",
+    company: "Company",
+    role: "Role",
+    experience: "Experience",
+    location: "Location",
+    current_ctc: "Current CTC",
+    expected_ctc: "Expected CTC",
+    notice_period: "Notice period",
+    lwd_or_doj: "LWD / DOJ",
+    offer_in_hand: "Offer in hand",
+    phone: "Phone",
+    email: "Email",
+    linkedin: "LinkedIn",
+    highest_education: "Highest education",
+    next_action: "Next action"
+  };
+  return labels[key] || key;
+}
+
+function api(path, token, method = "GET", body = null) {
+  function sanitizeApiErrorMessage(message, statusCode) {
+    const raw = normalizeMojibakeSymbols(String(message || "").trim());
+    if (!raw) return statusCode ? `HTTP ${statusCode}` : "Request failed.";
+    const lowered = raw.toLowerCase();
+    const looksLikeHtml = lowered.includes("<!doctype") || lowered.includes("<html") || lowered.includes("<head") || lowered.includes("<body");
+    if (looksLikeHtml) {
+      if (statusCode === 502) return "Temporary gateway error (502). Please retry in a minute.";
+      if (statusCode === 503) return "Service temporarily unavailable (503). Please retry in a minute.";
+      return statusCode ? `Request failed (HTTP ${statusCode}). Please retry.` : "Request failed. Please retry.";
+    }
+    // Avoid dumping full HTML / stack traces into UI status banners.
+    if (raw.length > 350) return `${raw.slice(0, 350)}...`;
+    return raw;
+  }
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const controller = new AbortController();
+  const safeMethod = String(method || "GET").toUpperCase();
+  const safePath = String(path || "");
+  // Avoid indefinite "Saving..." states on network/server issues.
+  // Assessments/candidate writes can take longer, so give them a bigger budget.
+  const timeoutMs =
+    safeMethod !== "GET" && /\/company\/assessments\b/.test(safePath) ? 60000
+      : safeMethod !== "GET" ? 45000
+        : 30000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(path, {
+    method,
+    headers,
+    signal: controller.signal,
+    body: body ? JSON.stringify(body) : null
+  })
+    .then(async (response) => {
+      const text = await response.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { ok: false, error: text || `HTTP ${response.status}` };
+      }
+      if (!response.ok || data?.ok === false) {
+        throw new Error(sanitizeApiErrorMessage(data?.error || `HTTP ${response.status}`, response.status));
+      }
+      return sanitizeMojibakeDeep(data.result || data);
+    })
+    .catch((error) => {
+      if (String(error?.name || "") === "AbortError") {
+        throw new Error(`Request timed out (${Math.round(timeoutMs / 1000)}s). Please refresh and try again.`);
+      }
+      throw new Error(normalizeMojibakeSymbols(String(error?.message || error || "Request failed")));
+    })
+    .finally(() => clearTimeout(timer));
+}
+
+function copyText(value) {
+  return navigator.clipboard.writeText(String(value || ""));
+}
+
+async function copyHtmlAndText(htmlValue, textValue) {
+  const html = String(htmlValue || "");
+  const text = String(textValue || "");
+  if (navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([text], { type: "text/plain" })
+        })
+      ]);
+      return;
+    } catch (error) {
+      console.warn("Falling back to plain-text clipboard copy.", error);
+    }
+  }
+  await copyText(text);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function decodeHtmlEntities(value = "") {
+  try {
+    const container = document.createElement("textarea");
+    container.innerHTML = String(value || "");
+    return String(container.value || "");
+  } catch {
+    return String(value || "");
+  }
+}
+
+function htmlToPlainTextFallback(html) {
+  const decoded = decodeHtmlEntities(html);
+  return String(decoded || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>\s*<p[^>]*>/gi, "\n")
+    .replace(/<\/div>\s*<div[^>]*>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "\n- ")
+    .replace(/<\/li>/gi, "")
+    .replace(/<\/(ul|ol)>/gi, "\n")
+    .replace(/<(ul|ol)[^>]*>/gi, "\n")
+    .replace(/<\/h[1-6]>\s*<h[1-6][^>]*>/gi, "\n")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+function looksLikeHtmlSignature(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  return /<\/?[a-z][\s\S]*>/i.test(raw) || /&(?:lt|gt|amp|quot|#39);/i.test(raw);
+}
+
+function normalizeLoadedSignatureValue(signatureHtml = "", signatureText = "") {
+  const rawHtml = String(signatureHtml || "").trim();
+  const rawText = String(signatureText || "").trim();
+  if (rawHtml) {
+    return {
+      signatureHtml: rawHtml,
+      signatureText: htmlToPlainTextFallback(rawHtml)
+    };
+  }
+  if (!rawText) {
+    return { signatureHtml: "", signatureText: "" };
+  }
+  if (looksLikeHtmlSignature(rawText)) {
+    const decoded = decodeHtmlEntities(rawText);
+    return {
+      signatureHtml: decoded,
+      signatureText: htmlToPlainTextFallback(decoded)
+    };
+  }
+  return {
+    signatureHtml: "",
+    signatureText: rawText
+  };
+}
+
+function signatureHtmlForMail(signatureHtml = "", signatureText = "") {
+  const normalized = normalizeLoadedSignatureValue(signatureHtml, signatureText);
+  if (String(normalized.signatureHtml || "").trim()) {
+    return String(normalized.signatureHtml || "").trim();
+  }
+  const plainText = String(normalized.signatureText || "").trim();
+  return plainText ? escapeHtml(plainText).replace(/\n/g, "<br/>") : "";
+}
+
+function mergeLoadedMailSettings(current = {}, result = {}) {
+  const currentSignatureHtml = String(current?.signatureHtml || "").trim();
+  const currentSignatureText = String(current?.signatureText || "").trim();
+  const loadedSignature = normalizeLoadedSignatureValue(result?.signatureHtml || "", result?.signatureText || "");
+  const loadedSignatureHasContent = Boolean(String(loadedSignature.signatureHtml || "").trim() || String(loadedSignature.signatureText || "").trim());
+  return {
+    host: String(result?.host || current?.host || "").trim(),
+    port: Number(result?.port || current?.port || 587),
+    secure: Boolean(result?.secure ?? current?.secure),
+    user: String(result?.user || current?.user || "").trim(),
+    from: String(result?.from || current?.from || "").trim(),
+    ...(loadedSignatureHasContent
+      ? loadedSignature
+      : {
+          signatureHtml: currentSignatureHtml,
+          signatureText: currentSignatureText
+        }),
+    signatureLinkLabel: String(result?.signatureLinkLabel || current?.signatureLinkLabel || "").trim(),
+    signatureLinkUrl: String(result?.signatureLinkUrl || current?.signatureLinkUrl || "").trim(),
+    signatureLinkLabel2: String(result?.signatureLinkLabel2 || current?.signatureLinkLabel2 || "").trim(),
+    signatureLinkUrl2: String(result?.signatureLinkUrl2 || current?.signatureLinkUrl2 || "").trim(),
+    hasPassword: Boolean(result?.hasPassword ?? current?.hasPassword),
+    pass: ""
+  };
+}
+
+function isMailSignatureSnapshotEmpty(snapshot = {}) {
+  return !Boolean(
+    String(snapshot?.signatureHtml || "").trim()
+    || String(snapshot?.signatureText || "").trim()
+    || String(snapshot?.signatureLinkLabel || "").trim()
+    || String(snapshot?.signatureLinkUrl || "").trim()
+    || String(snapshot?.signatureLinkLabel2 || "").trim()
+    || String(snapshot?.signatureLinkUrl2 || "").trim()
+  );
+}
+
+function normalizeMailSignatureSnapshot(snapshot = {}) {
+  const normalized = normalizeLoadedSignatureValue(snapshot?.signatureHtml || "", snapshot?.signatureText || "");
+  return {
+    signatureHtml: String(normalized.signatureHtml || "").trim(),
+    signatureText: String(normalized.signatureText || "").trim(),
+    signatureLinkLabel: String(snapshot?.signatureLinkLabel || "").trim(),
+    signatureLinkUrl: String(snapshot?.signatureLinkUrl || "").trim(),
+    signatureLinkLabel2: String(snapshot?.signatureLinkLabel2 || "").trim(),
+    signatureLinkUrl2: String(snapshot?.signatureLinkUrl2 || "").trim()
+  };
+}
+
+function buildAdminDefaultMailSignatureSnapshot(copySettings = {}) {
+  return normalizeMailSignatureSnapshot({
+    signatureHtml: "",
+    signatureText: String(copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || "").trim(),
+    signatureLinkLabel: String(copySettings.clientShareSignatureLinkLabel || DEFAULT_COPY_SETTINGS.clientShareSignatureLinkLabel || "").trim(),
+    signatureLinkUrl: String(copySettings.clientShareSignatureLinkUrl || DEFAULT_COPY_SETTINGS.clientShareSignatureLinkUrl || "").trim(),
+    signatureLinkLabel2: String(copySettings.clientShareSignatureLinkLabel2 || DEFAULT_COPY_SETTINGS.clientShareSignatureLinkLabel2 || "").trim(),
+    signatureLinkUrl2: String(copySettings.clientShareSignatureLinkUrl2 || DEFAULT_COPY_SETTINGS.clientShareSignatureLinkUrl2 || "").trim()
+  });
+}
+
+function signatureLinksHtmlBlock(links = []) {
+  return (Array.isArray(links) ? links : [])
+    .map((link) => {
+      const label = String(link?.label || "").trim();
+      const url = String(link?.url || "").trim();
+      if (!url) return "";
+      const linkLabel = escapeHtml(label || url);
+      return `<div><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${linkLabel}</a></div>`;
+    })
+    .filter(Boolean)
+    .join("");
+}
+
+function formatExcelMultilineCell(value) {
+  const raw = String(value ?? "");
+  if (!raw) return "";
+  // Preserve existing formulas (e.g. HYPERLINK) and avoid double-wrapping.
+  if (raw.startsWith("=")) return raw;
+  if (!/\r?\n/.test(raw)) return raw;
+  const lines = raw.split(/\r?\n/).map((line) => String(line ?? ""));
+  const parts = [];
+  lines.forEach((line, idx) => {
+    const escaped = String(line).replace(/\"/g, "\"\"");
+    parts.push(`\"${escaped}\"`);
+    if (idx < lines.length - 1) parts.push("CHAR(10)");
+  });
+  // `"a"&CHAR(10)&"b"` (blank lines work because "" is a valid segment)
+  return `=${parts.join("&")}`;
+}
+
+function normalizeExcelClipboardCell(value) {
+  return formatExcelMultilineCell(String(value ?? "").replace(/\t/g, " "));
+}
+
+function getCapturedOutcome(candidate, assessment) {
+  return normalizeAttemptOutcomeLabel(candidate?.last_contact_outcome || "No outcome");
+}
+
+function getApplicantOutcome(applicant) {
+  if (String(applicant?.assignedToName || applicant?.assigned_to_name || "").trim()) return "Assigned";
+  return String(applicant?.parseStatus || applicant?.parse_status || "Applied").trim();
+}
+
+function getApplicantWorkflowOutcome(applicant, linkedCandidate = null) {
+  const candidateOutcome = String(linkedCandidate?.last_contact_outcome || "").trim();
+  const applicantOutcome = String(
+    applicant?.lastContactOutcome ||
+    applicant?.last_contact_outcome ||
+    applicant?.outcome ||
+    applicant?.status ||
+    ""
+  ).trim();
+  return normalizeAttemptOutcomeLabel(candidateOutcome || applicantOutcome || "No outcome");
+}
+
+function isAutoHiddenWorkflowOutcome(outcome) {
+  return false;
+}
+
+function isApplicantConvertedToAssessment(applicant = {}, linkedCandidate = null, linkedAssessment = null) {
+  return Boolean(linkedAssessment);
+}
+
+function getApplicantOwnerLabel(applicant, linkedCandidate = null) {
+  return String(
+    applicant?.assignedToName ||
+    applicant?.assigned_to_name ||
+    linkedCandidate?.assigned_to_name ||
+    "Unassigned"
+  ).trim() || "Unassigned";
+}
+
+function isAdminAssignedApplicant(applicant, linkedCandidate = null) {
+  return Boolean(
+    String(applicant?.assignedByUserId || applicant?.assigned_by_user_id || linkedCandidate?.assigned_by_user_id || "").trim() ||
+    String(applicant?.assignedByName || applicant?.assigned_by_name || linkedCandidate?.assigned_by_name || "").trim()
+  );
+}
+
+function getApplicantManualAssigneeLabel(applicant, linkedCandidate = null) {
+  if (!isAdminAssignedApplicant(applicant, linkedCandidate)) return "";
+  return getApplicantOwnerLabel(applicant, linkedCandidate);
+}
+
+function isApplicantRowVisibleInCurrentView(row = {}, filters = {}, user = null, linkedCandidate = null, linkedAssessment = null) {
+  if (!row) return false;
+  const isAdmin = String(user?.role || "").toLowerCase() === "admin";
+  const currentUserName = String(user?.name || "").trim().toLowerCase();
+  const currentUserId = String(user?.id || "").trim();
+  const assignedName = String(row?.assignedToName || row?.assigned_to_name || linkedCandidate?.assigned_to_name || "").trim().toLowerCase();
+  const assignedId = String(row?.assignedToUserId || row?.assigned_to_user_id || linkedCandidate?.assigned_to_user_id || "").trim();
+  if (!isAdmin) {
+    if (currentUserId && assignedId) {
+      if (assignedId !== currentUserId) return false;
+    } else if (!assignedName || assignedName !== currentUserName) {
+      return false;
+    }
+  }
+  const manuallyHidden = isApplicantHiddenForCard(row, linkedCandidate);
+  const isConvertedApplicant = Boolean(
+    linkedAssessment ||
+    row?.used_in_assessment ||
+    row?.usedInAssessment ||
+    String(row?.assessment_id || row?.assessmentId || "").trim()
+  );
+  const activeValue = manuallyHidden ? "Inactive" : (isConvertedApplicant ? "Converted" : "Active");
+  const activeStates = Array.isArray(filters?.activeStates) && filters.activeStates.length
+    ? filters.activeStates
+    : ["Active"];
+  if (!activeStates.includes(activeValue)) return false;
+  if (activeValue === "Converted") return false;
+  const clientValue = String(row?.clientName || row?.client_name || "Unassigned").trim();
+  const jdValue = String(row?.jdTitle || row?.jd_title || row?.assigned_jd_title || row?.assignedJdTitle || "").trim();
+  const locationValue = normalizeApplicantLocationLabel(row?.location || linkedCandidate?.location || "");
+  const assignedValue = getApplicantManualAssigneeLabel(row, linkedCandidate);
+  const outcomeValue = getApplicantWorkflowOutcome(row, linkedCandidate);
+  const sourceValue = String(row?.sourcePlatform || row?.source || linkedCandidate?.source || "").trim();
+  const createdDate = String(row?.createdAt || row?.created_at || "").slice(0, 10);
+  const query = String(filters?.q || "").trim().toLowerCase();
+  const hay = [
+    row?.candidateName,
+    row?.name,
+    linkedCandidate?.name,
+    row?.phone,
+    row?.email,
+    jdValue,
+    clientValue,
+    locationValue,
+    assignedValue,
+    row?.currentCompany,
+    row?.currentDesignation
+  ].join(" ").toLowerCase();
+  if (query && !hay.includes(query)) return false;
+  if (filters?.dateFrom && createdDate && createdDate < filters.dateFrom) return false;
+  if (filters?.dateTo && createdDate && createdDate > filters.dateTo) return false;
+  if (Array.isArray(filters?.clients) && filters.clients.length && !filters.clients.includes(clientValue)) return false;
+  if (Array.isArray(filters?.jds) && filters.jds.length && !matchesJdFilterValue(jdValue, filters.jds)) return false;
+  if (Array.isArray(filters?.locations) && filters.locations.length && !filters.locations.includes(locationValue)) return false;
+  if (Array.isArray(filters?.assignedTo) && filters.assignedTo.length && !filters.assignedTo.includes(assignedValue)) return false;
+  if (Array.isArray(filters?.sources) && filters.sources.length && !filters.sources.includes(sourceValue)) return false;
+  if (Array.isArray(filters?.outcomes) && filters.outcomes.length && !filters.outcomes.includes(outcomeValue)) return false;
+  return true;
+}
+
+function fillCandidateTemplate(template, candidate) {
+  const source = candidate || {};
+  const map = {
+    index: source.index || "",
+    name: source.name || "",
+    jd_title: source.jd_title || source.role || "",
+    company: source.company || "",
+    outcome: source.outcome || "",
+    recruiter_notes: source.recruiter_context_notes || source.notes || "",
+    location: source.location || "",
+    phone: source.phone || "",
+    email: source.email || "",
+    source: source.source || "",
+    follow_up_at: formatDateForCopy(source.follow_up_at || ""),
+    recruiter_name: source.recruiter_name || source.recruiterName || "",
+    recruiter_email: source.recruiter_email || source.recruiterEmail || "",
+    recruiter_phone: source.recruiter_phone || source.recruiterPhone || source.recruiter_mobile || source.recruiterMobile || "",
+    logged_in_recruiter_name: source.logged_in_recruiter_name || source.loggedInRecruiterName || "",
+    logged_in_recruiter_email: source.logged_in_recruiter_email || source.loggedInRecruiterEmail || "",
+    logged_in_recruiter_phone: source.logged_in_recruiter_phone || source.loggedInRecruiterPhone || "",
+    interview_at: formatDateForCopy(source.interview_at || source.interviewAt || ""),
+    client_name: source.client_name || source.clientName || "",
+    anonymous_client_name: source.anonymous_client_name || source.anonymousClientName || source.client_name || source.clientName || "",
+    company_name: source.company_name || source.companyName || "",
+    jd_link: source.jd_link || source.jdLink || "",
+    recruiter_jd_link: source.recruiter_jd_link || source.recruiterJdLink || source.jd_link || source.jdLink || "",
+    anonymous_jd_link: source.anonymous_jd_link || source.anonymousJdLink || source.jd_link || source.jdLink || ""
+  };
+  return String(template || "").replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_, key) => String(map[key] || ""));
+}
+
+function fillClientShareTemplate(template, context) {
+  const map = {
+    hr_name: context.hrName || "Team",
+    recruiter_name: context.recruiterName || "Recruiter",
+    recruiter_email: context.recruiterEmail || "",
+    recruiter_phone: context.recruiterPhone || "",
+    company_name: context.companyName || "RecruitDesk",
+    client_name: context.clientLabel || "",
+    role: context.targetRole || "",
+    role_line: context.roleLine ? ` for ${context.roleLine}` : ""
+  };
+  return String(template || "").replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_, key) => String(map[key] || ""));
+}
+
+function splitSearchKeywords(value) {
+  return String(value || "")
+    .replace(/[()"]/g, " ")
+    .split(/,|\n|\/|&|\+|\band\b|\s+/i)
+    .map((part) => part.trim().toLowerCase())
+    .filter((part) =>
+      part &&
+      part.length >= 2 &&
+      !["get", "me", "show", "all", "profile", "profiles", "candidate", "candidates", "with", "for", "in", "from", "the"].includes(part)
+    );
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const base64 = result.includes(",") ? result.split(",").pop() : result;
+      resolve(base64 || "");
+    };
+    reader.onerror = () => reject(reader.error || new Error("Failed to read file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Failed to read file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function formatDateForCopy(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  try {
+    const formatted = new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true
+    }).format(date);
+    return `${formatted} IST`;
+  } catch {
+    return date.toLocaleString("en-IN");
+  }
+}
+
+function formatDateOrRaw(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return formatDateForCopy(raw) || raw;
+}
+
+function resolveDashboardDateOfJoiningValue(item = {}, linkedAssessment = null, linkedCandidate = null) {
+  const joinedHistory = Array.isArray(linkedAssessment?.statusHistory)
+    ? linkedAssessment.statusHistory
+    : (Array.isArray(item?.statusHistory) ? item.statusHistory : []);
+  for (let index = joinedHistory.length - 1; index >= 0; index -= 1) {
+    const entry = joinedHistory[index];
+    if (!entry || typeof entry !== "object") continue;
+    const status = normalizeAssessmentStatusLabel(String(entry?.status || "")).toLowerCase();
+    if (status !== "joined") continue;
+    const joinedAt = String(
+      entry?.statusAt
+      || entry?.status_at
+      || entry?.atValue
+      || entry?.at_value
+      || ""
+    ).trim();
+    if (joinedAt) return joinedAt;
+  }
+  return String(
+    item?.dateOfJoining
+    || item?.date_of_joining
+    || item?.joiningDate
+    || item?.joining_date
+    || linkedAssessment?.dateOfJoining
+    || linkedAssessment?.date_of_joining
+    || linkedAssessment?.joiningDate
+    || linkedAssessment?.joining_date
+    || linkedAssessment?.payload?.dateOfJoining
+    || linkedAssessment?.payload?.date_of_joining
+    || linkedAssessment?.payload?.joiningDate
+    || linkedAssessment?.payload?.joining_date
+    || item?.offerDoj
+    || item?.offer_doj
+    || item?.lwdOrDoj
+    || item?.lwd_or_doj
+    || item?.payload?.dateOfJoining
+    || item?.payload?.date_of_joining
+    || item?.payload?.joiningDate
+    || item?.payload?.joining_date
+    || item?.payload?.offerDoj
+    || item?.payload?.offer_doj
+    || item?.payload?.lwdOrDoj
+    || item?.payload?.lwd_or_doj
+    || linkedCandidate?.dateOfJoining
+    || linkedCandidate?.date_of_joining
+    || linkedCandidate?.joiningDate
+    || linkedCandidate?.joining_date
+    || linkedCandidate?.offerDoj
+    || linkedCandidate?.offer_doj
+    || linkedCandidate?.lwdOrDoj
+    || linkedCandidate?.lwd_or_doj
+    || linkedAssessment?.offerDoj
+    || linkedAssessment?.offer_doj
+    || linkedAssessment?.lwdOrDoj
+    || linkedAssessment?.lwd_or_doj
+    || linkedAssessment?.payload?.offerDoj
+    || linkedAssessment?.payload?.offer_doj
+    || linkedAssessment?.payload?.lwdOrDoj
+    || linkedAssessment?.payload?.lwd_or_doj
+    || ""
+  ).trim();
+}
+
+function buildCombinedAssessmentInsightsForExportV2(item = {}) {
+  const ctx = resolveCandidateContext(item);
+  const qaLines = [];
+  const seen = new Set();
+
+  const pushQa = (question, answer) => {
+    const q = String(question || "")
+      .replace(/<[^>]+>/g, "")
+      .replace(/\*/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/:+$/, "");
+    const a = String(answer || "")
+      .replace(/<[^>]+>/g, "")
+      .replace(/^\s*[:\-]+\s*/, "")
+      .replace(/\*/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!q || !a) return;
+    if (!/[a-z]/i.test(q)) return;
+    if (/^reason\s+of\s+change$/i.test(q)) return;
+    const key = `${q.toLowerCase()}::${a.toLowerCase()}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    qaLines.push({ question: q, answer: a });
+  };
+
+  if (ctx.screeningMap && typeof ctx.screeningMap === "object") {
+    Object.entries(ctx.screeningMap).forEach(([question, answer]) => pushQa(question, answer));
+  }
+
+  const otherStandardQuestions = String(ctx.otherStandardQuestions || item.other_standard_questions || item.last_contact_notes || "").trim();
+  otherStandardQuestions
+    .split(/\r?\n+/)
+    .map((line) => String(line || "").trim())
+    .filter(Boolean)
+    .forEach((line) => {
+      if (/^\[[^\]]+\]\s*/.test(line)) return;
+      const cleaned = line.replace(/^[\d\.\-\)\s]+/, "").trim();
+      const separatorIndex = cleaned.indexOf(":");
+      if (separatorIndex <= 0) return;
+      const label = cleaned.slice(0, separatorIndex).trim();
+      const value = cleaned.slice(separatorIndex + 1).replace(/^[\s:\-]+/, "").trim();
+      pushQa(label, value);
+    });
+
+  const strongPoints = (
+    Array.isArray(item.topStrengths) ? item.topStrengths
+      : Array.isArray(item.result?.topStrengths) ? item.result.topStrengths
+      : []
+  )
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  const reasonOfChange = String(item.reason_of_change || "").trim();
+  const parts = [];
+  if (strongPoints.length) {
+    parts.push(
+      [
+        "Strong points:",
+        ...strongPoints.map((value, index) => `${index + 1}. *${value}*`)
+      ].join("\n")
+    );
+  }
+  if (qaLines.length) {
+    parts.push(
+      [
+        "Screening pointers:",
+        ...qaLines.map((entry, index) => `${index + 1}. ${entry.question} - *${entry.answer}*`)
+      ].join("\n")
+    );
+  }
+  if (reasonOfChange) {
+    parts.push(["Reason of change:", `*${reasonOfChange}*`].join("\n"));
+  }
+  return parts.filter(Boolean).join("\n\n");
+}
+
+function getJdCcHistoryStorageKey(companyId = "") {
+  return `${JD_EMAIL_CC_HISTORY_KEY_PREFIX}${String(companyId || "").trim()}`;
+}
+
+function getExtensionPromptStorageKey(companyId = "", userId = "") {
+  return `${EXTENSION_PROMPT_STORAGE_KEY_PREFIX}:${String(companyId || "").trim()}:${String(userId || "").trim()}`;
+}
+
+function getCopySettingsStorageKey(companyId = "") {
+  const id = String(companyId || "").trim();
+  return `${COPY_SETTINGS_STORAGE_KEY}:${id || "anonymous"}`;
+}
+
+function getDirectShareHistoryStorageKey(companyId = "") {
+  const id = String(companyId || "").trim();
+  return `${DIRECT_SHARE_HISTORY_KEY}:${id || "anonymous"}`;
+}
+
+function readJdCcHistory(companyId = "") {
+  const id = String(companyId || "").trim();
+  if (!id) return [];
+  try {
+    const raw = window.localStorage.getItem(getJdCcHistoryStorageKey(id));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed)
+      ? parsed.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 20)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveJdCcHistory(companyId = "", list = []) {
+  const id = String(companyId || "").trim();
+  if (!id) return;
+  const next = Array.isArray(list)
+    ? list.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 20)
+    : [];
+  try {
+    window.localStorage.setItem(getJdCcHistoryStorageKey(id), JSON.stringify(next));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function normalizeCcTokens(value = "") {
+  return String(value || "")
+    .split(/,|;|\s+/)
+    .map((item) => String(item || "").trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function buildNextCcHistory(companyId = "", value = "", fallback = "") {
+  const existing = readJdCcHistory(companyId);
+  const incoming = [...normalizeCcTokens(value), ...normalizeCcTokens(fallback)];
+  const merged = Array.from(new Set([...incoming, ...existing])).slice(0, 20);
+  saveJdCcHistory(companyId, merged);
+  return merged;
+}
+function buildCombinedAssessmentInsightsForExport(item = {}) {
+  const otherStandardQuestions = String(item.other_standard_questions || item.last_contact_notes || "").trim();
+  const reasonOfChangeValue = String(item.reason_of_change || "").trim();
+  const fixedFieldLabels = new Set([
+    "current ctc",
+    "expected ctc",
+    "notice period",
+    "notice",
+    "experience",
+    "total experience",
+    "work experience",
+    "highest education",
+    "qualification",
+    "current company",
+    "current designation",
+    "location",
+    "offer in hand",
+    "lwd",
+    "doj",
+    "lwd / doj",
+    "lwd or doj",
+    "status",
+    "current status",
+    "assessment status",
+    "candidate status",
+    "pipeline",
+    "pipeline stage",
+    "source",
+    "client",
+    "recruiter"
+  ]);
+  const lines = otherStandardQuestions
+    .split(/\r?\n+/)
+    .map((line) => String(line || "").trim())
+    .filter(Boolean);
+  const questionLines = [];
+  let inlineReasonOfChange = "";
+
+  lines.forEach((line) => {
+    const normalizedLine = line.replace(/^[\d\.\-\)\s]+/, "").trim();
+    const separatorIndex = normalizedLine.indexOf(":");
+    if (separatorIndex <= 0) return;
+    const label = normalizedLine.slice(0, separatorIndex).trim();
+    const answer = normalizedLine.slice(separatorIndex + 1).trim();
+    const normalizedLabel = label.toLowerCase();
+    if (!label || !answer) return;
+    if (normalizedLabel === "reason of change") {
+      inlineReasonOfChange = answer;
+      return;
+    }
+    if (fixedFieldLabels.has(normalizedLabel)) return;
+    questionLines.push(`${questionLines.length + 1}. ${label} - *${answer}*`);
+  });
+
+  const finalReasonOfChange = inlineReasonOfChange || reasonOfChangeValue;
+  const parts = [];
+  if (finalReasonOfChange) parts.push(`Reason of change: *${finalReasonOfChange}*`);
+  if (questionLines.length) parts.push(...questionLines);
+  return parts.join("\n");
+}
+
+function buildScreeningQaOnlyForExport(item = {}) {
+  const ctx = resolveCandidateContext(item);
+  const fixedFieldLabels = new Set([
+    "current ctc",
+    "expected ctc",
+    "notice period",
+    "notice",
+    "experience",
+    "total experience",
+    "work experience",
+    "highest education",
+    "qualification",
+    "current company",
+    "current designation",
+    "location",
+    "offer in hand",
+    "lwd",
+    "doj",
+    "lwd / doj",
+    "lwd or doj",
+    "status",
+    "current status",
+    "assessment status",
+    "candidate status",
+    "pipeline",
+    "pipeline stage",
+    "source",
+    "client",
+    "recruiter"
+  ]);
+  const questionItems = [];
+  let currentQuestion = null;
+  const pushQa = (label, answer) => {
+    const safeLabel = String(label || "").trim();
+    const safeAnswer = String(answer || "").trim();
+    const normalizedLabel = safeLabel.toLowerCase();
+    if (!safeLabel || !safeAnswer) return;
+    if (!/[a-z]/i.test(safeLabel)) return;
+    if (normalizedLabel === "reason of change") return;
+    if (fixedFieldLabels.has(normalizedLabel)) return;
+    questionItems.push({ label: safeLabel, answer: safeAnswer });
+  };
+
+  if (ctx.screeningMap && typeof ctx.screeningMap === "object") {
+    Object.entries(ctx.screeningMap).forEach(([question, answer]) => pushQa(question, answer));
+  }
+
+  if (!questionItems.length) {
+    const lines = String(ctx.otherStandardQuestions || "")
+      .split(/\r?\n/)
+      .map((line) => String(line || "").trimEnd());
+    lines.forEach((line) => {
+      const trimmedLine = String(line || "").trim();
+      if (!trimmedLine) return;
+      if (/^\[[^\]]+\]\s*/.test(trimmedLine)) return;
+      const normalizedLine = trimmedLine.replace(/^[\d\.\-\)\s]+/, "").trim();
+      const separatorIndex = normalizedLine.indexOf(":");
+      if (separatorIndex > 0) {
+        const label = normalizedLine.slice(0, separatorIndex).trim();
+        const answer = normalizedLine
+          .slice(separatorIndex + 1)
+          .replace(/^[\s:\-]+/, "")
+          .trim();
+        if (!label || !answer) return;
+        if (String(label || "").trim().toLowerCase() === "reason of change") {
+          currentQuestion = null;
+          return;
+        }
+        if (fixedFieldLabels.has(String(label || "").trim().toLowerCase())) {
+          currentQuestion = null;
+          return;
+        }
+        currentQuestion = { label, answer };
+        questionItems.push(currentQuestion);
+        return;
+      }
+      if (currentQuestion) {
+        currentQuestion.answer = `${currentQuestion.answer}\n${trimmedLine}`;
+      }
+    });
+  }
+
+  return questionItems.map((item, index) => {
+    const answerLines = String(item.answer || "")
+      .split(/\r?\n/)
+      .map((line) => String(line || "").trim())
+      .filter(Boolean);
+    if (!answerLines.length) return "";
+    const [firstLine, ...restLines] = answerLines;
+    return [
+      `${index + 1}. ${item.label} - *${firstLine}*`,
+      ...restLines.map((line) => `   *${line}*`)
+    ].join("\n");
+  }).filter(Boolean).join("\n");
+}
+
+function buildScreeningRemarksForExport(item = {}) {
+  const ctx = resolveCandidateContext(item);
+  const otherStandardQuestions = String(ctx.otherStandardQuestions || "").trim();
+  const reasonOfChangeValue = buildReasonOfChangeForExport({ ...ctx.candidate, ...(ctx.assessment || {}), screening_answers: ctx.screeningMap || {} });
+  const fixedFieldLabels = new Set([
+    "current ctc",
+    "expected ctc",
+    "notice period",
+    "notice",
+    "experience",
+    "total experience",
+    "work experience",
+    "highest education",
+    "qualification",
+    "current company",
+    "current designation",
+    "location",
+    "offer in hand",
+    "lwd",
+    "doj",
+    "lwd / doj",
+    "lwd or doj",
+    "status",
+    "current status",
+    "assessment status",
+    "candidate status",
+    "pipeline",
+    "pipeline stage",
+    "source",
+    "client",
+    "recruiter"
+  ]);
+  const lines = otherStandardQuestions
+    .split(/\r?\n/)
+    .map((line) => String(line || "").trimEnd());
+  const questionItems = [];
+  let inlineReasonOfChange = "";
+  let currentQuestion = null;
+
+  lines.forEach((line) => {
+    const trimmedLine = String(line || "").trim();
+    if (!trimmedLine) {
+      return;
+    }
+    // Attempt history lines look like: "[4/15/2026, 4:08:06 PM] JD shared"
+    // They contain ":" because of time, which previously got mis-parsed as "label: answer".
+    if (/^\[[^\]]+\]\s*/.test(trimmedLine)) return;
+    const normalizedLine = trimmedLine.replace(/^[\d\.\-\)\s]+/, "").trim();
+    const separatorIndex = normalizedLine.indexOf(":");
+    if (separatorIndex > 0) {
+      const label = normalizedLine.slice(0, separatorIndex).trim();
+      const answer = normalizedLine
+        .slice(separatorIndex + 1)
+        .replace(/^[\s:\-]+/, "")
+        .trim();
+      const normalizedLabel = label.toLowerCase();
+      if (!label || !answer) return;
+      if (!/[a-z]/i.test(label)) return;
+      if (normalizedLabel === "reason of change") {
+        inlineReasonOfChange = answer;
+        currentQuestion = null;
+        return;
+      }
+      if (fixedFieldLabels.has(normalizedLabel)) {
+        currentQuestion = null;
+        return;
+      }
+      currentQuestion = { label, answer };
+      questionItems.push(currentQuestion);
+      return;
+    }
+    if (currentQuestion) {
+      currentQuestion.answer = `${currentQuestion.answer}\n${trimmedLine}`;
+    }
+  });
+
+  // Primary: use saved screening answers map (JD questions). This avoids leaking attempt-history/status notes.
+  if (ctx.screeningMap) {
+    const nextItems = [];
+    Object.entries(ctx.screeningMap).forEach(([question, answer]) => {
+      const label = String(question || "").trim();
+      const value = String(answer || "").trim();
+      if (!label || !value) return;
+      const normalizedLabel = label.toLowerCase();
+      if (normalizedLabel === "reason of change") {
+        inlineReasonOfChange = value;
+        return;
+      }
+      if (fixedFieldLabels.has(normalizedLabel)) return;
+      nextItems.push({ label, answer: value });
+    });
+    if (nextItems.length) {
+      questionItems.length = 0;
+      nextItems.forEach((item) => questionItems.push(item));
+    }
+  }
+
+  const finalReasonOfChange = inlineReasonOfChange || reasonOfChangeValue;
+  const parts = [];
+  if (questionItems.length) {
+    parts.push("Screening Q&A:");
+    questionItems.forEach((item, index) => {
+      const answerLines = String(item.answer || "")
+        .split(/\r?\n/)
+        .map((line) => String(line || "").trim())
+        .filter(Boolean);
+      if (!answerLines.length) return;
+      const [firstLine, ...restLines] = answerLines;
+      parts.push(`${index + 1}. ${item.label} - *${firstLine}*`);
+      restLines.forEach((line) => parts.push(`   *${line}*`));
+    });
+  }
+  if (finalReasonOfChange) {
+    if (parts.length) parts.push("");
+    parts.push("Reason of change:");
+    parts.push(`*${finalReasonOfChange}*`);
+  }
+  return parts.join("\n");
+}
+
+function buildReasonOfChangeForExport(item = {}) {
+  const draft = getCandidateDraftState(item);
+  const direct = String(
+    item.reason_of_change
+    || item.reasonForChange
+    || item.reason_for_change
+    || draft.reasonForChange
+    || draft.reason_of_change
+    || draft.reasonOfChange
+    || ""
+  ).trim();
+  if (direct) return direct;
+  const screeningMap = (draft?.jdScreeningAnswers && typeof draft.jdScreeningAnswers === "object" ? draft.jdScreeningAnswers : null)
+    || (item?.screening_answers && typeof item.screening_answers === "object" ? item.screening_answers : null)
+    || (item?.screeningAnswers && typeof item.screeningAnswers === "object" ? item.screeningAnswers : null)
+    || null;
+  if (screeningMap) {
+    const matchKey = Object.keys(screeningMap).find((key) => String(key || "").trim().toLowerCase() === "reason of change");
+    if (matchKey) {
+      const value = String(screeningMap[matchKey] || "").trim();
+      if (value) return value;
+    }
+  }
+  const structuredQuestions = String(item.other_standard_questions || item.last_contact_notes || "").trim();
+  if (structuredQuestions) {
+    const lines = structuredQuestions
+      .split(/\r?\n+/)
+      .map((line) => String(line || "").trim())
+      .filter(Boolean);
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      if (!/^reason\s+of\s+change\b/i.test(line)) continue;
+      const colonIndex = line.indexOf(":");
+      if (colonIndex >= 0) {
+        const extracted = line.slice(colonIndex + 1).trim();
+        if (extracted) return extracted;
+      }
+      const next = lines[i + 1] || "";
+      if (next && !/^(\d+[\.\)\-]\s*)/i.test(next)) return next;
+    }
+  }
+  const candidates = [
+    item.recruiter_context_notes,
+    item.recruiterNotes,
+    item.other_pointers,
+    item.otherPointers,
+    item.notes,
+    draft.recruiterNotes,
+    draft.otherPointers,
+    draft.callbackNotes
+  ];
+  const lines = candidates
+    .flatMap((value) => String(value || "").split(/\r?\n+/))
+    .map((line) => String(line || "").trim())
+    .filter(Boolean);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!/^reason\s+of\s+change\b/i.test(line)) continue;
+    const colonIndex = line.indexOf(":");
+    if (colonIndex >= 0) {
+      const extracted = line.slice(colonIndex + 1).trim();
+      if (extracted) return extracted;
+    }
+    const next = lines[i + 1] || "";
+    if (next && !/^(\d+[\.\)\-]\s*)/i.test(next)) return next;
+  }
+  return "";
+}
+
+function parsePresetColumns(columnsText = "") {
+  const rawText = String(columnsText || "").trim();
+  if (!rawText) return [];
+  const lines = rawText
+    .split(/\r?\n/)
+    .map((line) => String(line || "").trim())
+    .filter(Boolean);
+  if (lines.length > 1) {
+    return lines
+      .map((line) => {
+        const [header, field] = line.split("|");
+        return { header: String(header || "").trim(), field: String(field || "").trim() };
+      })
+      .filter((item) => item.header && item.field);
+  }
+  const singleLine = lines[0] || "";
+  const matches = Array.from(singleLine.matchAll(/(.*?)\|([a-z0-9_+]+)(?=\s+[^\s|][^|]*\|[a-z0-9_+]+|$)/gi));
+  if (matches.length > 1) {
+    return matches
+      .map((match) => ({
+        header: String(match?.[1] || "").trim(),
+        field: String(match?.[2] || "").trim()
+      }))
+      .filter((item) => item.header && item.field);
+  }
+  const [header, field] = singleLine.split("|");
+  return [{ header: String(header || "").trim(), field: String(field || "").trim() }].filter((item) => item.header && item.field);
+}
+
+function presetColumnsToIndicators(columnsText = "") {
+  return parsePresetColumns(columnsText).map((column, index) => ({
+    id: `existing_${index}_${String(column.header || "").replace(/\s+/g, "_").toLowerCase()}`,
+    title: String(column.header || "").trim(),
+    fields: String(column.field || "").split("+").map((item) => String(item || "").trim()).filter(Boolean).slice(0, 3)
+  }));
+}
+
+function getCapturedExportFieldValue(item = {}, field = "") {
+  const key = String(field || "").trim();
+  if (key.includes("+")) {
+    return key
+      .split("+")
+      .map((part) => getCapturedExportFieldValue(item, String(part || "").trim()))
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+      .join(" | ");
+  }
+  switch (key) {
+    case "s_no": return String(item.index || "");
+    case "name": return item.name || "";
+    case "assessment_status": return item.assessment_status || item.outcome || "";
+    case "status": return item.outcome || "";
+    case "phone": return item.phone || "";
+    case "email": return item.email || "";
+    case "location": return item.location || "";
+    case "current_company": return item.current_company || item.company || "";
+    case "current_designation": return item.current_designation || item.role || "";
+    case "total_experience": return item.total_experience || item.experience || "";
+    case "highest_education": return item.highest_education || "";
+    case "current_ctc": return item.current_ctc || "";
+    case "expected_ctc": return item.expected_ctc || "";
+    case "notice_period": {
+      const draft = getCandidateDraftState(item);
+      const notice = String(item.notice_period || item.noticePeriod || draft.noticePeriod || "").trim();
+      const lwdOrDoj = String(item.lwd_or_doj || item.lwdOrDoj || draft.lwdOrDoj || "").trim();
+      const offerAmount = String(
+        item.offer_in_hand
+        || item.offerInHand
+        || item.offerAmount
+        || item.offer_amount
+        || draft.offerInHand
+        || ""
+      ).trim();
+      return [
+        notice ? `Notice period: ${notice}` : "",
+        lwdOrDoj ? `LWD/DOJ: ${lwdOrDoj}` : "",
+        offerAmount ? `Offer amount: ${offerAmount}` : ""
+      ].filter(Boolean).join(" | ");
+    }
+    // Backward compatibility for older custom presets.
+    case "notice_period_indicator": return getCapturedExportFieldValue(item, "notice_period");
+    case "reason_of_change": return buildReasonOfChangeForExport(item);
+    case "reason_of_change_indicator": return getCapturedExportFieldValue(item, "reason_of_change");
+    case "lwd_or_doj": return item.lwd_or_doj || "";
+    case "combined_assessment_insights": return buildCombinedAssessmentInsightsForExportV2(item);
+    case "screening_remarks": {
+      const next = buildScreeningRemarksForExport(item);
+      return next || item.screening_remarks || "";
+    }
+    case "linkedin": return item.linkedin || item.linkedinUrl || getCandidateDraftState(item).linkedin || "";
+    case "client_name": return item.client_name || "";
+    case "jd_title": return item.jd_title || item.role || "";
+    case "target_role_open_position": return item.jd_title || item.role || "";
+    case "key_skills_required": {
+      const draft = getCandidateDraftState(item);
+      const tags = String(draft?.tags || "").trim();
+      if (tags) return tags;
+      if (Array.isArray(item.skills) && item.skills.length) return item.skills.join(", ");
+      return String(item.key_skills_required || item.keySkillsRequired || item.skills || "").trim();
+    }
+    case "recruiter_name": return item.assigned_to_name || item.recruiter_name || item.recruiterName || "";
+    case "date_added": {
+      const value = item.created_at || item.createdAt || item.created_on || item.createdOn || "";
+      return value ? String(value).slice(0, 10) : "";
+    }
+    case "domain_industry": return item.domain_industry || item.domainIndustry || "";
+    case "current_org_tenure": return item.current_org_tenure || item.currentOrgTenure || "";
+    case "other_pointers": return item.other_pointers || "";
+    case "other_standard_questions": {
+      const next = buildScreeningQaOnlyForExport(item);
+      return next || item.other_standard_questions || item.last_contact_notes || "";
+    }
+    case "remarks": return item.recruiter_context_notes || item.notes || "";
+    case "cv_link": {
+      const value = String(item.cv_link || item.cv_url || item.cvUrl || "").trim();
+      if (!value) return "";
+      if (/^https?:\/\//i.test(value)) {
+        const safe = value.replace(/\"/g, "\"\"");
+        return `=HYPERLINK(\"${safe}\",\"Open CV\")`;
+      }
+      return value;
+    }
+    case "cv_url": return item.cv_url || item.cvUrl || item.cv_link || "";
+    default: return item[key] || "";
+  }
+}
+
 function buildCapturedExcelRows(items, preset, settings = DEFAULT_COPY_SETTINGS) {
   const normalized = (items || []).map((item, index) => ({
     index: index + 1,
@@ -28798,6 +33498,7 @@ export default function App() {
           ? <PortalErrorBoundary><MarketingPortalApp token={token} onLogout={logout} /></PortalErrorBoundary>
         : <PortalErrorBoundary><PortalApp token={token} onLogout={logout} /></PortalErrorBoundary>;
 }
+
 
 
 
