@@ -1120,6 +1120,8 @@ function sanitizeSharedExportPresetSettings(raw) {
     clientShareSignatureLinkUrl2: String(source.clientShareSignatureLinkUrl2 || source.client_share_signature_link_url2 || "").trim(),
     jdEmailSubjectTemplate: String(source.jdEmailSubjectTemplate || source.jd_email_subject_template || "").trim(),
     jdEmailIntroTemplate: String(source.jdEmailIntroTemplate || source.jd_email_intro_template || "").replace(/\r\n/g, "\n"),
+    bulkJdMailSubjectTemplate: String(source.bulkJdMailSubjectTemplate || source.bulk_jd_mail_subject_template || "").trim(),
+    bulkJdMailIntroTemplate: String(source.bulkJdMailIntroTemplate || source.bulk_jd_mail_intro_template || "").replace(/\r\n/g, "\n"),
     customExportPresets: rawCustomPresets
       .map((item, index) => ({
         id: String(item?.id || `custom_preset_${index + 1}`).trim(),

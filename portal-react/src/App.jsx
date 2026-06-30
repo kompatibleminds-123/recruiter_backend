@@ -288,6 +288,8 @@ function FeatureLockedSection({ title = "Feature locked" }) {
   companyWideShortcuts: {},
   jdEmailSubjectTemplate: "Job Description - {Role}",
   jdEmailIntroTemplate: "Hello {Candidate}.\nGreetings !!\n\nThis is {Recruiter} from {Company}.\nIt was good to interact with you.\n\nAs discussed, please find the Job description for the {Role}.\nPlease acknowledge or confirm so we can take your candidature ahead.",
+  bulkJdMailSubjectTemplate: "Job Description - {Role}",
+  bulkJdMailIntroTemplate: "Hello {Candidate}.\nGreetings !!\n\nThis is {Recruiter} from {Company}.\nIt was good to interact with you.\n\nAs discussed, please find the Job description for the {Role}.\nPlease acknowledge or confirm so we can take your candidature ahead.",
   interviewAiParsingEnabled: false,
   jobBoard: {
     slug: "",
@@ -403,6 +405,8 @@ function migrateCopySettings(settings = {}) {
   next.clientShareSignatureText = normalizeTemplateFormatting(next.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText || "");
   next.jdEmailSubjectTemplate = normalizeTemplateFormatting(next.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate || "");
   next.jdEmailIntroTemplate = normalizeTemplateFormatting(next.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate || "");
+  next.bulkJdMailSubjectTemplate = normalizeTemplateFormatting(next.bulkJdMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkJdMailSubjectTemplate || "");
+  next.bulkJdMailIntroTemplate = normalizeTemplateFormatting(next.bulkJdMailIntroTemplate || DEFAULT_COPY_SETTINGS.bulkJdMailIntroTemplate || "");
   next.clientShareSignatureLinkLabel = normalizeMojibakeSymbols(next.clientShareSignatureLinkLabel || "");
   next.clientShareSignatureLinkLabel2 = normalizeMojibakeSymbols(next.clientShareSignatureLinkLabel2 || "");
   const resumeFormatting = { ...(DEFAULT_COPY_SETTINGS.resumeFormatting || {}), ...(next.resumeFormatting || {}) };
@@ -10423,6 +10427,8 @@ function PortalApp({ token, onLogout }) {
   const jdWorkspaceShortcutTextareaRef = useRef(null);
   const jdEmailSubjectTemplateTextareaRef = useRef(null);
   const jdEmailBodyTemplateTextareaRef = useRef(null);
+  const bulkJdMailSubjectTemplateTextareaRef = useRef(null);
+  const bulkJdMailBodyTemplateTextareaRef = useRef(null);
   const bulkMailSubjectTemplateTextareaRef = useRef(null);
   const bulkMailBodyTemplateTextareaRef = useRef(null);
   const directShareSubjectTemplateTextareaRef = useRef(null);
@@ -20948,12 +20954,12 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
-  function buildDbCampaignJdBodyText(job = {}, { introText = "", applyLink = "", jdShareMode = "normal" } = {}) {
+  function buildDbCampaignJdBodyHtml(job = {}, { introText = "", applyLink = "", jdShareMode = "normal", senderName = "" } = {}) {
     const anonymous = String(jdShareMode || "").trim().toLowerCase() === "anonymous";
     const clientName = String(job?.clientName || job?.client_name || "").trim();
     const publicCompanyLine = String(job?.publicCompanyLine || job?.public_company_line || "").trim();
     const publicTitle = String(job?.publicTitle || job?.public_title || "").trim();
-    const roleLabel = anonymous
+    const title = anonymous
       ? (publicTitle || redactClientNameFromText(String(job?.title || "").trim(), clientName) || String(job?.title || "").trim())
       : String(job?.title || "").trim();
     const aboutCompany = anonymous
@@ -20968,24 +20974,51 @@ function PortalApp({ token, onLogout }) {
     const recruiterNotes = anonymous
       ? redactClientNameFromText(String(job?.recruiterNotes || job?.recruiter_notes || "").trim(), clientName)
       : String(job?.recruiterNotes || job?.recruiter_notes || "").trim();
+    const location = String(job?.location || "").trim();
+    const workMode = String(job?.workMode || job?.work_mode || "").trim();
     const blocks = [
-      introText ? introText : "",
-      roleLabel ? `Role: ${roleLabel}` : "",
-      anonymous
-        ? (aboutCompany ? `Company: ${aboutCompany}` : "")
-        : (clientName ? `Client: ${clientName}` : ""),
-      String(job?.location || "").trim() ? `Location: ${String(job.location || "").trim()}` : "",
-      String(job?.workMode || job?.work_mode || "").trim() ? `Work mode: ${String(job?.workMode || job?.work_mode || "").trim()}` : "",
-      aboutCompany ? `About company:\n${aboutCompany}` : "",
-      mustHaveSkills ? `Must have skills:\n${mustHaveSkills}` : "",
-      jdText ? `Job description:\n${jdText}` : "",
-      recruiterNotes ? `Notes:\n${recruiterNotes}` : "",
-      applyLink ? `Apply here: ${applyLink}` : ""
+      introText ? { label: "Message", value: introText } : null,
+      !anonymous && clientName ? { label: "Client", value: clientName } : null,
+      anonymous && aboutCompany ? { label: "Company", value: aboutCompany } : null,
+      location ? { label: "Location", value: location } : null,
+      workMode ? { label: "Work mode", value: workMode } : null,
+      aboutCompany ? { label: "About company", value: aboutCompany } : null,
+      mustHaveSkills ? { label: "Must have skills", value: mustHaveSkills } : null,
+      jdText ? { label: "Job description", value: jdText } : null,
+      recruiterNotes ? { label: "Notes", value: recruiterNotes } : null,
+      applyLink ? { label: "Apply here", value: applyLink } : null
     ].filter(Boolean);
-    return blocks.join("\n\n");
+    const htmlBody = blocks.map((item) => `
+      <h2>${escapeHtml(item.label)}</h2>
+      <div class="block">${escapeHtml(item.value).replace(/\n/g, "<br/>")}</div>
+    `.trim()).join("\n");
+    return `
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>${escapeHtml(title || "Job Description")}</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #111827; line-height: 1.5; padding: 20px; }
+            h1 { font-size: 18px; margin: 0 0 10px; }
+            h2 { font-size: 12px; margin: 16px 0 6px; color: #374151; letter-spacing: .02em; text-transform: uppercase; }
+            .muted { color: #6b7280; font-size: 12px; margin-bottom: 14px; }
+            .block { font-size: 13.5px; white-space: normal; }
+            hr { border: 0; border-top: 1px solid #e5e7eb; margin: 14px 0; }
+            a { color: #2563eb; text-decoration: none; }
+          </style>
+        </head>
+        <body>
+          <h1>${escapeHtml(title || "Job Description")}</h1>
+          <div class="muted">Shared from RecruitDesk${senderName ? ` by ${escapeHtml(senderName)}` : ""}</div>
+          <hr/>
+          ${htmlBody || "<div class='block'>No JD content found.</div>"}
+        </body>
+      </html>
+    `.trim();
   }
 
-  function buildDbCampaignModalJdDraftSync(jobId = "", applyLinkOverride = "", jdShareMode = "normal") {
+  function buildDbCampaignModalJdDraftSync(jobId = "", applyLinkOverride = "", jdShareMode = "normal", senderOverride = null) {
     const resolvedJobId = String(jobId || "").trim();
     if (!resolvedJobId) return null;
     const job = (Array.isArray(state.jobs) ? state.jobs : []).find((item) => String(item?.id || "").trim() === resolvedJobId) || null;
@@ -20996,16 +21029,11 @@ function PortalApp({ token, onLogout }) {
       || (isAnonymousMode ? getPublicApplyLink(resolvedJobId) : getApplyLink(resolvedJobId))
       || ""
     ).trim();
-    const recruiterName = String(state.user?.name || "Recruiter").trim();
-    const recruiterEmail = String(state.user?.email || "").trim();
-    const recruiterPhone = String(
-      state.user?.phone
-      || state.user?.phoneNumber
-      || state.user?.mobile
-      || state.user?.mobileNumber
-      || ""
-    ).trim();
-    const companyName = String(state.user?.companyName || state.user?.company_name || "RecruitDesk").trim();
+    const senderContext = senderOverride || getDbCampaignSenderContext("");
+    const recruiterName = String(senderContext?.name || "Recruiter").trim();
+    const recruiterEmail = String(senderContext?.email || "").trim();
+    const recruiterPhone = String(senderContext?.phone || "").trim();
+    const companyName = String(senderContext?.companyName || "RecruitDesk").trim();
     const clientName = String(job?.clientName || job?.client_name || "").trim();
     const roleLabel = isAnonymousMode
       ? (
@@ -21014,8 +21042,8 @@ function PortalApp({ token, onLogout }) {
         || String(job?.title || "Job Description").trim()
       )
       : String(job?.title || "Job Description").trim();
-    const subjectTpl = String(copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate || "Job Description - {Role}").trim();
-    const introTpl = String(copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate || "").trim();
+    const subjectTpl = String(copySettings.bulkJdMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkJdMailSubjectTemplate || "Job Description - {Role}").trim();
+    const introTpl = String(copySettings.bulkJdMailIntroTemplate || DEFAULT_COPY_SETTINGS.bulkJdMailIntroTemplate || "").trim();
     const subject = fillJdEmailTemplate(subjectTpl, {
       candidateName: "{{name}}",
       recruiterName,
@@ -21032,10 +21060,11 @@ function PortalApp({ token, onLogout }) {
       recruiterEmail,
       recruiterPhone
     }).trim();
-    const bodyText = buildDbCampaignJdBodyText(job, {
+    const bodyText = buildDbCampaignJdBodyHtml(job, {
       introText,
       applyLink,
-      jdShareMode
+      jdShareMode,
+      senderName: recruiterName
     });
     return {
       campaignName: `${roleLabel} bulk mail`,
@@ -21058,7 +21087,12 @@ function PortalApp({ token, onLogout }) {
       const mine = items.find((item) => String(item?.recruiterId || "").trim() === selfId) || items[0] || null;
       const signedLink = mine?.sig ? getRecruiterApplyLink(resolvedJobId, mine.recruiterId, mine.sig) : "";
       if (!signedLink) return;
-      const draft = buildDbCampaignModalJdDraftSync(resolvedJobId, signedLink, "normal");
+      const draft = buildDbCampaignModalJdDraftSync(
+        resolvedJobId,
+        signedLink,
+        "normal",
+        getDbCampaignSenderContext(dbCampaignAttachModal?.senderUserId || "")
+      );
       if (!draft) return;
       setDbCampaignAttachModal((current) => {
         if (!current?.open) return current;
@@ -21098,7 +21132,12 @@ function PortalApp({ token, onLogout }) {
       categories: Array.isArray(sampleRow?.categories) ? sampleRow.categories : []
     };
     const subject = renderDbCampaignTemplatePreview(String(modal?.templateSubject || ""), prospect, senderContext).trim();
-    const body = renderDbCampaignTemplatePreview(normalizeTemplateFormatting(String(modal?.templateBodyText || "")), prospect, senderContext).trim();
+    const rawBodyTemplate = String(modal?.templateBodyText || "");
+    const body = renderDbCampaignTemplatePreview(
+      /<[^>]+>/.test(rawBodyTemplate) ? rawBodyTemplate : normalizeTemplateFormatting(rawBodyTemplate),
+      prospect,
+      senderContext
+    ).trim();
     const isCurrentUserSender = String(senderContext.id || "") === String(state.user?.id || "");
     const loadedRecruiterSignature = isCurrentUserSender
       ? normalizeLoadedSignatureValue(smtpSettings.signatureHtml || "", smtpSettings.signatureText || "")
@@ -21150,8 +21189,11 @@ function PortalApp({ token, onLogout }) {
       signatureHtml || (signatureText ? `<div>${escapeHtml(signatureText).replace(/\n/g, "<br/>")}</div>` : ""),
       signatureLinksHtmlBlock(signatureLinks)
     ].filter(Boolean).join("");
+    const renderedBodyHtml = /<[^>]+>/.test(body)
+      ? body
+      : (body ? escapeHtml(body).replace(/\n/g, "<br/>") : "");
     const bodyHtml = [
-      body ? escapeHtml(body).replace(/\n/g, "<br/>") : "",
+      renderedBodyHtml,
       signatureHtmlBlock ? `<div style="margin-top:16px;">${signatureHtmlBlock}</div>` : ""
     ].filter(Boolean).join("");
     return {
@@ -29350,6 +29392,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("JD share template saved.")}>Save JD share template</button></div>
                   </div>
                   <div className="settings-subsection">
+                    <div className="section-kicker">Bulk JD Mail Template</div>
+                    <div className="form-grid">
+                      <label className="full"><span>Subject template</span><input ref={bulkJdMailSubjectTemplateTextareaRef} value={copySettings.bulkJdMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkJdMailSubjectTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, bulkJdMailSubjectTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{JD_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`bulk-jd-subject-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(bulkJdMailSubjectTemplateTextareaRef, copySettings.bulkJdMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkJdMailSubjectTemplate, (next) => setCopySettings((current) => ({ ...current, bulkJdMailSubjectTemplate: next })), token)}>{token}</button>))}</div></label>
+                      <label className="full"><span>Body template</span><textarea ref={bulkJdMailBodyTemplateTextareaRef} rows={8} value={copySettings.bulkJdMailIntroTemplate || DEFAULT_COPY_SETTINGS.bulkJdMailIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, bulkJdMailIntroTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{JD_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`bulk-jd-body-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(bulkJdMailBodyTemplateTextareaRef, copySettings.bulkJdMailIntroTemplate || DEFAULT_COPY_SETTINGS.bulkJdMailIntroTemplate, (next) => setCopySettings((current) => ({ ...current, bulkJdMailIntroTemplate: next })), token)}>{token}</button>))}</div></label>
+                    </div>
+                    <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("Bulk JD mail template saved.")}>Save bulk JD mail template</button></div>
+                  </div>
+                  <div className="settings-subsection">
                     <div className="section-kicker">Bulk Mail Template</div>
                     <div className="form-grid">
                       <label className="full">
@@ -30799,7 +30849,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     type="button"
                     className={dbCampaignAttachModal.contentSource === "jd" ? "" : "ghost-btn"}
                     onClick={() => setDbCampaignAttachModal((current) => {
-                      const jdDraft = buildDbCampaignModalJdDraftSync(current?.jdJobId || "", "", current?.jdShareMode || "normal");
+                      const jdDraft = buildDbCampaignModalJdDraftSync(
+                        current?.jdJobId || "",
+                        "",
+                        current?.jdShareMode || "normal",
+                        getDbCampaignSenderContext(current?.senderUserId || "")
+                      );
                       return {
                         ...current,
                         contentSource: "jd",
@@ -30851,7 +30906,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       onChange={(e) => {
                         const nextJobId = e.target.value;
                         const nextMode = String(dbCampaignAttachModal?.jdShareMode || "normal").trim().toLowerCase() === "anonymous" ? "anonymous" : "normal";
-                        const draft = buildDbCampaignModalJdDraftSync(nextJobId, "", nextMode);
+                        const draft = buildDbCampaignModalJdDraftSync(
+                          nextJobId,
+                          "",
+                          nextMode,
+                          getDbCampaignSenderContext(dbCampaignAttachModal?.senderUserId || "")
+                        );
                         setDbCampaignAttachModal((current) => ({
                           ...current,
                           contentSource: "jd",
@@ -30880,7 +30940,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       onChange={(e) => {
                         const nextMode = String(e.target.value || "normal").trim().toLowerCase() === "anonymous" ? "anonymous" : "normal";
                         const nextJobId = String(dbCampaignAttachModal?.jdJobId || "").trim();
-                        const draft = buildDbCampaignModalJdDraftSync(nextJobId, "", nextMode);
+                        const draft = buildDbCampaignModalJdDraftSync(
+                          nextJobId,
+                          "",
+                          nextMode,
+                          getDbCampaignSenderContext(dbCampaignAttachModal?.senderUserId || "")
+                        );
                         setDbCampaignAttachModal((current) => ({
                           ...current,
                           jdShareMode: nextMode,
@@ -30919,7 +30984,23 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <span>Send from</span>
                 <select
                   value={dbCampaignAttachModal.senderUserId || String(marketingSenderOptions?.[0]?.id || "")}
-                  onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, senderUserId: e.target.value }))}
+                  onChange={(e) => setDbCampaignAttachModal((current) => {
+                    const nextSenderUserId = e.target.value;
+                    if (String(current?.contentSource || "").trim() !== "jd") {
+                      return { ...current, senderUserId: nextSenderUserId };
+                    }
+                    const draft = buildDbCampaignModalJdDraftSync(
+                      current?.jdJobId || "",
+                      "",
+                      current?.jdShareMode || "normal",
+                      getDbCampaignSenderContext(nextSenderUserId)
+                    );
+                    return {
+                      ...current,
+                      senderUserId: nextSenderUserId,
+                      ...(draft || {})
+                    };
+                  })}
                   disabled={dbCampaignAttachModal.busy}
                 >
                   {marketingSenderOptions.map((option) => (
