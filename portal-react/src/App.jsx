@@ -553,9 +553,6 @@ const CLIENT_SHARE_TEMPLATE_PLACEHOLDERS = [
   "{{recruiter_name}}",
   "{{recruiter_email}}",
   "{{recruiter_phone}}",
-  "{{logged_in_recruiter_name}}",
-  "{{logged_in_recruiter_email}}",
-  "{{logged_in_recruiter_phone}}",
   "{{company_name}}"
 ];
 const BULK_MAIL_TEMPLATE_PLACEHOLDERS = [
@@ -564,6 +561,7 @@ const BULK_MAIL_TEMPLATE_PLACEHOLDERS = [
   "{Role}",
   "{Recruiter}",
   "{Company}",
+  "{AnonymousClientName}",
   "{RecruiterEmail}",
   "{RecruiterPhone}",
   "{LoggedInRecruiter}",
@@ -20925,6 +20923,7 @@ function PortalApp({ token, onLogout }) {
       phone: String(prospect?.phone || "").trim(),
       company: resolvedCompany,
       company_name: resolvedCompany,
+      anonymous_client_name: String(prospect?.anonymous_client_name || prospect?.anonymousClientName || prospect?.client_name || prospect?.clientName || "").trim(),
       designation: String(prospect?.designation || "").trim(),
       role: resolvedRole,
       jd_title: resolvedRole,
@@ -20950,6 +20949,7 @@ function PortalApp({ token, onLogout }) {
         Recruiter: replacementMap.sender_name,
         RecruiterFirstName: replacementMap.sender_first_name,
         Company: replacementMap.company,
+        AnonymousClientName: replacementMap.anonymous_client_name,
         RecruiterEmail: replacementMap.sender_email,
         RecruiterPhone: replacementMap.sender_phone,
         LoggedInRecruiter: replacementMap.logged_in_recruiter_name,
@@ -21402,7 +21402,34 @@ function PortalApp({ token, onLogout }) {
     const hrName = String(clientShareDraft.hrName || "").trim();
     const clientLabel = String(clientShareDraft.clientLabel || "").trim();
     const targetRole = String(clientShareDraft.targetRole || "").trim();
-    const recruiterName = String(clientShareDraft.recruiterName || state.user?.name || "Recruiter").trim();
+    const selectedRecruiterName = String(clientShareDraft.recruiterName || "").trim().toLowerCase();
+    const selectedRecruiter = (Array.isArray(recruiterWorkspaceUsers) ? recruiterWorkspaceUsers : []).find(
+      (item) => String(item?.name || "").trim().toLowerCase() === selectedRecruiterName
+    ) || null;
+    const recruiterName = String(
+      selectedRecruiter?.name
+      || clientShareDraft.recruiterName
+      || state.user?.name
+      || "Recruiter"
+    ).trim();
+    const recruiterEmail = String(
+      selectedRecruiter?.email
+      || recruiterUserEmail
+      || state.user?.email
+      || ""
+    ).trim();
+    const recruiterPhone = String(
+      selectedRecruiter?.phone
+      || selectedRecruiter?.phoneNumber
+      || selectedRecruiter?.mobile
+      || selectedRecruiter?.mobileNumber
+      || recruiterUserPhone
+      || state.user?.phone
+      || state.user?.phoneNumber
+      || state.user?.mobile
+      || state.user?.mobileNumber
+      || ""
+    ).trim();
     const companyName = String(state.user?.companyName || state.user?.company_name || "RecruitDesk").trim();
     const roleLine = [targetRole, clientLabel].filter(Boolean).join(" for ");
     return {
@@ -21410,8 +21437,8 @@ function PortalApp({ token, onLogout }) {
       clientLabel,
       targetRole,
       recruiterName,
-      recruiterEmail: recruiterUserEmail,
-      recruiterPhone: recruiterUserPhone,
+      recruiterEmail,
+      recruiterPhone,
       companyName,
       roleLine
     };
@@ -22098,6 +22125,7 @@ function PortalApp({ token, onLogout }) {
 
   function buildClientShareHtml() {
     const rows = getClientShareRows();
+    const context = getClientShareContext();
     const presetColumns = getClientSharePresetColumns();
     const compactFields = new Set(["s_no", "phone", "email", "current_ctc", "expected_ctc", "notice_period", "total_experience"]);
     const wideFields = new Set(["screening_remarks", "reason_of_change", "remarks", "other_standard_questions", "linkedin"]);
@@ -22127,7 +22155,7 @@ function PortalApp({ token, onLogout }) {
         ? (copySettings.clientShareThreadIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareThreadIntroTemplate || "")
         : (copySettings.clientShareIntroTemplate || DEFAULT_COPY_SETTINGS.clientShareIntroTemplate || "")
     ).trim();
-    const introHtml = replaceClientSharePlaceholdersInHtml(escapeHtml(template).replace(/\n/g, "<br/>"), getClientShareContext());
+    const introHtml = replaceClientSharePlaceholdersInHtml(escapeHtml(template).replace(/\n/g, "<br/>"), context);
     const signature = getClientShareSignature();
     const signatureLinksHtml = signature.links
       .map((link) => {
@@ -22139,8 +22167,11 @@ function PortalApp({ token, onLogout }) {
       })
       .join("<br/>");
     const signatureHtml = String(signature.signatureHtml || "").trim()
-      || [
-        signature.signatureText ? escapeHtml(signature.signatureText).replace(/\n/g, "<br/>") : "",
+      ? replaceClientSharePlaceholdersInHtml(String(signature.signatureHtml || "").trim(), context)
+      : [
+        signature.signatureText
+          ? replaceClientSharePlaceholdersInHtml(escapeHtml(signature.signatureText).replace(/\n/g, "<br/>"), context)
+          : "",
         signatureLinksHtml
       ].filter(Boolean).join("<br/>");
     const signatureHtmlFinal = [
@@ -29416,7 +29447,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <Section kicker="Admin Settings" title="Email Templates">
                   {statuses.settings ? <div className={`status ${statuses.settingsKind || ""}`}>{statuses.settings}</div> : null}
                   <div className="settings-subsection">
-                    <div className="section-kicker">JD Share Template</div>
+                    <div className="section-kicker">JD Share</div>
                     <div className="form-grid">
                       <label className="full"><span>Subject template</span><input ref={jdEmailSubjectTemplateTextareaRef} value={copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailSubjectTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{JD_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`jd-subject-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(jdEmailSubjectTemplateTextareaRef, copySettings.jdEmailSubjectTemplate || DEFAULT_COPY_SETTINGS.jdEmailSubjectTemplate, (next) => setCopySettings((current) => ({ ...current, jdEmailSubjectTemplate: next })), token)}>{token}</button>))}</div></label>
                       <label className="full"><span>Body template</span><textarea ref={jdEmailBodyTemplateTextareaRef} rows={8} value={copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, jdEmailIntroTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{JD_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`jd-body-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(jdEmailBodyTemplateTextareaRef, copySettings.jdEmailIntroTemplate || DEFAULT_COPY_SETTINGS.jdEmailIntroTemplate, (next) => setCopySettings((current) => ({ ...current, jdEmailIntroTemplate: next })), token)}>{token}</button>))}</div></label>
@@ -29424,123 +29455,126 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("JD share template saved.")}>Save JD share template</button></div>
                   </div>
                   <div className="settings-subsection">
-                    <div className="section-kicker">Bulk JD Mail Template</div>
-                    <div className="form-grid">
-                      <label className="full"><span>Subject template</span><input ref={bulkJdMailSubjectTemplateTextareaRef} value={copySettings.bulkJdMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkJdMailSubjectTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, bulkJdMailSubjectTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{JD_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`bulk-jd-subject-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(bulkJdMailSubjectTemplateTextareaRef, copySettings.bulkJdMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkJdMailSubjectTemplate, (next) => setCopySettings((current) => ({ ...current, bulkJdMailSubjectTemplate: next })), token)}>{token}</button>))}</div></label>
-                      <label className="full"><span>Body template</span><textarea ref={bulkJdMailBodyTemplateTextareaRef} rows={8} value={copySettings.bulkJdMailIntroTemplate || DEFAULT_COPY_SETTINGS.bulkJdMailIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, bulkJdMailIntroTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{JD_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`bulk-jd-body-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(bulkJdMailBodyTemplateTextareaRef, copySettings.bulkJdMailIntroTemplate || DEFAULT_COPY_SETTINGS.bulkJdMailIntroTemplate, (next) => setCopySettings((current) => ({ ...current, bulkJdMailIntroTemplate: next })), token)}>{token}</button>))}</div></label>
-                    </div>
-                    <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("Bulk JD mail template saved.")}>Save bulk JD mail template</button></div>
-                  </div>
-                  <div className="settings-subsection">
-                    <div className="section-kicker">Bulk Mail Template</div>
-                    <div className="form-grid">
-                      <label className="full">
-                        <span>Subject template</span>
-                        <input
-                          ref={bulkMailSubjectTemplateTextareaRef}
-                          value={copySettings.bulkMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkMailSubjectTemplate}
-                          onChange={(e) => setCopySettings((current) => ({ ...current, bulkMailSubjectTemplate: e.target.value }))}
-                        />
-                        <span className="field-help">Click placeholders to insert:</span>
-                        <div className="placeholder-selector">
-                          {BULK_MAIL_TEMPLATE_PLACEHOLDERS.map((token) => (
-                            <button
-                              key={`bulk-subject-${token}`}
-                              type="button"
-                              className="ghost-btn placeholder-chip"
-                              onClick={() => insertPlaceholderAtCursor(
-                                bulkMailSubjectTemplateTextareaRef,
-                                copySettings.bulkMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkMailSubjectTemplate,
-                                (next) => setCopySettings((current) => ({ ...current, bulkMailSubjectTemplate: next })),
-                                token
-                              )}
-                            >
-                              {token}
-                            </button>
-                          ))}
-                        </div>
-                      </label>
-                      <label className="full">
-                        <span>Body template</span>
-                        <textarea
-                          ref={bulkMailBodyTemplateTextareaRef}
-                          rows={8}
-                          value={copySettings.bulkMailBodyTemplate || DEFAULT_COPY_SETTINGS.bulkMailBodyTemplate}
-                          onChange={(e) => setCopySettings((current) => ({ ...current, bulkMailBodyTemplate: e.target.value }))}
-                        />
-                        <span className="field-help">Click placeholders to insert:</span>
-                        <div className="placeholder-selector">
-                          {BULK_MAIL_TEMPLATE_PLACEHOLDERS.map((token) => (
-                            <button
-                              key={`bulk-body-${token}`}
-                              type="button"
-                              className="ghost-btn placeholder-chip"
-                              onClick={() => insertPlaceholderAtCursor(
-                                bulkMailBodyTemplateTextareaRef,
-                                copySettings.bulkMailBodyTemplate || DEFAULT_COPY_SETTINGS.bulkMailBodyTemplate,
-                                (next) => setCopySettings((current) => ({ ...current, bulkMailBodyTemplate: next })),
-                                token
-                              )}
-                            >
-                              {token}
-                            </button>
-                          ))}
-                        </div>
-                      </label>
-                    </div>
-                    <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("Bulk mail template saved.")}>Save bulk mail template</button></div>
+                    <div className="section-kicker">Bulk Share</div>
                     <div className="item-card compact-card" style={{ marginTop: 12 }}>
-                      <div className="item-subtitle">Saved bulk mail templates</div>
-                      <div className="muted" style={{ marginTop: 6 }}>These are recruiter-created saved templates from the bulk-mail popup, separate from the shared default template above.</div>
-                      <div className="form-grid two-col" style={{ marginTop: 10 }}>
-                        <label>
-                          <span>Saved templates</span>
-                          <select value={selectedSavedBulkMailTemplateId || ""} onChange={(e) => setSelectedSavedBulkMailTemplateId(e.target.value)} disabled={savedBulkMailTemplatesLoading || !savedBulkMailTemplates.length}>
-                            {!savedBulkMailTemplates.length ? <option value="">No saved templates</option> : null}
-                            {(savedBulkMailTemplates || []).map((item) => (
-                              <option key={`settings-saved-bulk-template-${item.id}`} value={item.id}>
-                                {`${item?.campaignName || item?.name || "Untitled"}${item?.tag ? ` | ${item.tag}` : ""}`}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <div className="button-row" style={{ alignSelf: "end", justifyContent: "flex-start" }}>
-                          <button className="ghost-btn" type="button" onClick={() => void loadSavedBulkMailTemplatesForSettings({ force: true })} disabled={savedBulkMailTemplatesLoading}>
-                            {savedBulkMailTemplatesLoading ? "Refreshing..." : "Refresh saved templates"}
-                          </button>
-                          <button
-                            className="ghost-btn"
-                            type="button"
-                            disabled={!selectedSavedBulkMailTemplate}
-                            onClick={() => {
-                              if (!selectedSavedBulkMailTemplate) return;
-                              setCopySettings((current) => ({
-                                ...current,
-                                bulkMailSubjectTemplate: String(selectedSavedBulkMailTemplate.subject || "").trim(),
-                                bulkMailBodyTemplate: String(selectedSavedBulkMailTemplate.bodyText || "").trim()
-                              }));
-                              setStatus("settings", "Saved bulk template loaded into shared default editor.", "ok");
-                            }}
-                          >
-                            Load into default editor
-                          </button>
-                        </div>
+                      <div className="item-subtitle">Bulk JD Mail Template</div>
+                      <div className="form-grid" style={{ marginTop: 10 }}>
+                        <label className="full"><span>Subject template</span><input ref={bulkJdMailSubjectTemplateTextareaRef} value={copySettings.bulkJdMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkJdMailSubjectTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, bulkJdMailSubjectTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{JD_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`bulk-jd-subject-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(bulkJdMailSubjectTemplateTextareaRef, copySettings.bulkJdMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkJdMailSubjectTemplate, (next) => setCopySettings((current) => ({ ...current, bulkJdMailSubjectTemplate: next })), token)}>{token}</button>))}</div></label>
+                        <label className="full"><span>Body template</span><textarea ref={bulkJdMailBodyTemplateTextareaRef} rows={8} value={copySettings.bulkJdMailIntroTemplate || DEFAULT_COPY_SETTINGS.bulkJdMailIntroTemplate} onChange={(e) => setCopySettings((current) => ({ ...current, bulkJdMailIntroTemplate: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{JD_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`bulk-jd-body-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(bulkJdMailBodyTemplateTextareaRef, copySettings.bulkJdMailIntroTemplate || DEFAULT_COPY_SETTINGS.bulkJdMailIntroTemplate, (next) => setCopySettings((current) => ({ ...current, bulkJdMailIntroTemplate: next })), token)}>{token}</button>))}</div></label>
                       </div>
-                      {selectedSavedBulkMailTemplate ? (
-                        <div className="item-card compact-card" style={{ marginTop: 12 }}>
-                          <div className="item-subtitle">{selectedSavedBulkMailTemplate.campaignName || selectedSavedBulkMailTemplate.name || "Saved template"}</div>
-                          <div className="muted" style={{ marginTop: 6 }}>{`Tag: ${selectedSavedBulkMailTemplate.tag || "-"} | Updated: ${selectedSavedBulkMailTemplate.updatedAt ? new Date(selectedSavedBulkMailTemplate.updatedAt).toLocaleString() : "-"}`}</div>
-                          <div style={{ marginTop: 10 }}><strong>Subject:</strong> {String(selectedSavedBulkMailTemplate.subject || "").trim() || "-"}</div>
-                          <div style={{ marginTop: 10 }}>
-                            <strong>Body:</strong>
-                            <div className="input-like" style={{ marginTop: 6, minHeight: 120, whiteSpace: "pre-wrap" }}>{String(selectedSavedBulkMailTemplate.bodyText || "").trim() || "-"}</div>
+                      <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("Bulk JD mail template saved.")}>Save bulk JD mail template</button></div>
+                    </div>
+                    <div className="item-card compact-card" style={{ marginTop: 12 }}>
+                      <div className="item-subtitle">Bulk Default Mail Template</div>
+                      <div className="form-grid" style={{ marginTop: 10 }}>
+                        <label className="full">
+                          <span>Subject template</span>
+                          <input
+                            ref={bulkMailSubjectTemplateTextareaRef}
+                            value={copySettings.bulkMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkMailSubjectTemplate}
+                            onChange={(e) => setCopySettings((current) => ({ ...current, bulkMailSubjectTemplate: e.target.value }))}
+                          />
+                          <span className="field-help">Click placeholders to insert:</span>
+                          <div className="placeholder-selector">
+                            {BULK_MAIL_TEMPLATE_PLACEHOLDERS.map((token) => (
+                              <button
+                                key={`bulk-subject-${token}`}
+                                type="button"
+                                className="ghost-btn placeholder-chip"
+                                onClick={() => insertPlaceholderAtCursor(
+                                  bulkMailSubjectTemplateTextareaRef,
+                                  copySettings.bulkMailSubjectTemplate || DEFAULT_COPY_SETTINGS.bulkMailSubjectTemplate,
+                                  (next) => setCopySettings((current) => ({ ...current, bulkMailSubjectTemplate: next })),
+                                  token
+                                )}
+                              >
+                                {token}
+                              </button>
+                            ))}
+                          </div>
+                        </label>
+                        <label className="full">
+                          <span>Body template</span>
+                          <textarea
+                            ref={bulkMailBodyTemplateTextareaRef}
+                            rows={8}
+                            value={copySettings.bulkMailBodyTemplate || DEFAULT_COPY_SETTINGS.bulkMailBodyTemplate}
+                            onChange={(e) => setCopySettings((current) => ({ ...current, bulkMailBodyTemplate: e.target.value }))}
+                          />
+                          <span className="field-help">Click placeholders to insert:</span>
+                          <div className="placeholder-selector">
+                            {BULK_MAIL_TEMPLATE_PLACEHOLDERS.map((token) => (
+                              <button
+                                key={`bulk-body-${token}`}
+                                type="button"
+                                className="ghost-btn placeholder-chip"
+                                onClick={() => insertPlaceholderAtCursor(
+                                  bulkMailBodyTemplateTextareaRef,
+                                  copySettings.bulkMailBodyTemplate || DEFAULT_COPY_SETTINGS.bulkMailBodyTemplate,
+                                  (next) => setCopySettings((current) => ({ ...current, bulkMailBodyTemplate: next })),
+                                  token
+                                )}
+                              >
+                                {token}
+                              </button>
+                            ))}
+                          </div>
+                        </label>
+                      </div>
+                      <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("Bulk mail template saved.")}>Save bulk mail template</button></div>
+                      <div className="item-card compact-card" style={{ marginTop: 12 }}>
+                        <div className="item-subtitle">Saved Bulk Email Templates</div>
+                        <div className="muted" style={{ marginTop: 6 }}>These are recruiter-created saved templates from the bulk-mail popup, separate from the shared default template above.</div>
+                        <div className="form-grid two-col" style={{ marginTop: 10 }}>
+                          <label>
+                            <span>Saved templates</span>
+                            <select value={selectedSavedBulkMailTemplateId || ""} onChange={(e) => setSelectedSavedBulkMailTemplateId(e.target.value)} disabled={savedBulkMailTemplatesLoading || !savedBulkMailTemplates.length}>
+                              {!savedBulkMailTemplates.length ? <option value="">No saved templates</option> : null}
+                              {(savedBulkMailTemplates || []).map((item) => (
+                                <option key={`settings-saved-bulk-template-${item.id}`} value={item.id}>
+                                  {`${item?.campaignName || item?.name || "Untitled"}${item?.tag ? ` | ${item.tag}` : ""}`}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="button-row" style={{ alignSelf: "end", justifyContent: "flex-start" }}>
+                            <button className="ghost-btn" type="button" onClick={() => void loadSavedBulkMailTemplatesForSettings({ force: true })} disabled={savedBulkMailTemplatesLoading}>
+                              {savedBulkMailTemplatesLoading ? "Refreshing..." : "Refresh saved templates"}
+                            </button>
+                            <button
+                              className="ghost-btn"
+                              type="button"
+                              disabled={!selectedSavedBulkMailTemplate}
+                              onClick={() => {
+                                if (!selectedSavedBulkMailTemplate) return;
+                                setCopySettings((current) => ({
+                                  ...current,
+                                  bulkMailSubjectTemplate: String(selectedSavedBulkMailTemplate.subject || "").trim(),
+                                  bulkMailBodyTemplate: String(selectedSavedBulkMailTemplate.bodyText || "").trim()
+                                }));
+                                setStatus("settings", "Saved bulk template loaded into shared default editor.", "ok");
+                              }}
+                            >
+                              Load into default editor
+                            </button>
                           </div>
                         </div>
-                      ) : null}
+                        {selectedSavedBulkMailTemplate ? (
+                          <div className="item-card compact-card" style={{ marginTop: 12 }}>
+                            <div className="item-subtitle">{selectedSavedBulkMailTemplate.campaignName || selectedSavedBulkMailTemplate.name || "Saved template"}</div>
+                            <div className="muted" style={{ marginTop: 6 }}>{`Tag: ${selectedSavedBulkMailTemplate.tag || "-"} | Updated: ${selectedSavedBulkMailTemplate.updatedAt ? new Date(selectedSavedBulkMailTemplate.updatedAt).toLocaleString() : "-"}`}</div>
+                            <div style={{ marginTop: 10 }}><strong>Subject:</strong> {String(selectedSavedBulkMailTemplate.subject || "").trim() || "-"}</div>
+                            <div style={{ marginTop: 10 }}>
+                              <strong>Body:</strong>
+                              <div className="input-like" style={{ marginTop: 6, minHeight: 120, whiteSpace: "pre-wrap" }}>{String(selectedSavedBulkMailTemplate.bodyText || "").trim() || "-"}</div>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                   <div className="settings-subsection">
-                    <div className="section-kicker">Direct Share Template</div>
+                    <div className="section-kicker">Direct Share</div>
                     <div className="form-grid">
                       <label className="full">
                         <span>Subject template</span>
@@ -29570,9 +29604,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <div className="button-row"><button onClick={() => void saveCopySettingsWithMessage("Direct share template saved.")}>Save direct share template</button></div>
                   </div>
                   <div className="settings-subsection">
-                    <div className="section-kicker">Signature Settings (Admin Default)</div>
+                    <div className="section-kicker">Signature</div>
                     <div className="form-grid two-col">
-                      <label className="full"><span>Signature text</span><textarea ref={signatureTextTemplateTextareaRef} rows={5} value={copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureText: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{CLIENT_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`sign-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(signatureTextTemplateTextareaRef, copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText, (next) => setCopySettings((current) => ({ ...current, clientShareSignatureText: next })), token)}>{token}</button>))}</div></label>
+                      <label className="full"><span>Signature text</span><textarea ref={signatureTextTemplateTextareaRef} rows={5} value={copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureText: e.target.value }))} /><span className="field-help">Click placeholders to insert:</span><div className="placeholder-selector">{CLIENT_SHARE_TEMPLATE_PLACEHOLDERS.map((token) => (<button key={`sign-${token}`} type="button" className="ghost-btn placeholder-chip" onClick={() => insertPlaceholderAtCursor(signatureTextTemplateTextareaRef, copySettings.clientShareSignatureText || DEFAULT_COPY_SETTINGS.clientShareSignatureText, (next) => setCopySettings((current) => ({ ...current, clientShareSignatureText: next })), token)}>{token}</button>))}</div><span className="field-help">{`{{recruiter_name}} uses the assigned recruiter when a candidate/profile is assigned; otherwise it falls back to the logged-in recruiter.`}</span></label>
                       <label><span>Link 1 text</span><input value={copySettings.clientShareSignatureLinkLabel || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel: e.target.value }))} /></label>
                       <label><span>Link 1 URL</span><input value={copySettings.clientShareSignatureLinkUrl || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkUrl: e.target.value }))} /></label>
                       <label><span>Link 2 text</span><input value={copySettings.clientShareSignatureLinkLabel2 || ""} onChange={(e) => setCopySettings((current) => ({ ...current, clientShareSignatureLinkLabel2: e.target.value }))} /></label>
