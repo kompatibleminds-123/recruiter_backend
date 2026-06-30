@@ -2206,13 +2206,21 @@ function normalizeTemplateFormatting(text) {
     .replace(/[\uFFFD]/g, "");
 }
 
+function sanitizeMojibakeApiText(text) {
+  return String(text ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\u00a0/g, " ")
+    .replace(/[\u2022\u2023\u25AA\u25FC\u25A0\u25CF]/g, "\u2022")
+    .replace(/[\uFFFD]/g, "");
+}
+
 
 
 
 
 function sanitizeMojibakeDeep(value) {
   if (value == null) return value;
-  if (typeof value === "string") return normalizeMojibakeSymbols(value);
+  if (typeof value === "string") return sanitizeMojibakeApiText(value);
   if (Array.isArray(value)) return value.map((item) => sanitizeMojibakeDeep(item));
   if (typeof value === "object") {
     const next = {};
@@ -2222,6 +2230,26 @@ function sanitizeMojibakeDeep(value) {
     return next;
   }
   return value;
+}
+
+function extractSafeFirstName(fullName = "") {
+  const raw = String(fullName || "").trim();
+  if (!raw) return "";
+  const titles = new Set(["mr", "mrs", "ms", "miss", "sh", "shri", "smt", "dr"]);
+  const tokens = raw
+    .split(/\s+/)
+    .map((token) => String(token || "").trim())
+    .filter(Boolean);
+  for (const token of tokens) {
+    const cleaned = token.replace(/[.,]/g, "").trim();
+    const lower = cleaned.toLowerCase();
+    if (!cleaned) continue;
+    if (titles.has(lower)) continue;
+    if (cleaned.length <= 1) continue;
+    if (!/[a-z]/i.test(cleaned)) continue;
+    return cleaned;
+  }
+  return "";
 }
 function polishStructuredBulletSentence(line) {
   const text = normalizeMojibakeSymbols(line).trim().replace(/\s+/g, " ");
