@@ -2966,7 +2966,8 @@ async function login({ email, password }) {
   } else {
     await sbIns("sessions", [{ token, user_id: sessionUser.id, company_id: sessionUser.companyId, created_at: new Date().toISOString() }], { conflict: "token", upsert: true });
   }
-  return { token, user: sessionUser };
+  const license = await getCompanyLicense(sessionUser.companyId).catch(() => null);
+  return { token, user: sessionUser, license };
 }
 
 async function verifyUserEmail({ userId, companyId, email }) {
