@@ -4110,7 +4110,7 @@ function fillCandidateTemplate(template, candidate) {
     logged_in_recruiter_phone: source.logged_in_recruiter_phone || source.loggedInRecruiterPhone || "",
     interview_at: formatDateForCopy(source.interview_at || source.interviewAt || ""),
     client_name: source.client_name || source.clientName || "",
-    anonymous_client_name: source.anonymous_client_name || source.anonymousClientName || source.client_name || source.clientName || "",
+    anonymous_client_name: source.anonymous_client_name || source.anonymousClientName || source.public_company_line || source.publicCompanyLine || source.client_name || source.clientName || "",
     company_name: source.company_name || source.companyName || "",
     jd_link: source.jd_link || source.jdLink || "",
     recruiter_jd_link: source.recruiter_jd_link || source.recruiterJdLink || source.jd_link || source.jdLink || "",
@@ -11516,6 +11516,44 @@ function PortalApp({ token, onLogout }) {
     return String(matchedJob?.id || "").trim();
   }
 
+  function resolveAnonymousClientLine(row = {}, jobOverride = null) {
+    const explicitAnonymous = String(row?.anonymous_client_name || row?.anonymousClientName || "").trim();
+    if (explicitAnonymous) return explicitAnonymous;
+    const directPublicLine = String(row?.public_company_line || row?.publicCompanyLine || "").trim();
+    if (directPublicLine) return directPublicLine;
+
+    const safeJobs = Array.isArray(state.jobs) ? state.jobs : [];
+    let matchedJob = jobOverride && typeof jobOverride === "object" ? jobOverride : null;
+    const resolvedJobId = matchedJob ? String(matchedJob?.id || matchedJob?.jobId || "").trim() : resolveRowJobId(row);
+    if (!matchedJob && resolvedJobId) {
+      matchedJob = safeJobs.find((job) => String(job?.id || "").trim() === resolvedJobId) || null;
+    }
+    if (!matchedJob) {
+      const rowTitle = String(row?.jd_title || row?.jdTitle || row?.role || "").trim().toLowerCase();
+      const rowClient = String(row?.client_name || row?.clientName || "").trim().toLowerCase();
+      matchedJob = safeJobs.find((job) => {
+        const jobTitle = String(job?.title || "").trim().toLowerCase();
+        const jobClient = String(job?.clientName || job?.client_name || "").trim().toLowerCase();
+        return (rowTitle && jobTitle === rowTitle) || (rowTitle && rowClient && jobTitle === rowTitle && jobClient === rowClient);
+      }) || null;
+    }
+
+    const jobPublicLine = String(matchedJob?.publicCompanyLine || matchedJob?.public_company_line || "").trim();
+    if (jobPublicLine) return jobPublicLine;
+
+    const clientKey = canonicalizeClientName(String(
+      row?.client_name
+      || row?.clientName
+      || matchedJob?.clientName
+      || matchedJob?.client_name
+      || ""
+    ).trim());
+    const defaultPublicLine = String(clientJobContentDefaults?.[clientKey]?.publicCompanyLine || "").trim();
+    if (defaultPublicLine) return defaultPublicLine;
+
+    return String(row?.client_name || row?.clientName || matchedJob?.clientName || matchedJob?.client_name || "").trim();
+  }
+
   function getCompanyWideShortcutMap(settingsOverride = null, options = {}) {
     const includeLinkedin = options?.includeLinkedin !== false;
     const sourceSettings = settingsOverride && typeof settingsOverride === "object" ? settingsOverride : copySettings;
@@ -11703,7 +11741,7 @@ function PortalApp({ token, onLogout }) {
       || state.user?.mobileNumber
       || ""
     ).trim();
-    const anonymousClientName = String(row?.client_name || row?.clientName || "").trim();
+    const anonymousClientName = resolveAnonymousClientLine(row);
     const anonymousJdLink = String(row?.jd_link || row?.jdLink || "").trim()
       || (resolveRowJobId(row) ? getApplyLink(resolveRowJobId(row)) : "");
     return {
@@ -20984,7 +21022,7 @@ function PortalApp({ token, onLogout }) {
       phone: String(prospect?.phone || "").trim(),
       company: resolvedCompany,
       company_name: resolvedCompany,
-      anonymous_client_name: String(prospect?.anonymous_client_name || prospect?.anonymousClientName || prospect?.client_name || prospect?.clientName || "").trim(),
+      anonymous_client_name: String(prospect?.anonymous_client_name || prospect?.anonymousClientName || prospect?.public_company_line || prospect?.publicCompanyLine || prospect?.client_name || prospect?.clientName || "").trim(),
       designation: String(prospect?.designation || "").trim(),
       role: resolvedRole,
       jd_title: resolvedRole,
@@ -24052,6 +24090,7 @@ function PortalApp({ token, onLogout }) {
     const companyName = String(state.user?.companyName || "").trim();
     const jdTitle = String(job?.title || "").trim();
     const clientName = String(job?.clientName || "").trim();
+    const anonymousClientName = String(job?.publicCompanyLine || job?.public_company_line || "").trim() || clientName;
     const jdLink = jobId ? getApplyLink(jobId) : "";
     return {
       name: "",
@@ -24069,7 +24108,7 @@ function PortalApp({ token, onLogout }) {
       company_name: companyName,
       jd_title: jdTitle,
       client_name: clientName,
-      anonymous_client_name: clientName,
+      anonymous_client_name: anonymousClientName,
       jd_link: jdLink,
       recruiter_jd_link: jdLink,
       anonymous_jd_link: jdLink
@@ -30878,39 +30917,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 ))}
               </div>
             ) : (
-              <div className="status">No saved shortcuts yet. Write a message below, add a shortcut key, then click Save shortcut.</div>
+              <div className="status">No saved shortcuts yet. Write your message below and copy it directly.</div>
             )}
             <label className="full">
               <span>Customize message</span>
               <textarea value={whatsappTemplatePicker.customText || ""} onChange={(e) => setWhatsappTemplatePicker((current) => ({ ...current, customText: e.target.value }))} />
-              <span className="field-help">Use placeholders like {`{{candidate_name}} {{candidate_email}} {{candidate_phone}} {{recruiter_name}} {{recruiter_email}} {{recruiter_phone}} {{logged_in_recruiter_name}} {{logged_in_recruiter_email}} {{logged_in_recruiter_phone}} {{interview_at}} {{jd_title}} {{client_name}} {{anonymous_client_name}} {{company_name}} {{jd_link}} {{recruiter_jd_link}} {{anonymous_jd_link}}`}</span>
             </label>
-            <div className="form-grid two-col">
-              <label>
-                <span>New shortcut key</span>
-                <input value={whatsappTemplatePicker.newShortcutKey || ""} onChange={(e) => setWhatsappTemplatePicker((current) => ({ ...current, newShortcutKey: e.target.value }))} placeholder="followup_1" />
-              </label>
-              <label>
-                <span>Save scope</span>
-                <select value={whatsappTemplatePicker.saveScope || "all_jobs"} onChange={(e) => setWhatsappTemplatePicker((current) => ({ ...current, saveScope: e.target.value }))}>
-                  {isSettingsAdmin ? <option value="company_wide">Company-wide</option> : null}
-                  <option value="all_jobs">Personal (all jobs)</option>
-                  <option value="this_job">This job only</option>
-                </select>
-              </label>
-              {whatsappTemplatePicker.saveScope === "this_job" ? (
-                <label className="full">
-                  <span>Assign to job</span>
-                  <select value={whatsappTemplatePicker.assignJobId || ""} onChange={(e) => setWhatsappTemplatePicker((current) => ({ ...current, assignJobId: e.target.value }))}>
-                    <option value="">Select job</option>
-                    {(state.jobs || []).map((job) => <option key={job.id} value={job.id}>{job.title || "Untitled job"}</option>)}
-                  </select>
-                </label>
-              ) : null}
-            </div>
             <div className="button-row">
               <button className="ghost-btn" onClick={() => setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace", customText: "", newShortcutKey: "", saveScope: "all_jobs", assignJobId: "" })}>Cancel</button>
-              <button className="ghost-btn" onClick={() => void saveWhatsappTemplateFromPicker()}>Save as shortcut</button>
               <button onClick={() => void applyWhatsappTemplatePickerSelection()}>Copy & open WhatsApp</button>
             </div>
           </div>
@@ -30995,7 +31009,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             <label className="full">
               <span>Customize message</span>
               <textarea value={linkedinTemplatePicker.customText || ""} onChange={(e) => setLinkedinTemplatePicker((current) => ({ ...current, customText: e.target.value }))} />
-              <span className="field-help">Use placeholders like {`{{candidate_name}} {{candidate_email}} {{candidate_phone}} {{recruiter_name}} {{recruiter_email}} {{recruiter_phone}} {{logged_in_recruiter_name}} {{logged_in_recruiter_email}} {{logged_in_recruiter_phone}} {{interview_at}} {{jd_title}} {{client_name}} {{anonymous_client_name}} {{company_name}} {{jd_link}} {{recruiter_jd_link}} {{anonymous_jd_link}}`}</span>
             </label>
             <div className="button-row">
               <button className="ghost-btn" onClick={() => setLinkedinTemplatePicker({ open: false, options: [], selectedId: "", row: null, statusKey: "workspace", customText: "", linkedinUrl: "", outreachMode: "connected" })}>Cancel</button>
