@@ -16225,6 +16225,7 @@ function PortalApp({ token, onLogout }) {
       const previewHeaderLine = buildResumeHeaderLineForCandidate(item);
       if (previewCandidateName) params.set("candidate_name", previewCandidateName);
       if (previewHeaderLine) params.set("header_line", previewHeaderLine);
+      params.set("branded", "1");
       params.set("mode", "branded");
       const brandedUrl = `/company/candidates/${encodeURIComponent(meta.candidateId)}/cv?${params.toString()}`;
       if (pendingTab) pendingTab.location.href = brandedUrl;
@@ -16285,6 +16286,7 @@ function PortalApp({ token, onLogout }) {
       const previewHeaderLine = buildResumeHeaderLineForCandidate(item);
       if (previewCandidateName) params.set("candidate_name", previewCandidateName);
       if (previewHeaderLine) params.set("header_line", previewHeaderLine);
+      params.set("branded", "1");
       params.set("mode", "branded");
       params.set("download", "1");
       const response = await fetch(`/company/candidates/${encodeURIComponent(meta.candidateId)}/cv?${params.toString()}`);
@@ -28203,57 +28205,47 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <span>Selected profiles</span>
                         <input value={`${Array.isArray(selectedAssessmentRows) ? selectedAssessmentRows.length : 0} assessment profile(s)`} readOnly />
                       </label>
-                      {String(clientShareDraft.deliveryMode || "threaded") === "new" ? (
-                        <>
-                          <label>
-                            <span>Recipient email</span>
-                            <input
-                              type="email"
-                              value={clientShareDraft.recipientEmail}
-                              onChange={(e) => {
-                                setClientShareDraft((current) => ({ ...current, recipientEmail: e.target.value }));
-                                setClientShareSuggestOpen((current) => ({ ...current, to: true }));
-                              }}
-                              onFocus={() => setClientShareSuggestOpen((current) => ({ ...current, to: true }))}
-                              onBlur={() => setTimeout(() => setClientShareSuggestOpen((current) => ({ ...current, to: false })), 120)}
-                              placeholder="hr@client.com"
-                            />
-                            {clientShareSuggestOpen.to && getEmailTokenSuggestions(clientShareDraft.recipientEmail).length ? (
-                              <div className="stack-list compact">
-                                {getEmailTokenSuggestions(clientShareDraft.recipientEmail).map((email) => (
-                                  <button key={`to-suggest-${email}`} type="button" className="ghost-btn" onMouseDown={() => applyEmailTokenSuggestion("recipientEmail", email)}>{email}</button>
-                                ))}
-                              </div>
-                            ) : null}
-                          </label>
-                          <label>
-                            <span>CC (optional)</span>
-                            <input
-                              value={clientShareDraft.ccEmails || ""}
-                              onChange={(e) => {
-                                setClientShareDraft((current) => ({ ...current, ccEmails: e.target.value }));
-                                setClientShareSuggestOpen((current) => ({ ...current, cc: true }));
-                              }}
-                              onFocus={() => setClientShareSuggestOpen((current) => ({ ...current, cc: true }))}
-                              onBlur={() => setTimeout(() => setClientShareSuggestOpen((current) => ({ ...current, cc: false })), 120)}
-                              placeholder="manager@client.com, hiring@client.com"
-                            />
-                            {clientShareSuggestOpen.cc && getEmailTokenSuggestions(clientShareDraft.ccEmails || "").length ? (
-                              <div className="stack-list compact">
-                                {getEmailTokenSuggestions(clientShareDraft.ccEmails || "").map((email) => (
-                                  <button key={`cc-suggest-${email}`} type="button" className="ghost-btn" onMouseDown={() => applyEmailTokenSuggestion("ccEmails", email)}>{email}</button>
-                                ))}
-                              </div>
-                            ) : null}
-                          </label>
-                        </>
-                      ) : (
-                        <div className="field-help full">
-                          Thread mail mode is manual-copy only. Portal will not send mail directly in this mode.
-                          <br />
-                          Use your mailbox Reply for the same chain. You can copy the email content or copy the tracker from here.
-                        </div>
-                      )}
+                      <label>
+                        <span>Recipient email</span>
+                        <input
+                          type="email"
+                          value={clientShareDraft.recipientEmail}
+                          onChange={(e) => {
+                            setClientShareDraft((current) => ({ ...current, recipientEmail: e.target.value }));
+                            setClientShareSuggestOpen((current) => ({ ...current, to: true }));
+                          }}
+                          onFocus={() => setClientShareSuggestOpen((current) => ({ ...current, to: true }))}
+                          onBlur={() => setTimeout(() => setClientShareSuggestOpen((current) => ({ ...current, to: false })), 120)}
+                          placeholder="hr@client.com"
+                        />
+                        {clientShareSuggestOpen.to && getEmailTokenSuggestions(clientShareDraft.recipientEmail).length ? (
+                          <div className="stack-list compact">
+                            {getEmailTokenSuggestions(clientShareDraft.recipientEmail).map((email) => (
+                              <button key={`to-suggest-${email}`} type="button" className="ghost-btn" onMouseDown={() => applyEmailTokenSuggestion("recipientEmail", email)}>{email}</button>
+                            ))}
+                          </div>
+                        ) : null}
+                      </label>
+                      <label>
+                        <span>CC (optional)</span>
+                        <input
+                          value={clientShareDraft.ccEmails || ""}
+                          onChange={(e) => {
+                            setClientShareDraft((current) => ({ ...current, ccEmails: e.target.value }));
+                            setClientShareSuggestOpen((current) => ({ ...current, cc: true }));
+                          }}
+                          onFocus={() => setClientShareSuggestOpen((current) => ({ ...current, cc: true }))}
+                          onBlur={() => setTimeout(() => setClientShareSuggestOpen((current) => ({ ...current, cc: false })), 120)}
+                          placeholder="manager@client.com, hiring@client.com"
+                        />
+                        {clientShareSuggestOpen.cc && getEmailTokenSuggestions(clientShareDraft.ccEmails || "").length ? (
+                          <div className="stack-list compact">
+                            {getEmailTokenSuggestions(clientShareDraft.ccEmails || "").map((email) => (
+                              <button key={`cc-suggest-${email}`} type="button" className="ghost-btn" onMouseDown={() => applyEmailTokenSuggestion("ccEmails", email)}>{email}</button>
+                            ))}
+                          </div>
+                        ) : null}
+                      </label>
                       <label>
                         <span>Email subject</span>
                         <input value={clientShareDraft.emailSubject} onChange={(e) => setClientShareDraft((current) => ({ ...current, emailSubject: e.target.value }))} placeholder={getClientShareEmailSubject()} />
@@ -28294,7 +28286,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <div className="field-help full">
                         {String(clientShareDraft.deliveryMode || "threaded") === "new"
                           ? "Will start a fresh email thread from portal."
-                          : "Thread reply mode: copy draft and paste in your mailbox reply window."}
+                          : "Thread reply mode: portal will try to continue the latest saved chain for this client, role, and recipient."}
                       </div>
                       <label><span>HR name</span><input value={clientShareDraft.hrName} onChange={(e) => setClientShareDraft((current) => ({ ...current, hrName: e.target.value }))} placeholder="Type HR name (optional)" /></label>
                       <label>
@@ -28411,8 +28403,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   {null}
                 </div>
                 {!selectedAssessmentRows.length ? <div className="empty-state">No assessment selected yet. Go to Assessments and tick `Select for client share` on the profiles you want to send.</div> : null}
-                <p className="muted">Current flow: copy the email draft from here, then paste it into Zoho/Gmail/Outlook and attach CVs manually.</p>
-                {String(clientShareDraft.deliveryMode || "threaded") === "new" && clientShareSendQueue.pending ? (
+                <p className="muted">
+                  {String(clientShareDraft.deliveryMode || "threaded") === "new"
+                    ? "Current flow: portal can send a fresh client-share mail directly, or you can still copy the draft manually."
+                    : "Threaded flow: portal will try to continue the latest saved mail chain for this client, role, and recipient."}
+                </p>
+                {clientShareSendQueue.pending ? (
                   <div className="status">
                     {`Queued to ${clientShareSendQueue.to || "recipient"} in ${clientShareQueueSeconds}s.`}
                     <div className="button-row tight">
@@ -28422,11 +28418,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 ) : null}
                 <div className="button-row">
                   <button onClick={() => void copyClientShareEmailDraft()}>Copy email draft</button>
-                  {String(clientShareDraft.deliveryMode || "threaded") === "new" ? (
-                    <button onClick={() => void sendClientShareEmail()} disabled={clientShareSendQueue.pending}>
-                      {clientShareSendQueue.pending ? "Queued..." : "Send email"}
-                    </button>
-                  ) : null}
+                  <button onClick={() => void sendClientShareEmail()} disabled={clientShareSendQueue.pending}>
+                    {clientShareSendQueue.pending ? "Queued..." : "Send email"}
+                  </button>
                   <button className="ghost-btn" onClick={() => void copyClientShareTracker()}>Copy tracker</button>
                 </div>
               </Section>

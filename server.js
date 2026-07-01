@@ -130,7 +130,9 @@ const {
   saveCompanySharedExportPresets,
   appendAuditLog,
   listCompanyAuditLogs,
+  appendCompanyEmailThreadMessage,
   upsertCompanyEmailThread,
+  getLatestCompanyEmailThreadMessage,
   saveCompanyPublicShortcuts,
   saveCompanyPersonalShortcuts,
   saveCompanyRecruiterCampaignTemplates,
@@ -1350,6 +1352,7 @@ async function sendJdEmailAsActor(actor, { to, cc = "", subject, html, text, att
     });
     return {
       providerMode: "zoho_api",
+      mailboxEmail: String(meta?.fromAddress || "").trim(),
       messageId: String(meta?.messageId || "").trim(),
       mailId: String(meta?.mailId || "").trim(),
       internetMessageId: String(meta?.internetMessageId || "").trim(),
@@ -1367,11 +1370,11 @@ async function sendJdEmailAsActor(actor, { to, cc = "", subject, html, text, att
   }
   if (isGoogleApiMode(cfg)) {
     const meta = await sendGoogleEmailWithCfg(cfg, { to, cc: ccValue, subject, html, text, attachments });
-    return { providerMode: "google_api", messageId: String(meta?.messageId || "").trim(), mailId: "", internetMessageId: String(meta?.messageId || "").trim(), threadId: String(meta?.threadId || "").trim() };
+    return { providerMode: "google_api", mailboxEmail: extractEmailAddress(cfg?.from || cfg?.user || ""), messageId: String(meta?.messageId || "").trim(), mailId: "", internetMessageId: String(meta?.messageId || "").trim(), threadId: String(meta?.threadId || "").trim() };
   }
   if (isMicrosoftApiMode(cfg)) {
     const meta = await sendMicrosoftEmailWithCfg(cfg, { to, cc: ccValue, subject, html, text, attachments });
-    return { providerMode: "microsoft_api", messageId: String(meta?.messageId || "").trim(), mailId: "", internetMessageId: "", threadId: String(meta?.threadId || "").trim() };
+    return { providerMode: "microsoft_api", mailboxEmail: extractEmailAddress(cfg?.from || cfg?.user || ""), messageId: String(meta?.messageId || "").trim(), mailId: "", internetMessageId: "", threadId: String(meta?.threadId || "").trim() };
   }
   const info = await transport.sendMail({
     from: String(cfg.from || "").trim(),
@@ -1386,6 +1389,7 @@ async function sendJdEmailAsActor(actor, { to, cc = "", subject, html, text, att
   });
   return {
     providerMode: "smtp",
+    mailboxEmail: extractEmailAddress(cfg?.from || cfg?.user || ""),
     messageId: String(info?.messageId || "").trim(),
     mailId: "",
     internetMessageId: String(info?.messageId || "").trim(),
@@ -17146,19 +17150,38 @@ const server = http.createServer(async (req, res) => {
         clientLabel: String(threadContext.clientLabel || "").trim(),
         role: String(threadContext.role || "").trim()
       });
+      const latestThreadMessage = !forceNewThread && conversationKey
+        ? await getLatestCompanyEmailThreadMessage(actor.companyId, conversationKey).catch(() => null)
+        : null;
       const existingThread = !forceNewThread && conversationKey
         ? await getCompanyEmailThreadByKey(actor.companyId, conversationKey).catch(() => null)
         : null;
       const inReplyTo = String(
+        latestThreadMessage?.internet_message_id ||
+        latestThreadMessage?.internetMessageId ||
+        latestThreadMessage?.message_id ||
+        latestThreadMessage?.messageId ||
         existingThread?.last_internet_message_id ||
         existingThread?.lastInternetMessageId ||
         existingThread?.last_message_id ||
         existingThread?.lastMessageId ||
         ""
       ).trim();
-      const anchorMailIdRaw = String(existingThread?.last_mail_id || existingThread?.lastMailId || "").trim();
+      const anchorMailIdRaw = String(
+        latestThreadMessage?.mail_id ||
+        latestThreadMessage?.mailId ||
+        existingThread?.last_mail_id ||
+        existingThread?.lastMailId ||
+        ""
+      ).trim();
       const anchorMailId = isInternetMessageId(anchorMailIdRaw) ? "" : anchorMailIdRaw;
-      const references = inReplyTo ? [inReplyTo] : [];
+      const priorReferencesRaw = latestThreadMessage?.reference_ids || latestThreadMessage?.referenceIds || "";
+      const priorReferences = Array.isArray(priorReferencesRaw)
+        ? priorReferencesRaw.map((item) => String(item || "").trim()).filter(Boolean)
+        : String(priorReferencesRaw || "").split(/\r?\n/).map((item) => String(item || "").trim()).filter(Boolean);
+      const references = inReplyTo
+        ? Array.from(new Set([...priorReferences, inReplyTo]))
+        : priorReferences;
       const attachmentLimitBytes = 20 * 1024 * 1024;
       let attachmentBytes = 0;
       const resolvedAttachments = [];
@@ -17235,6 +17258,24 @@ const server = http.createServer(async (req, res) => {
           threadId: persistedThreadId,
           mailId: persistedMailId,
           internetMessageId: persistedInternetMessageId
+        }).catch(() => null);
+        await appendCompanyEmailThreadMessage({
+          companyId: actor.companyId,
+          actorUserId: actor.id,
+          conversationKey,
+          providerMode: String(sendMeta?.providerMode || "").trim(),
+          direction: "outbound",
+          source: "platform",
+          mailboxEmail: String(sendMeta?.mailboxEmail || "").trim(),
+          subject,
+          to: recipients.join(", "),
+          cc: ccRecipients.join(", "),
+          messageId: persistedMessageId,
+          threadId: persistedThreadId,
+          mailId: persistedMailId,
+          internetMessageId: persistedInternetMessageId,
+          inReplyTo: inReplyTo || "",
+          references
         }).catch(() => null);
       }
       sendJson(res, 200, {
@@ -17442,7 +17483,7 @@ const server = http.createServer(async (req, res) => {
           issuedAt: now,
           expiresAt
         });
-        authUrl = `${accountsBase}/oauth/v2/auth?scope=${encodeURIComponent("ZohoMail.messages.CREATE,ZohoMail.accounts.READ")}&client_id=${encodeURIComponent(clientId)}&response_type=code&access_type=offline&prompt=consent&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`;
+        authUrl = `${accountsBase}/oauth/v2/auth?scope=${encodeURIComponent("ZohoMail.messages.CREATE,ZohoMail.messages.READ,ZohoMail.accounts.READ")}&client_id=${encodeURIComponent(clientId)}&response_type=code&access_type=offline&prompt=consent&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`;
         sendJson(res, 200, { ok: true, result: { authUrl, expiresAt, hostHint: providerHost, redirectUri, provider: "zoho" } });
         return;
       }

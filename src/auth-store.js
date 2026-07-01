@@ -3632,6 +3632,31 @@ async function getCompanyEmailThreadByKey(companyId, conversationKey) {
   return rows[0] || null;
 }
 
+async function getLatestCompanyEmailThreadMessage(companyId, conversationKey) {
+  const scopedCompanyId = String(companyId || "").trim();
+  const scopedKey = String(conversationKey || "").trim();
+  if (!scopedCompanyId || !scopedKey) return null;
+  if (!cfg().on) {
+    const store = readStore();
+    const rows = Array.isArray(store.emailThreadMessages) ? store.emailThreadMessages : [];
+    return rows
+      .filter((row) =>
+        String(row?.companyId || row?.company_id || "").trim() === scopedCompanyId
+        && String(row?.conversationKey || row?.conversation_key || "").trim() === scopedKey
+      )
+      .sort((a, b) => {
+        const aTime = new Date(a?.createdAt || a?.created_at || 0).getTime();
+        const bTime = new Date(b?.createdAt || b?.created_at || 0).getTime();
+        return bTime - aTime;
+      })[0] || null;
+  }
+  const rows = await sbSel(
+    "company_email_thread_messages",
+    `select=*&company_id=eq.${enc(scopedCompanyId)}&conversation_key=eq.${enc(scopedKey)}&order=created_at.desc&limit=1`
+  ).catch(() => []);
+  return rows[0] || null;
+}
+
 async function upsertCompanyEmailThread({
   companyId,
   actorUserId,
@@ -3692,6 +3717,84 @@ async function upsertCompanyEmailThread({
   await sbIns("company_email_threads", [payload], { conflict: "company_id,conversation_key", upsert: true, returning: "minimal" });
   const row = await getCompanyEmailThreadByKey(scopedCompanyId, scopedKey);
   return row || payload;
+}
+
+async function appendCompanyEmailThreadMessage({
+  companyId,
+  actorUserId,
+  conversationKey,
+  providerMode = "",
+  direction = "outbound",
+  source = "platform",
+  mailboxEmail = "",
+  subject = "",
+  to = "",
+  cc = "",
+  messageId = "",
+  threadId = "",
+  mailId = "",
+  internetMessageId = "",
+  inReplyTo = "",
+  references = []
+}) {
+  const scopedCompanyId = String(companyId || "").trim();
+  const scopedActorUserId = String(actorUserId || "").trim();
+  const scopedKey = String(conversationKey || "").trim();
+  if (!scopedCompanyId || !scopedActorUserId || !scopedKey) {
+    throw new Error("Missing companyId, actorUserId, or conversationKey.");
+  }
+  const referenceIds = Array.isArray(references)
+    ? references.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  const now = new Date().toISOString();
+  if (!cfg().on) {
+    const store = readStore();
+    store.emailThreadMessages = Array.isArray(store.emailThreadMessages) ? store.emailThreadMessages : [];
+    const next = {
+      id: crypto.randomUUID(),
+      companyId: scopedCompanyId,
+      conversationKey: scopedKey,
+      providerMode: String(providerMode || "").trim(),
+      direction: String(direction || "outbound").trim() || "outbound",
+      source: String(source || "platform").trim() || "platform",
+      mailboxEmail: String(mailboxEmail || "").trim(),
+      subject: String(subject || "").trim(),
+      toEmails: String(to || "").trim(),
+      ccEmails: String(cc || "").trim(),
+      messageId: String(messageId || "").trim(),
+      threadId: String(threadId || "").trim(),
+      mailId: String(mailId || "").trim(),
+      internetMessageId: String(internetMessageId || "").trim(),
+      inReplyTo: String(inReplyTo || "").trim(),
+      referenceIds,
+      actorUserId: scopedActorUserId,
+      createdAt: now
+    };
+    store.emailThreadMessages.push(next);
+    writeStore(store);
+    return next;
+  }
+  const payload = {
+    company_id: scopedCompanyId,
+    conversation_key: scopedKey,
+    provider_mode: String(providerMode || "").trim(),
+    direction: String(direction || "outbound").trim() || "outbound",
+    source: String(source || "platform").trim() || "platform",
+    mailbox_email: String(mailboxEmail || "").trim(),
+    subject: String(subject || "").trim(),
+    to_emails: String(to || "").trim(),
+    cc_emails: String(cc || "").trim(),
+    message_id: String(messageId || "").trim() || null,
+    thread_id: String(threadId || "").trim() || null,
+    mail_id: String(mailId || "").trim() || null,
+    internet_message_id: String(internetMessageId || "").trim() || null,
+    in_reply_to: String(inReplyTo || "").trim() || null,
+    reference_ids: referenceIds.join("\n"),
+    actor_user_id: scopedActorUserId,
+    created_at: now
+  };
+  const rows = await sbIns("company_email_thread_messages", [payload], { returning: "representation" }).catch(() => []);
+  return rows[0] || payload;
 }
 async function saveCompanySharedExportPresets({ actorUserId, companyId, settings, saveAsSuggestedGlobal = false }) {
   if (!actorUserId || !companyId) throw new Error("actorUserId and companyId are required.");
@@ -6448,40 +6551,22 @@ function assessmentsMatchSameCandidateKey(existing = {}, incoming = {}) {
 async function findExistingAssessmentIdForCandidate({ actorUserId, companyId, assessment }) {
   const a = sanitizeAssessment(assessment);
   const candidateId = String(a?.candidateId || "").trim();
-  const emailNeedle = normalizeAssessmentEmail(a?.emailId || a?.email_id || "");
-  const phoneNeedle = normalizeAssessmentPhone(a?.phoneNumber || a?.phone_number || "");
   const jdTitle = normalizeAssessmentKeyPart(a?.jdTitle || "");
   const clientName = normalizeAssessmentKeyPart(a?.clientName || "");
 
   if (!cfg().on) {
     const store = readStore();
     const items = Array.isArray(store.assessments) ? store.assessments.filter((i) => i.companyId === companyId) : [];
-    const match = items.find((existing) => {
-      if (assessmentsMatchSameCandidateKey(existing, a)) return true;
-      const exEmail = normalizeAssessmentEmail(existing?.emailId || existing?.email_id || "");
-      const exPhone = normalizeAssessmentPhone(existing?.phoneNumber || existing?.phone_number || "");
-      const sameIdentity = (emailNeedle && exEmail && emailNeedle === exEmail) || (phoneNeedle && exPhone && phoneNeedle === exPhone);
-      if (!sameIdentity) return false;
-      const exJd = normalizeAssessmentKeyPart(existing?.jdTitle || existing?.jd_title || "");
-      const exClient = normalizeAssessmentKeyPart(existing?.clientName || existing?.client_name || "");
-      if (jdTitle && exJd && jdTitle !== exJd) return false;
-      if (clientName && exClient && clientName !== exClient) return false;
-      return true;
-    }) || null;
+    const match = items.find((existing) => assessmentsMatchSameCandidateKey(existing, a)) || null;
     return match ? String(match.id || "").trim() : "";
   }
 
   await ensureSeeded();
-  // Pull a small set for the candidate, then filter in JS to keep logic consistent.
-  let rows = [];
-  if (candidateId) {
-    rows = await sbSel("assessments", `select=id,candidate_id,candidate_name,client_name,jd_title,email_id,phone_number,payload&company_id=eq.${enc(companyId)}&candidate_id=eq.${enc(candidateId)}&limit=5000`).catch(() => []);
-  } else if (emailNeedle || phoneNeedle) {
-    const orParts = [];
-    if (emailNeedle) orParts.push(`email_id.eq.${enc(emailNeedle)}`);
-    if (phoneNeedle) orParts.push(`phone_number.eq.${enc(phoneNeedle)}`);
-    rows = await sbSel("assessments", `select=id,candidate_id,candidate_name,client_name,jd_title,email_id,phone_number,payload&company_id=eq.${enc(companyId)}&or=(${orParts.join(",")})&limit=5000`).catch(() => []);
-  }
+  if (!candidateId) return "";
+  const rows = await sbSel(
+    "assessments",
+    `select=id,candidate_id,client_name,jd_title,payload&company_id=eq.${enc(companyId)}&candidate_id=eq.${enc(candidateId)}&order=updated_at.desc&limit=1`
+  ).catch(() => []);
   const sanitized = (rows || []).map(sanitizeAssessment);
   const match = sanitized.find((existing) => {
     const sameCandidateId = assessmentsMatchSameCandidateKey(existing, a);
@@ -6493,23 +6578,6 @@ async function findExistingAssessmentIdForCandidate({ actorUserId, companyId, as
     return true;
   }) || null;
   if (match) return String(match.id || "").trim();
-
-  // Fallback: if candidateId differs due to accidental duplicate candidate rows, match by phone/email instead.
-  if (emailNeedle || phoneNeedle) {
-    const fallbackRows = await sbSel("assessments", `select=id,candidate_id,client_name,jd_title,email_id,phone_number,payload&company_id=eq.${enc(companyId)}&limit=5000`).catch(() => []);
-    const fallback = (fallbackRows || []).map(sanitizeAssessment).find((existing) => {
-      const exEmail = normalizeAssessmentEmail(existing?.emailId || existing?.email_id || "");
-      const exPhone = normalizeAssessmentPhone(existing?.phoneNumber || existing?.phone_number || "");
-      const sameIdentity = (emailNeedle && exEmail && emailNeedle === exEmail) || (phoneNeedle && exPhone && phoneNeedle === exPhone);
-      if (!sameIdentity) return false;
-      const exJd = normalizeAssessmentKeyPart(existing?.jdTitle || "");
-      const exClient = normalizeAssessmentKeyPart(existing?.clientName || "");
-      if (jdTitle && exJd && jdTitle !== exJd) return false;
-      if (clientName && exClient && clientName !== exClient) return false;
-      return true;
-    }) || null;
-    if (fallback) return String(fallback.id || "").trim();
-  }
   return "";
 }
 async function saveAssessment({ actorUserId, companyId, assessment }) {
@@ -6624,18 +6692,21 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
     safeAssessmentForSave.recruiter_id
     || safeAssessmentForSave.recruiterId
     || preservedRecruiterId
+    || actor.id
     || ""
   ).trim();
   let resolvedRecruiterName = String(
     safeAssessmentForSave.recruiter_name
     || safeAssessmentForSave.recruiterName
     || preservedRecruiterName
+    || actor.name
     || ""
   ).trim();
   let resolvedRecruiterEmail = String(
     safeAssessmentForSave.recruiter_email
     || safeAssessmentForSave.recruiterEmail
     || preservedRecruiterEmail
+    || actor.email
     || ""
   ).trim();
   if (resolvedRecruiterId) {
@@ -6654,8 +6725,26 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
   safeAssessmentForSave.recruiter_email = resolvedRecruiterEmail;
   safeAssessmentForSave.recruiterEmail = resolvedRecruiterEmail;
 
-  const rows = await sbIns("assessments", [assessmentRow(safeAssessmentForSave, actor, companyId)], { conflict: "id", upsert: true });
-  const saved = sanitizeAssessment(rows[0]);
+  const assessmentPayload = assessmentRow(safeAssessmentForSave, actor, companyId);
+  const rows = await sbIns("assessments", [assessmentPayload], { conflict: "id", upsert: true });
+  let saved = sanitizeAssessment(rows[0]);
+  if (!saved?.id) {
+    const recoveredId = await findExistingAssessmentIdForCandidate({
+      actorUserId: actor.id,
+      companyId,
+      assessment: {
+        ...safeAssessmentForSave,
+        id: "",
+        candidateId
+      }
+    }).catch(() => "");
+    if (recoveredId) {
+      saved = await getAssessmentById({ companyId, assessmentId: recoveredId }).catch(() => null);
+    }
+  }
+  if (!saved?.id) {
+    throw new Error("Assessment save did not return a stable id. Please retry once.");
+  }
 
   // Best-effort event insert (no-op if the table doesn't exist yet).
   try {
@@ -7063,6 +7152,7 @@ module.exports = {
   getCompanySharedExportPresets,
   getCompanyPublicShortcuts,
   getCompanyEmailThreadByKey,
+  getLatestCompanyEmailThreadMessage,
   getCompanyPersonalShortcuts,
   getCompanyRecruiterCampaignTemplates,
   getPublicCompanyJob,
@@ -7124,6 +7214,7 @@ module.exports = {
   updateEmployeeProfileAndWorkSite,
   saveCompanySharedExportPresets,
   saveCompanyPublicShortcuts,
+  appendCompanyEmailThreadMessage,
   upsertCompanyEmailThread,
   saveCompanyPersonalShortcuts,
   saveCompanyRecruiterCampaignTemplates,
