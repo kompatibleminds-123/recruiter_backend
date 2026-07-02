@@ -867,6 +867,14 @@ function isZohoProviderMailId(value = "") {
   return Boolean(text) && !text.includes("@");
 }
 
+function getZohoProviderMailIdCandidate(...values) {
+  for (const value of values) {
+    const text = String(value || "").trim();
+    if (isZohoProviderMailId(text)) return text;
+  }
+  return "";
+}
+
 function maskEmailListDebug(value = "") {
   return String(value || "")
     .split(/[,;]+/)
@@ -1220,7 +1228,15 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
     candidateData?.mail_id,
     findKeyDeep(sendJson, ["mailId", "mail_id", "id"])
   );
-  const mailId = isZohoProviderMailId(rawMailId) ? rawMailId : "";
+  const mailId = getZohoProviderMailIdCandidate(
+    rawMailId,
+    extractedMessageId,
+    sendJson?.messageId,
+    sendJson?.message_id,
+    candidateData?.messageId,
+    candidateData?.message_id,
+    headerMessageId
+  );
   const internetMessageId = readString(
     sendJson?.internetMessageId,
     sendJson?.internet_message_id,
@@ -17447,7 +17463,7 @@ const server = http.createServer(async (req, res) => {
       const existingThread = !forceNewThread && conversationKey
         ? await getCompanyEmailThreadByKey(actor.companyId, conversationKey).catch(() => null)
         : null;
-      const inReplyTo = String(
+      const inReplyToCandidate = String(
         latestThreadMessage?.internet_message_id ||
         latestThreadMessage?.internetMessageId ||
         latestThreadMessage?.message_id ||
@@ -17458,11 +17474,16 @@ const server = http.createServer(async (req, res) => {
         existingThread?.lastMessageId ||
         ""
       ).trim();
+      const inReplyTo = isInternetMessageId(inReplyToCandidate) ? inReplyToCandidate : "";
       const anchorMailIdRaw = String(
         latestThreadMessage?.mail_id ||
         latestThreadMessage?.mailId ||
+        latestThreadMessage?.message_id ||
+        latestThreadMessage?.messageId ||
         existingThread?.last_mail_id ||
         existingThread?.lastMailId ||
+        existingThread?.last_message_id ||
+        existingThread?.lastMessageId ||
         ""
       ).trim();
       const anchorMailId = isInternetMessageId(anchorMailIdRaw) ? "" : anchorMailIdRaw;
@@ -17527,8 +17548,16 @@ const server = http.createServer(async (req, res) => {
         const persistedThreadId =
           String(sendMeta?.threadId || "").trim() ||
           String(existingThread?.last_thread_id || existingThread?.lastThreadId || "").trim();
-        const candidateMailId = String(sendMeta?.mailId || "").trim();
-        const fallbackMailId = String(existingThread?.last_mail_id || existingThread?.lastMailId || "").trim();
+        const candidateMailId = getZohoProviderMailIdCandidate(
+          sendMeta?.mailId,
+          sendMeta?.messageId
+        );
+        const fallbackMailId = getZohoProviderMailIdCandidate(
+          existingThread?.last_mail_id,
+          existingThread?.lastMailId,
+          existingThread?.last_message_id,
+          existingThread?.lastMessageId
+        );
         const persistedMailId = isInternetMessageId(candidateMailId)
           ? (isInternetMessageId(fallbackMailId) ? "" : fallbackMailId)
           : (candidateMailId || (isInternetMessageId(fallbackMailId) ? "" : fallbackMailId));
