@@ -696,10 +696,21 @@ async function listZohoFolders({ mailBase, accountId, accessToken }) {
   for (const url of candidates) {
     try {
       const result = await fetchZohoJson(url, accessToken);
+      if (isZohoThreadDebugEnabled()) {
+        console.log("[zoho-thread-debug] folders-response", {
+          url,
+          ok: result.ok,
+          status: Number(result?.response?.status || 0) || 0,
+          sample: summarizeZohoDebugNode(result.json)
+        });
+      }
       if (!result.ok) continue;
       const rows = collectZohoItemsDeep(result.json, [])
         .map(normalizeZohoFolderRow)
         .filter((item) => item.id);
+      if (isZohoThreadDebugEnabled()) {
+        console.log("[zoho-thread-debug] folders-normalized", rows.slice(0, 10));
+      }
       if (rows.length) return rows;
     } catch {
       // best effort
@@ -732,10 +743,29 @@ async function listZohoFolderMessages({ mailBase, accountId, folderId, accessTok
   for (const url of candidates) {
     try {
       const result = await fetchZohoJson(url, accessToken);
+      if (isZohoThreadDebugEnabled()) {
+        console.log("[zoho-thread-debug] messages-response", {
+          url,
+          folderId,
+          ok: result.ok,
+          status: Number(result?.response?.status || 0) || 0,
+          sample: summarizeZohoDebugNode(result.json)
+        });
+      }
       if (!result.ok) continue;
       const rows = collectZohoItemsDeep(result.json, [])
         .map(normalizeZohoMessageRow)
         .filter((item) => item.id || item.internetMessageId || item.subject);
+      if (isZohoThreadDebugEnabled()) {
+        console.log("[zoho-thread-debug] messages-normalized", rows.slice(0, 10).map((row) => ({
+          id: row.id,
+          threadId: row.threadId,
+          internetMessageId: row.internetMessageId,
+          subject: row.subject,
+          to: maskEmailListDebug(row.to),
+          createdAt: row.createdAt
+        })));
+      }
       if (rows.length) return rows;
     } catch {
       // best effort
@@ -770,9 +800,29 @@ async function resolveZohoSentMessageMeta({ mailBase, accountId, accessToken, in
   try {
     const folders = await listZohoFolders({ mailBase, accountId, accessToken });
     const sentFolderId = pickZohoSentFolderId(folders);
+    if (isZohoThreadDebugEnabled()) {
+      console.log("[zoho-thread-debug] sent-folder-picked", {
+        sentFolderId,
+        folderCount: Array.isArray(folders) ? folders.length : 0,
+        internetMessageId,
+        subject,
+        to: maskEmailListDebug(to),
+        sentAt
+      });
+    }
     if (!sentFolderId) return null;
     const messages = await listZohoFolderMessages({ mailBase, accountId, folderId: sentFolderId, accessToken, limit: 15 });
     const matched = matchZohoSentMessage(messages, { internetMessageId, subject, to, sentAt });
+    if (isZohoThreadDebugEnabled()) {
+      console.log("[zoho-thread-debug] sent-message-match", matched ? {
+        mailId: matched.id,
+        threadId: matched.threadId,
+        internetMessageId: matched.internetMessageId,
+        subject: matched.subject,
+        to: maskEmailListDebug(matched.to),
+        createdAt: matched.createdAt
+      } : null);
+    }
     if (!matched) return null;
     return {
       mailId: String(matched.id || "").trim(),
@@ -802,6 +852,44 @@ function formatProviderApiError(error) {
   if (status) parts.push(`status=${status}`);
   if (code) parts.push(`code=${code}`);
   return parts.filter(Boolean).join(" | ");
+}
+
+function isZohoThreadDebugEnabled() {
+  return String(process.env.ZOHO_THREAD_DEBUG || "").trim().toLowerCase() === "true";
+}
+
+function maskEmailListDebug(value = "") {
+  return String(value || "")
+    .split(/[,;]+/)
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .map((email) => {
+      const [local, domain] = String(email).split("@");
+      if (!domain) return email;
+      const safeLocal = local.length <= 2 ? `${local[0] || "*"}*` : `${local.slice(0, 2)}***`;
+      return `${safeLocal}@${domain}`;
+    })
+    .join(", ");
+}
+
+function summarizeZohoDebugNode(node = {}, limit = 8) {
+  if (!node || typeof node !== "object") return node;
+  const out = {};
+  for (const key of Object.keys(node).slice(0, Math.max(1, limit))) {
+    const lower = String(key || "").toLowerCase();
+    if (lower.includes("token") || lower.includes("authorization")) continue;
+    const value = node[key];
+    if (typeof value === "string") {
+      out[key] = value.length > 160 ? `${value.slice(0, 160)}...` : value;
+    } else if (Array.isArray(value)) {
+      out[key] = `[array:${value.length}]`;
+    } else if (value && typeof value === "object") {
+      out[key] = "{object}";
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
 }
 
 async function getZohoAccessToken(cfg = {}) {
@@ -1148,6 +1236,22 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
         sentAt: sendStartedAt
       })
     : null;
+  if (isZohoThreadDebugEnabled()) {
+    console.log("[zoho-thread-debug] send-summary", {
+      accountId,
+      subject: String(subject || "").trim(),
+      to: maskEmailListDebug(toCsv),
+      cc: maskEmailListDebug(ccCsv),
+      inReplyTo: Boolean(inReplyTo),
+      threadedPayloadUsed,
+      responseMessageId: messageId,
+      responseMailId: mailId,
+      responseThreadId: threadId,
+      fallbackMailId: sentMeta?.mailId || "",
+      fallbackThreadId: sentMeta?.threadId || "",
+      fallbackInternetMessageId: sentMeta?.internetMessageId || ""
+    });
+  }
   return {
     ok: true,
     accountId,
