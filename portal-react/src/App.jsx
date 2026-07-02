@@ -18610,9 +18610,10 @@ function PortalApp({ token, onLogout }) {
         assessment: savedAssessment,
         source: "MUTATION_SUCCESS",
         listMetaDelta: assessmentLandsInCurrentLane && savedAssessmentId ? 1 : 0,
-        statsDelta: assessmentLandsInCurrentLane && savedAssessmentId
+        statsDelta: savedAssessmentId
           ? { today: 1, total: 1, active: 1 }
-          : null
+          : null,
+        refreshStats: true
       });
       if (assessmentLandsInCurrentLane && savedAssessmentId) {
         setAssessmentPage(1);
@@ -24963,14 +24964,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         scope: "all",
         assessment: saved,
         visibleMode: laneMatchesNewState ? "upsert" : "delete",
-        source: "MUTATION_SUCCESS"
+        source: "MUTATION_SUCCESS",
+        refreshStats: true
       });
       setAssessmentInlineStatus(safeAssessment.id, archived ? "Assessment archived." : "Assessment restored.", "ok");
       void syncPostAssessmentMutation({ candidateId }).catch(() => {});
+      void reloadAssessmentStats(safeAssessmentFiltersApplied).catch(() => {});
       if (shouldRefreshDashboard) void refreshDashboardAfterAssessmentChange().catch(() => {});
       if (shouldReloadLists) {
         void reloadAssessmentSlice(assessmentPage, safeAssessmentApiPageSize, safeAssessmentFiltersApplied, assessmentLane, assessmentSortBy).catch(() => {});
-        void reloadAssessmentStats(safeAssessmentFiltersApplied).catch(() => {});
       }
       return saved;
     } catch (error) {
@@ -24985,10 +24987,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             scope: "all",
             assessment: restored,
             visibleMode: Boolean(isAssessmentArchived(restored)) === (assessmentLane === "archived") ? "upsert" : "delete",
-            source: "MUTATION_SUCCESS"
+            source: "MUTATION_SUCCESS",
+            refreshStats: true
           });
           setAssessmentInlineStatus(safeAssessment.id, "Assessment restored.", "ok");
           void refreshAssessmentFallback({ candidateId }).catch(() => {});
+          void reloadAssessmentStats(safeAssessmentFiltersApplied).catch(() => {});
           if (shouldRefreshDashboard) void refreshDashboardAfterAssessmentChange().catch(() => {});
           return restored;
         } catch (restoreError) {
@@ -25105,6 +25109,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const prevApplicantListItems = Array.isArray(state.applicantListItems) ? [...state.applicantListItems] : state.applicantListItems;
     const prevApplicantListMeta = applicantListMeta && typeof applicantListMeta === "object" ? { ...applicantListMeta } : applicantListMeta;
     const prevApplicantStats = applicantStatsSnapshot && typeof applicantStatsSnapshot === "object" ? { ...applicantStatsSnapshot } : applicantStatsSnapshot;
+    const wasArchivedAssessment = Boolean(isAssessmentArchived(safeAssessment));
     applyAssessmentChange({
       type: "MOVE_BACK_TO_CAPTURED",
       scope: "all",
@@ -25113,10 +25118,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       visibleMode: "delete",
       listMetaDelta: -1,
       statsDelta: {
-        active: -1,
+        active: wasArchivedAssessment ? 0 : -1,
+        archived: wasArchivedAssessment ? -1 : 0,
         total: -1
       },
-      source: "LOCAL_PATCH"
+      source: "LOCAL_PATCH",
+      refreshStats: true
     });
     setState((current) => ({
       ...current,
@@ -25197,6 +25204,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         assessment_status: "",
         hidden_from_captured: false
       }, { skipRefresh: true });
+      void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
       navigate(restoreToApplicants ? "/applicants" : "/captured-notes");
       void refreshDashboardAfterAssessmentChange().catch(() => {});
       setStatus(restoreToApplicants ? "applicants" : "captured", `Moved back to ${destinationLabel}.`, "ok");
