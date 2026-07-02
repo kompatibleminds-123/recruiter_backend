@@ -634,6 +634,156 @@ function collectZohoAttachmentRefs(node, acc = []) {
   return acc;
 }
 
+function collectZohoItemsDeep(node, acc = []) {
+  if (!node || typeof node !== "object") return acc;
+  if (Array.isArray(node)) {
+    for (const item of node) collectZohoItemsDeep(item, acc);
+    return acc;
+  }
+  const objectKeys = Object.keys(node);
+  const looksLikeFolder = objectKeys.some((key) => /folder/i.test(key)) && objectKeys.some((key) => /(id|name|path|type)/i.test(key));
+  const looksLikeMessage = objectKeys.some((key) => /(message|mail|thread|conversation)/i.test(key)) && objectKeys.some((key) => /(id|subject|from|to|date)/i.test(key));
+  if (looksLikeFolder || looksLikeMessage) acc.push(node);
+  for (const value of Object.values(node)) collectZohoItemsDeep(value, acc);
+  return acc;
+}
+
+function normalizeZohoFolderRow(row = {}) {
+  return {
+    id: String(row?.folderId || row?.id || row?.folder_id || "").trim(),
+    name: String(row?.folderName || row?.folder_name || row?.name || "").trim(),
+    path: String(row?.folderPath || row?.folder_path || row?.path || "").trim(),
+    type: String(row?.folderType || row?.folder_type || row?.type || row?.viewType || "").trim()
+  };
+}
+
+function normalizeZohoMessageRow(row = {}) {
+  return {
+    id: String(row?.mailId || row?.mail_id || row?.messageId || row?.message_id || row?.id || "").trim(),
+    threadId: String(row?.threadId || row?.thread_id || row?.conversationId || row?.conversation_id || "").trim(),
+    internetMessageId: String(row?.internetMessageId || row?.internet_message_id || row?.messageHeaderId || row?.message_header_id || row?.messageId || row?.message_id || "").trim(),
+    subject: String(row?.subject || row?.mailSubject || "").trim(),
+    to: String(row?.toAddress || row?.to || row?.recipientAddress || row?.recipients || "").trim(),
+    createdAt: String(row?.receivedTime || row?.sentDateInGMT || row?.sentTime || row?.created_at || row?.date || "").trim(),
+    raw: row
+  };
+}
+
+async function fetchZohoJson(url, accessToken, timeoutMs = 20000) {
+  const response = await fetchWithTimeout(url, {
+    method: "GET",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "Authorization": `Zoho-oauthtoken ${accessToken}`
+    }
+  }, timeoutMs);
+  const raw = await response.text();
+  let json = {};
+  try {
+    json = raw ? JSON.parse(raw) : {};
+  } catch {
+    json = {};
+  }
+  return { response, raw, json, ok: response.ok };
+}
+
+async function listZohoFolders({ mailBase, accountId, accessToken }) {
+  const candidates = [
+    `${mailBase}/api/accounts/${encodeURIComponent(accountId)}/folders`,
+    `${mailBase}/api/accounts/${encodeURIComponent(accountId)}/mailboxes`
+  ];
+  for (const url of candidates) {
+    try {
+      const result = await fetchZohoJson(url, accessToken);
+      if (!result.ok) continue;
+      const rows = collectZohoItemsDeep(result.json, [])
+        .map(normalizeZohoFolderRow)
+        .filter((item) => item.id);
+      if (rows.length) return rows;
+    } catch {
+      // best effort
+    }
+  }
+  return [];
+}
+
+function pickZohoSentFolderId(folders = []) {
+  const rows = Array.isArray(folders) ? folders : [];
+  const scored = rows.map((row) => {
+    const hay = `${row.name} ${row.path} ${row.type}`.toLowerCase();
+    let score = 0;
+    if (/\bsent\b/.test(hay)) score += 10;
+    if (/\bsent\s*items\b/.test(hay)) score += 5;
+    if (/default|system/.test(hay)) score += 2;
+    return { row, score };
+  }).sort((a, b) => b.score - a.score);
+  return String(scored[0]?.row?.id || "").trim();
+}
+
+async function listZohoFolderMessages({ mailBase, accountId, folderId, accessToken, limit = 10 }) {
+  const safeLimit = Math.max(1, Math.min(50, Number(limit) || 10));
+  const candidates = [
+    `${mailBase}/api/accounts/${encodeURIComponent(accountId)}/folders/${encodeURIComponent(folderId)}/messages/view?limit=${safeLimit}`,
+    `${mailBase}/api/accounts/${encodeURIComponent(accountId)}/folders/${encodeURIComponent(folderId)}/messages?limit=${safeLimit}`,
+    `${mailBase}/api/accounts/${encodeURIComponent(accountId)}/messages/view?folderId=${encodeURIComponent(folderId)}&limit=${safeLimit}`,
+    `${mailBase}/api/accounts/${encodeURIComponent(accountId)}/messages?folderId=${encodeURIComponent(folderId)}&limit=${safeLimit}`
+  ];
+  for (const url of candidates) {
+    try {
+      const result = await fetchZohoJson(url, accessToken);
+      if (!result.ok) continue;
+      const rows = collectZohoItemsDeep(result.json, [])
+        .map(normalizeZohoMessageRow)
+        .filter((item) => item.id || item.internetMessageId || item.subject);
+      if (rows.length) return rows;
+    } catch {
+      // best effort
+    }
+  }
+  return [];
+}
+
+function matchZohoSentMessage(messages = [], { internetMessageId = "", subject = "", to = "", sentAt = "" } = {}) {
+  const needleMessageId = String(internetMessageId || "").trim().toLowerCase();
+  const needleSubject = String(subject || "").trim().toLowerCase();
+  const needleTo = String(to || "").trim().toLowerCase();
+  const sentMs = sentAt ? Date.parse(sentAt) : NaN;
+  const rows = Array.isArray(messages) ? messages : [];
+  const scored = rows.map((row) => {
+    let score = 0;
+    if (needleMessageId && String(row.internetMessageId || "").trim().toLowerCase() === needleMessageId) score += 100;
+    if (needleSubject && String(row.subject || "").trim().toLowerCase() === needleSubject) score += 20;
+    if (needleTo && String(row.to || "").trim().toLowerCase().includes(needleTo)) score += 10;
+    const rowMs = Date.parse(String(row.createdAt || "").trim());
+    if (Number.isFinite(sentMs) && Number.isFinite(rowMs)) {
+      const delta = Math.abs(rowMs - sentMs);
+      if (delta <= 120000) score += 15;
+      else if (delta <= 600000) score += 5;
+    }
+    return { row, score };
+  }).sort((a, b) => b.score - a.score);
+  return scored[0]?.score > 0 ? scored[0].row : null;
+}
+
+async function resolveZohoSentMessageMeta({ mailBase, accountId, accessToken, internetMessageId = "", subject = "", to = "", sentAt = "" }) {
+  try {
+    const folders = await listZohoFolders({ mailBase, accountId, accessToken });
+    const sentFolderId = pickZohoSentFolderId(folders);
+    if (!sentFolderId) return null;
+    const messages = await listZohoFolderMessages({ mailBase, accountId, folderId: sentFolderId, accessToken, limit: 15 });
+    const matched = matchZohoSentMessage(messages, { internetMessageId, subject, to, sentAt });
+    if (!matched) return null;
+    return {
+      mailId: String(matched.id || "").trim(),
+      threadId: String(matched.threadId || "").trim(),
+      internetMessageId: String(matched.internetMessageId || internetMessageId || "").trim()
+    };
+  } catch {
+    return null;
+  }
+}
+
 function formatZohoApiError(error) {
   const code = String(error?.code || "").trim();
   const status = Number(error?.status || 0) || 0;
@@ -912,6 +1062,7 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
   }
 
   const replyAnchor = allowThreading ? anchorMailId : "";
+  const sendStartedAt = new Date().toISOString();
   let sendResult = await postZohoMessage(payload, { replyMailId: replyAnchor });
   let threadedPayloadUsed = Boolean(allowThreading && inReplyTo);
   if (!sendResult.ok) {
@@ -986,14 +1137,25 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
     Array.isArray(candidateData) ? candidateData?.[0]?.threadId : "",
     Array.isArray(candidateData) ? candidateData?.[0]?.thread_id : ""
   );
+  const sentMeta = (!mailId || !threadId)
+    ? await resolveZohoSentMessageMeta({
+        mailBase,
+        accountId,
+        accessToken,
+        internetMessageId,
+        subject: String(subject || "").trim(),
+        to: toCsv,
+        sentAt: sendStartedAt
+      })
+    : null;
   return {
     ok: true,
     accountId,
     fromAddress: payload.fromAddress,
-    messageId,
-    mailId,
-    internetMessageId,
-    threadId,
+    messageId: readString(messageId, sentMeta?.internetMessageId),
+    mailId: readString(mailId, sentMeta?.mailId),
+    internetMessageId: readString(internetMessageId, sentMeta?.internetMessageId),
+    threadId: readString(threadId, sentMeta?.threadId),
     threadedApplied: Boolean(threadedPayloadUsed && inReplyTo)
   };
 }
