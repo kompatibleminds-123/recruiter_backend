@@ -691,6 +691,7 @@ async function fetchZohoJson(url, accessToken, timeoutMs = 20000) {
 async function listZohoFolders({ mailBase, accountId, accessToken }) {
   const candidates = [
     `${mailBase}/api/accounts/${encodeURIComponent(accountId)}/folders`,
+    `${mailBase}/api/accounts/${encodeURIComponent(accountId)}/folders/view`,
     `${mailBase}/api/accounts/${encodeURIComponent(accountId)}/mailboxes`
   ];
   for (const url of candidates) {
@@ -701,7 +702,8 @@ async function listZohoFolders({ mailBase, accountId, accessToken }) {
           url,
           ok: result.ok,
           status: Number(result?.response?.status || 0) || 0,
-          sample: summarizeZohoDebugNode(result.json)
+          sample: summarizeZohoDebugNode(result.json),
+          raw: String(result.raw || "").slice(0, 400)
         });
       }
       if (!result.ok) continue;
@@ -737,6 +739,7 @@ async function listZohoFolderMessages({ mailBase, accountId, folderId, accessTok
   const candidates = [
     `${mailBase}/api/accounts/${encodeURIComponent(accountId)}/folders/${encodeURIComponent(folderId)}/messages/view?limit=${safeLimit}`,
     `${mailBase}/api/accounts/${encodeURIComponent(accountId)}/folders/${encodeURIComponent(folderId)}/messages?limit=${safeLimit}`,
+    `${mailBase}/api/accounts/${encodeURIComponent(accountId)}/folders/${encodeURIComponent(folderId)}/viewmessages?limit=${safeLimit}`,
     `${mailBase}/api/accounts/${encodeURIComponent(accountId)}/messages/view?folderId=${encodeURIComponent(folderId)}&limit=${safeLimit}`,
     `${mailBase}/api/accounts/${encodeURIComponent(accountId)}/messages?folderId=${encodeURIComponent(folderId)}&limit=${safeLimit}`
   ];
@@ -749,7 +752,8 @@ async function listZohoFolderMessages({ mailBase, accountId, folderId, accessTok
           folderId,
           ok: result.ok,
           status: Number(result?.response?.status || 0) || 0,
-          sample: summarizeZohoDebugNode(result.json)
+          sample: summarizeZohoDebugNode(result.json),
+          raw: String(result.raw || "").slice(0, 400)
         });
       }
       if (!result.ok) continue;
@@ -856,6 +860,11 @@ function formatProviderApiError(error) {
 
 function isZohoThreadDebugEnabled() {
   return String(process.env.ZOHO_THREAD_DEBUG || "").trim().toLowerCase() === "true";
+}
+
+function isZohoProviderMailId(value = "") {
+  const text = String(value || "").trim();
+  return Boolean(text) && !text.includes("@");
 }
 
 function maskEmailListDebug(value = "") {
@@ -1157,6 +1166,14 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
     const desc = String(sendResult?.json?.status?.description || sendResult?.json?.data?.error?.message || sendResult?.raw || "Zoho send failed.");
     const looksInvalidInput = /invalid input/i.test(desc);
     if (allowThreading && inReplyTo && looksInvalidInput) {
+      if (isZohoThreadDebugEnabled()) {
+        console.log("[zoho-thread-debug] threaded-send-rejected", {
+          status: Number(sendResult?.response?.status || sendResult?.statusCode || 0) || 0,
+          description: desc,
+          raw: String(sendResult?.raw || "").slice(0, 700),
+          payloadKeys: Object.keys(payload || {})
+        });
+      }
       const retryPayload = { ...payload };
       delete retryPayload.inReplyToMessageId;
       delete retryPayload.replyToMessageId;
@@ -1196,13 +1213,14 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
     Array.isArray(candidateData) ? candidateData?.[0]?.message_id : "",
     Array.isArray(candidateData) ? candidateData?.[0]?.mailId : ""
   );
-  const mailId = readString(
+  const rawMailId = readString(
     sendJson?.mailId,
     sendJson?.mail_id,
     candidateData?.mailId,
     candidateData?.mail_id,
     findKeyDeep(sendJson, ["mailId", "mail_id", "id"])
   );
+  const mailId = isZohoProviderMailId(rawMailId) ? rawMailId : "";
   const internetMessageId = readString(
     sendJson?.internetMessageId,
     sendJson?.internet_message_id,
@@ -1211,7 +1229,7 @@ async function sendZohoEmailWithCfg(cfg, { to, cc = "", subject, html = "", text
     findKeyDeep(sendJson, ["internetMessageId", "internet_message_id", "messageHeaderId", "message_header_id"]),
     /@/.test(extractedMessageId) ? extractedMessageId : ""
   );
-  const messageId = readString(mailId, extractedMessageId, internetMessageId);
+  const messageId = readString(extractedMessageId, internetMessageId, rawMailId);
   const threadId = readString(
     sendJson?.threadId,
     sendJson?.thread_id,
