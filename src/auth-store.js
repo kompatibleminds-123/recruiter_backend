@@ -6452,11 +6452,17 @@ async function listAssessments({ actorUserId, companyId }) {
     return ownerId === actorId;
   };
   if (!cfg().on) {
-    return (readStore().assessments || []).filter((i) => i.companyId === companyId && isOwnedByActor(i)).sort((a, b) => String(b.generatedAt || b.createdAt || "").localeCompare(String(a.generatedAt || a.createdAt || ""))).map(sanitizeAssessment);
+    return dedupeAssessmentsByCandidateIdentity(
+      (readStore().assessments || [])
+        .filter((i) => i.companyId === companyId && isOwnedByActor(i))
+        .sort((a, b) => String(b.generatedAt || b.createdAt || "").localeCompare(String(a.generatedAt || a.createdAt || "")))
+        .map(sanitizeAssessment),
+      companyId
+    );
   }
   await ensureSeeded();
   const rows = await sbSel("assessments", `select=*&company_id=eq.${enc(companyId)}&order=created_at.desc&limit=5000`);
-  if (isAdmin) return (rows || []).map(sanitizeAssessment);
+  if (isAdmin) return dedupeAssessmentsByCandidateIdentity((rows || []).map(sanitizeAssessment), companyId);
 
   const visibleAssessmentRows = (rows || []).filter((row) => isOwnedByActor(row));
   const candidateIds = Array.from(new Set(visibleAssessmentRows.map((item) => String(item?.candidate_id || item?.candidateId || item?.payload?.candidateId || item?.payload?.candidate_id || "").trim()).filter(Boolean)));
@@ -6472,7 +6478,7 @@ async function listAssessments({ actorUserId, companyId }) {
       candidateMap.set(id, candidate);
     });
   }
-  return visibleAssessmentRows.map((row) => {
+  return dedupeAssessmentsByCandidateIdentity(visibleAssessmentRows.map((row) => {
     const candidateId = String(row?.candidate_id || row?.candidateId || row?.payload?.candidateId || row?.payload?.candidate_id || "").trim();
     const candidate = candidateId ? candidateMap.get(candidateId) : null;
     const assignedToName = String(candidate?.assigned_to_name || "").trim();
@@ -6484,7 +6490,7 @@ async function listAssessments({ actorUserId, companyId }) {
       assigned_to_user_id: assignedToUserId || row?.assigned_to_user_id || row?.assignedToUserId || "",
       assignedToUserId: assignedToUserId || row?.assignedToUserId || row?.assigned_to_user_id || ""
     });
-  });
+  }), companyId);
 }
 
 // Used by signed public share links. This intentionally bypasses recruiter scoping,
@@ -6522,6 +6528,21 @@ function normalizeAssessmentKeyPart(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function buildAssessmentCandidateIdentityKey(input = {}, companyId = "") {
+  const safeCompanyId = String(companyId || "").trim().toLowerCase();
+  const candidateId = String(input?.candidateId || input?.candidate_id || "").trim().toLowerCase();
+  const jdTitle = normalizeAssessmentKeyPart(input?.jdTitle || input?.jd_title || "");
+  const clientName = normalizeAssessmentKeyPart(input?.clientName || input?.client_name || "");
+  if (!safeCompanyId || !candidateId) return "";
+  return [safeCompanyId, candidateId, clientName || "__no_client__", jdTitle || "__no_jd__"].join("::");
+}
+
+function deterministicAssessmentRowId(companyId = "", assessment = {}) {
+  const identityKey = buildAssessmentCandidateIdentityKey(assessment, companyId);
+  if (!identityKey) return "";
+  return systemJobRowId(companyId, `assessment:${identityKey}`);
+}
+
 function normalizeAssessmentPhone(value) {
   const digits = String(value || "").replace(/\D/g, "");
   if (digits.length < 10) return "";
@@ -6548,6 +6569,27 @@ function assessmentsMatchSameCandidateKey(existing = {}, incoming = {}) {
   return false;
 }
 
+function dedupeAssessmentsByCandidateIdentity(rows = [], companyId = "") {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const byIdentity = new Map();
+  safeRows.forEach((rawRow) => {
+    const row = sanitizeAssessment(rawRow);
+    if (!row?.id) return;
+    const identityKey = buildAssessmentCandidateIdentityKey(row, companyId);
+    const mapKey = identityKey || `id::${String(row.id || "").trim()}`;
+    const existing = byIdentity.get(mapKey);
+    if (!existing) {
+      byIdentity.set(mapKey, row);
+      return;
+    }
+    const existingTs = Date.parse(String(existing?.updatedAt || existing?.updated_at || existing?.generatedAt || existing?.createdAt || "").trim());
+    const rowTs = Date.parse(String(row?.updatedAt || row?.updated_at || row?.generatedAt || row?.createdAt || "").trim());
+    const takeIncoming = !Number.isFinite(existingTs) || (Number.isFinite(rowTs) && rowTs >= existingTs);
+    byIdentity.set(mapKey, takeIncoming ? { ...existing, ...row } : existing);
+  });
+  return Array.from(byIdentity.values());
+}
+
 async function findExistingAssessmentIdForCandidate({ actorUserId, companyId, assessment }) {
   const a = sanitizeAssessment(assessment);
   const candidateId = String(a?.candidateId || "").trim();
@@ -6565,9 +6607,9 @@ async function findExistingAssessmentIdForCandidate({ actorUserId, companyId, as
   if (!candidateId) return "";
   const rows = await sbSel(
     "assessments",
-    `select=id,candidate_id,client_name,jd_title,payload&company_id=eq.${enc(companyId)}&candidate_id=eq.${enc(candidateId)}&order=updated_at.desc&limit=1`
+    `select=id,candidate_id,client_name,jd_title,payload,updated_at,created_at&company_id=eq.${enc(companyId)}&candidate_id=eq.${enc(candidateId)}&order=updated_at.desc&limit=25`
   ).catch(() => []);
-  const sanitized = (rows || []).map(sanitizeAssessment);
+  const sanitized = dedupeAssessmentsByCandidateIdentity(rows || [], companyId);
   const match = sanitized.find((existing) => {
     const sameCandidateId = assessmentsMatchSameCandidateKey(existing, a);
     if (!sameCandidateId) return false;
@@ -6622,7 +6664,10 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
   if (!candidateId) {
     throw new Error("candidateId is required for assessments.");
   }
-  const safeAssessment = existingId ? { ...incoming, id: existingId } : incoming;
+  const deterministicId = deterministicAssessmentRowId(companyId, incoming);
+  const safeAssessment = existingId
+    ? { ...incoming, id: existingId }
+    : (deterministicId ? { ...incoming, id: deterministicId } : incoming);
   const expectedUpdatedAt = String(
     assessment?.expectedUpdatedAt
     || assessment?.expected_updated_at
