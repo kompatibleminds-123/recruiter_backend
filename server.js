@@ -1409,6 +1409,13 @@ function readImageBufferFromDataUrl(dataUrl = "") {
   }
 }
 
+function toReplySubject(subject = "") {
+  const value = String(subject || "").trim();
+  if (!value) return "";
+  if (/^(re|fwd?)\s*:/i.test(value)) return value;
+  return `Re: ${value}`;
+}
+
 function hexToRgb01(hex = "") {
   const raw = String(hex || "").trim().replace(/^#/, "");
   if (!raw) return null;
@@ -17134,13 +17141,13 @@ const server = http.createServer(async (req, res) => {
       const body = await readJsonBody(req);
       const toRaw = String(body.to || "").trim();
       const ccRaw = String(body.cc || "").trim();
-      const subject = String(body.subject || "").trim();
+      const rawSubject = String(body.subject || "").trim();
       const html = String(body.html || "").trim();
       const text = String(body.text || "").trim();
       const forceNewThread = Boolean(body.forceNewThread);
       const threadContext = body.threadContext && typeof body.threadContext === "object" ? body.threadContext : {};
       const cvAttachmentsRaw = Array.isArray(body.cvAttachments) ? body.cvAttachments : [];
-      if (!subject) throw new Error("Subject is required.");
+      if (!rawSubject) throw new Error("Subject is required.");
       if (!html && !text) throw new Error("Email content missing.");
       const recipients = parseEmailListOrThrow(toRaw, { label: "Recipient email", required: true });
       if (!recipients.length) throw new Error("Recipient email is required.");
@@ -17182,6 +17189,9 @@ const server = http.createServer(async (req, res) => {
       const references = inReplyTo
         ? Array.from(new Set([...priorReferences, inReplyTo]))
         : priorReferences;
+      const subject = !forceNewThread && inReplyTo
+        ? toReplySubject(rawSubject)
+        : rawSubject;
       const attachmentLimitBytes = 20 * 1024 * 1024;
       let attachmentBytes = 0;
       const resolvedAttachments = [];
