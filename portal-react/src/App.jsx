@@ -7804,6 +7804,49 @@ function compactDashboardAgendaItem(item = {}) {
   };
 }
 
+function patchDashboardAgendaSnapshotForAssessment(snapshot, assessment) {
+  if (!snapshot || typeof snapshot !== "object" || !assessment || typeof assessment !== "object") return snapshot;
+  const assessmentId = String(assessment?.id || assessment?.assessmentId || "").trim();
+  if (!assessmentId) return snapshot;
+  const normalizedStatus = String(assessment?.candidateStatus || "").trim().toLowerCase();
+  const shouldKeepInterview = Boolean(assessment?.interviewAt) && isInterviewAlignedStatus(assessment?.candidateStatus || "");
+  const shouldKeepJoining = normalizedStatus === "offered" && Boolean(assessment?.followUpAt || assessment?.interviewAt);
+  let changed = false;
+  const removeByAssessmentId = (items) => {
+    if (!Array.isArray(items)) return items;
+    const nextItems = items.filter((item) => {
+      const itemAssessmentId = String(item?.assessmentId || item?.id || item?.raw?.id || "").trim();
+      return itemAssessmentId !== assessmentId;
+    });
+    if (nextItems.length !== items.length) changed = true;
+    return nextItems;
+  };
+  const nextLists = snapshot?.lists && typeof snapshot.lists === "object" ? { ...snapshot.lists } : {};
+  const nextCounts = snapshot?.counts && typeof snapshot.counts === "object" ? { ...snapshot.counts } : {};
+  const nextSnapshot = { ...snapshot };
+  if (!shouldKeepInterview) {
+    nextLists.interviews = removeByAssessmentId(nextLists.interviews);
+    if (Array.isArray(snapshot?.scheduledInterviewItems)) {
+      nextSnapshot.scheduledInterviewItems = removeByAssessmentId(snapshot.scheduledInterviewItems);
+    }
+  }
+  if (!shouldKeepJoining) {
+    nextLists.joinings = removeByAssessmentId(nextLists.joinings);
+  }
+  if (!changed) return snapshot;
+  if (Array.isArray(nextLists.interviews)) {
+    nextCounts.scheduledInterviews = nextLists.interviews.length;
+    nextSnapshot.scheduledInterviewCount = nextLists.interviews.length;
+  }
+  if (Array.isArray(nextLists.joinings)) {
+    nextCounts.upcomingJoinings = nextLists.joinings.length;
+    nextSnapshot.upcomingJoiningCount = nextLists.joinings.length;
+  }
+  nextSnapshot.lists = nextLists;
+  nextSnapshot.counts = nextCounts;
+  return nextSnapshot;
+}
+
 function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs = true, currentUser = null, users = [] }) {
   const location = useLocation();
   const forcedCampaignIdFromUrl = useMemo(() => {
@@ -24445,6 +24488,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       assessment: nextAssessment,
       source: "LOCAL_PATCH"
     });
+    applyOptimisticDashboardAgendaAssessmentPatch(nextAssessment);
     patchCandidateSmartChipRowsForAssessment(nextAssessment);
     if (candidatePatch && linkedCandidateId) {
       const optimisticUpdatedAt = new Date().toISOString();
@@ -25261,6 +25305,32 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       await openDashboardDrilldown(drilldownState.request);
     }
   }
+
+  function applyOptimisticDashboardAgendaAssessmentPatch(assessment) {
+    if (!assessment || typeof assessment !== "object") return;
+    setDashboardAgendaSnapshot((current) => {
+      const next = patchDashboardAgendaSnapshotForAssessment(current, assessment);
+      if (next !== current) writeDashboardAgendaSnapshot(next);
+      return next;
+    });
+    setDashboardAgendaData((current) => patchDashboardAgendaSnapshotForAssessment(current, assessment));
+    setState((current) => {
+      const currentDashboard = current.dashboard && typeof current.dashboard === "object" ? current.dashboard : {};
+      const currentAgenda = currentDashboard.agenda && typeof currentDashboard.agenda === "object" ? currentDashboard.agenda : null;
+      const nextAgenda = patchDashboardAgendaSnapshotForAssessment(currentAgenda, assessment);
+      if (nextAgenda === currentAgenda) return current;
+      const nextDashboard = {
+        ...currentDashboard,
+        agenda: nextAgenda
+      };
+      writeDashboardSnapshot(nextDashboard);
+      return {
+        ...current,
+        dashboard: nextDashboard
+      };
+    });
+  }
+
   function openAgendaAssessmentStatus(item) {
     const assessmentId = String(item?.assessmentId || item?.raw?.id || item?.id || "").trim();
     if (!assessmentId) return;
@@ -25901,7 +25971,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   });
   const upcomingJoinings = (state.assessments || []).filter((item) => {
     const status = String(item?.candidateStatus || "").trim().toLowerCase();
-    if (!status || (status !== "offered" && status !== "joined")) return false;
+    if (status !== "offered") return false;
     const value = item?.followUpAt ? new Date(item.followUpAt) : item?.interviewAt ? new Date(item.interviewAt) : null;
     return value && value >= agendaWindowStart && value < nextWeekEnd;
   });
