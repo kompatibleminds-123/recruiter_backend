@@ -21935,7 +21935,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
-      const result = await saveContactAttempt(body.candidate_id || body.candidateId, {
+      const saveResult = await saveContactAttempt(body.candidate_id || body.candidateId, {
         recruiter_id: actor.id,
         recruiter_name: actor.name,
         jd_id: body.jd_id || body.jdId,
@@ -21944,7 +21944,8 @@ const server = http.createServer(async (req, res) => {
         notes: body.notes,
         next_follow_up_at: body.next_follow_up_at || body.nextFollowUpAt
       }, { companyId: actor.companyId });
-      const updatedCandidate = (await listCandidatesForUser(actor, { id: String(body.candidate_id || body.candidateId || "").trim(), limit: 1 }))[0] || null;
+      const result = saveResult?.attempt || null;
+      const updatedCandidate = saveResult?.candidate || null;
       emitCapturedStreamEvent(actor.companyId, "candidate_attempt", { candidateId: String(body.candidate_id || body.candidateId || "").trim() || undefined, candidate: updatedCandidate, attempt: result });
       emitApplicantStreamEvent(actor.companyId, "candidate_attempt", { candidateId: String(body.candidate_id || body.candidateId || "").trim() || undefined, candidate: updatedCandidate, attempt: result });
       sendJson(res, 200, { ok: true, result });

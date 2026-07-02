@@ -18149,15 +18149,7 @@ function PortalApp({ token, onLogout }) {
           return [normalizedAttempt, ...next.filter((item) => String(item?.id || "") !== String(normalizedAttempt.id || ""))];
         });
       }
-      if (Object.keys(candidatePatch).length) {
-        try {
-          await patchCandidateQuiet(attemptsCandidateId, candidatePatch, { skipRefresh: true });
-        } catch (patchError) {
-          console.warn("Attempt candidate patch failed:", patchError);
-          setStatus("captured", "Attempt saved. Candidate sync needs a retry.", "warning");
-        }
-      }
-      await refreshAttempts();
+      void refreshAttempts().catch(() => {});
       setStatus("captured", "Attempt logged.", "ok");
     } catch (error) {
       setStatus("captured", `Attempt sync failed: ${String(error?.message || error)}`, "error");

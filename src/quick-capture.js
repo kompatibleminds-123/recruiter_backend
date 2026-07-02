@@ -1070,13 +1070,16 @@ async function saveContactAttempt(candidateId, payload = {}, options = {}) {
     }
 
     const rows = await response.json();
-    await patchCandidate(candidateId, {
+    const updatedCandidate = await patchCandidate(candidateId, {
       last_contact_outcome: row.outcome,
       last_contact_notes: row.notes,
       last_contact_at: row.created_at,
       next_follow_up_at: row.next_follow_up_at
     }, { companyId: row.company_id });
-    return rows?.[0] || row;
+    return {
+      attempt: rows?.[0] || row,
+      candidate: updatedCandidate || null
+    };
   }
 
   const store = readLocalStore();
@@ -1084,13 +1087,16 @@ async function saveContactAttempt(candidateId, payload = {}, options = {}) {
   store.contact_attempts.unshift(row);
   store.contact_attempts = store.contact_attempts.slice(0, 10000);
   writeLocalStore(store);
-  await patchCandidate(candidateId, {
+  const updatedCandidate = await patchCandidate(candidateId, {
     last_contact_outcome: row.outcome,
     last_contact_notes: row.notes,
     last_contact_at: row.created_at,
     next_follow_up_at: row.next_follow_up_at
   }, { companyId: row.company_id });
-  return row;
+  return {
+    attempt: row,
+    candidate: updatedCandidate || null
+  };
 }
 
 async function listContactAttempts(candidateId, limit = 20, options = {}) {
