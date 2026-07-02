@@ -21611,6 +21611,66 @@ function PortalApp({ token, onLogout }) {
       || (clientShareCvLinkState[shareKey] === "missing" ? "CV link not available yet" : "Generating secure CV link...");
   }
 
+  async function ensureClientShareCvLinksReady(rows = []) {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    const resolvedLinks = {};
+    safeRows.forEach((item) => {
+      const shareKey = String(item.candidate_id || item.id || "");
+      const existingUrl = String(clientShareCvLinks[shareKey] || "").trim();
+      if (shareKey && existingUrl) resolvedLinks[shareKey] = existingUrl;
+    });
+    const rowsNeedingLinks = safeRows.filter((item) => {
+      const shareKey = String(item.candidate_id || item.id || "");
+      if (!shareKey) return false;
+      const hasCvRef = Boolean(item.cv_key || item.cv_url || item.cv_provider || item.cv_filename);
+      if (!hasCvRef) return false;
+      return !String(clientShareCvLinks[shareKey] || "").trim();
+    });
+    if (!rowsNeedingLinks.length) return resolvedLinks;
+    setClientShareCvLinkState((current) => {
+      const next = { ...(current || {}) };
+      rowsNeedingLinks.forEach((item) => {
+        const shareKey = String(item.candidate_id || item.id || "");
+        if (shareKey) next[shareKey] = "loading";
+      });
+      return next;
+    });
+    const entries = await Promise.all(rowsNeedingLinks.map(async (item) => {
+      const shareKey = String(item.candidate_id || item.id || "");
+      try {
+        const params = new URLSearchParams();
+        if (item.candidate_id) params.set("candidate_id", String(item.candidate_id));
+        if (item.phone) params.set("candidate_phone", String(item.phone));
+        if (item.email) params.set("candidate_email", String(item.email));
+        if (item.jd_title) params.set("jd_title", String(item.jd_title));
+        if (item.name) params.set("candidate_name", String(item.name));
+        if (isAssessmentShareBrandedCvEnabled(item)) params.set("branded", "1");
+        const result = await api(`/company/share-cv-link${params.toString() ? `?${params.toString()}` : ""}`, token);
+        return [shareKey, String(result?.url || "").trim(), "ready"];
+      } catch {
+        return [shareKey, "", "missing"];
+      }
+    }));
+    setClientShareCvLinks((current) => {
+      const next = { ...(current || {}) };
+      entries.forEach(([candidateId, url]) => {
+        if (candidateId && url) {
+          next[candidateId] = url;
+          resolvedLinks[candidateId] = url;
+        }
+      });
+      return next;
+    });
+    setClientShareCvLinkState((current) => {
+      const next = { ...(current || {}) };
+      entries.forEach(([candidateId, _url, state]) => {
+        if (candidateId) next[candidateId] = state;
+      });
+      return next;
+    });
+    return resolvedLinks;
+  }
+
   function getClientSharePresetColumns() {
     const customPreset = customExportPresetList.find((preset) => String(preset.id) === String(clientShareDraft.presetId));
     const columnsText = customPreset?.columns
@@ -22558,10 +22618,12 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function sendClientShareEmail() {
-    if (!getClientShareRows().length) {
+    const rows = getClientShareRows();
+    if (!rows.length) {
       setStatus("clientShare", "Select assessment profiles first from the Assessments tab.", "error");
       return;
     }
+    const ensuredCvLinks = await ensureClientShareCvLinksReady(rows);
     const to = String(clientShareDraft.recipientEmail || "").trim();
     const cc = uniqueEmails(parseEmailTokens(clientShareDraft.ccEmails || "")).join(", ");
     if (!to) {
@@ -22569,14 +22631,18 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     const sendHtml = getClientShareSendHtml();
-    const cvAttachments = getClientShareRows()
+    const cvAttachments = rows
       .map((item) => {
         const shareKey = String(item.candidate_id || item.id || "");
-        const signedUrl = String(clientShareCvLinks[shareKey] || "").trim();
+        const signedUrl = String(ensuredCvLinks?.[shareKey] || clientShareCvLinks[shareKey] || "").trim();
         const provider = String(item.cv_provider || "").trim();
         const key = String(item.cv_key || "").trim();
         const directUrl = String(item.cv_url || "").trim();
         const filename = String(item.cv_filename || "").trim();
+        const wantsBranded = isAssessmentShareBrandedCvEnabled(item);
+        if (wantsBranded && !signedUrl) {
+          throw new Error(`Branded CV link is still not ready for ${String(item.name || item.candidate_name || "selected profile").trim() || "selected profile"}. Please retry once.`);
+        }
         if (!signedUrl && !key && !directUrl) return null;
         return {
           candidateId: String(item.candidate_id || "").trim(),
@@ -22585,7 +22651,8 @@ function PortalApp({ token, onLogout }) {
           key,
           url: directUrl,
           filename,
-          mimeType: ""
+          mimeType: "",
+          branded: wantsBranded
         };
       })
       .filter(Boolean);
@@ -22601,10 +22668,12 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function copyClientShareEmailDraft() {
-    if (!getClientShareRows().length) {
+    const rows = getClientShareRows();
+    if (!rows.length) {
       setStatus("clientShare", "Select assessment profiles first from the Assessments tab.", "error");
       return;
     }
+    await ensureClientShareCvLinksReady(rows);
     await copyHtmlAndText(getClientShareComposedHtml(), getClientShareComposedText());
     setStatus("clientShare", "Client email draft copied in table format.", "ok");
   }

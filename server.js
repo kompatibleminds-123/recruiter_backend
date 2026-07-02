@@ -20460,7 +20460,10 @@ const server = http.createServer(async (req, res) => {
       const candidateJdTitle = String(requestUrl.searchParams.get("jd_title") || "").trim();
       const fallbackFileRef = inferStoredFileRefFromUrl(actor, requestUrl);
       let matchedCandidate = null;
-      if (!fallbackFileRef) {
+      if (candidateId) {
+        matchedCandidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }).catch(() => []))[0] || null;
+      }
+      if (!matchedCandidate && !fallbackFileRef) {
         const candidatePool = await listCandidatesForUser(actor, { limit: 5000 });
         matchedCandidate = findBestCandidateByIdentity(candidatePool, {
           candidateId,
