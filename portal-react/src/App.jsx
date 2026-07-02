@@ -22522,6 +22522,14 @@ function PortalApp({ token, onLogout }) {
           : "Email sent as a new thread. Check your Sent folder to confirm.",
         "ok"
       );
+      setSelectedAssessmentIds([]);
+      setClientShareBodyTouched(false);
+      clientShareEditorLastHtmlRef.current = "";
+      setClientShareDraft((current) => ({
+        ...current,
+        richBodyHtml: "",
+        emailSubject: ""
+      }));
     } catch (error) {
       setStatus("clientShare", `Email failed: ${String(error?.message || error)}`, "error");
     }
