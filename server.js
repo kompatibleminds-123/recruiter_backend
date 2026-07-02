@@ -2244,6 +2244,70 @@ async function resolveBrandedCvContext({
   };
 }
 
+async function prewarmBrandedCvShareCache({
+  companyId = "",
+  companyName = "",
+  candidate = null,
+  assessment = null,
+  fileRef = {},
+  route = "/shared/cv",
+  forceDownload = false
+} = {}) {
+  const scopedCompanyId = String(companyId || "").trim();
+  const safeFileRef = fileRef && typeof fileRef === "object" ? fileRef : {};
+  if (!scopedCompanyId) return null;
+  if (!safeFileRef.provider && !safeFileRef.key && !safeFileRef.url) return null;
+  const file = await loadStoredFile(safeFileRef);
+  const brandedCtx = await resolveBrandedCvContext({
+    companyId: scopedCompanyId,
+    companyName,
+    candidate,
+    assessment
+  });
+  const cacheKey = buildBrandedCvResponseCacheKey({
+    route: String(route || "/shared/cv").trim() || "/shared/cv",
+    companyId: scopedCompanyId,
+    candidateId: String(candidate?.id || candidate?.candidate_id || candidate?.candidateId || "").trim(),
+    assessmentId: String(assessment?.id || candidate?.assessment_id || candidate?.assessmentId || "").trim(),
+    forceDownload: Boolean(forceDownload),
+    companyName: brandedCtx.companyName,
+    candidateName: brandedCtx.candidateName,
+    headerLine: brandedCtx.headerLine,
+    resumeFormatting: brandedCtx.resumeFormatting,
+    fileBuffer: file.buffer
+  });
+  const cached = getBrandedCvResponseFromCache(cacheKey);
+  if (cached?.buffer && cached?.etag) {
+    return {
+      cacheKey,
+      warmed: false,
+      brandedFallbackUsed: Boolean(cached?.brandedFallbackUsed)
+    };
+  }
+  const brandedPdf = await buildBrandedPdfBuffer({
+    pdfBase64: file.buffer.toString("base64"),
+    companyName: brandedCtx.companyName,
+    resumeFormatting: brandedCtx.resumeFormatting,
+    candidateName: brandedCtx.candidateName,
+    headerLine: brandedCtx.headerLine
+  });
+  const brandedName = `${toSafeCvFilenameBase(brandedCtx.candidateName)}_CV.pdf`;
+  const contentDisposition = `${forceDownload ? "attachment" : "inline"}; filename="${brandedName.replace(/"/g, "")}"`;
+  setBrandedCvResponseCache(cacheKey, {
+    buffer: brandedPdf.buffer,
+    etag: `"${sha256Hex(brandedPdf.buffer)}"`,
+    cacheControl: "private, max-age=0, must-revalidate",
+    contentType: "application/pdf",
+    contentDisposition,
+    brandedFallbackUsed: brandedPdf?.brandedFallbackUsed
+  });
+  return {
+    cacheKey,
+    warmed: true,
+    brandedFallbackUsed: Boolean(brandedPdf?.brandedFallbackUsed)
+  };
+}
+
 const STATIC_MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -20435,6 +20499,19 @@ const server = http.createServer(async (req, res) => {
         mimeType,
         expiresAt
       });
+      if (wantBranded) {
+        void prewarmBrandedCvShareCache({
+          companyId: actor.companyId,
+          companyName: String(actor?.companyName || actor?.company_name || "Your Company").trim() || "Your Company",
+          candidate,
+          assessment: null,
+          fileRef: { provider: fileProvider, key: fileKey, url: fileUrl, filename, mimeType },
+          route: "/shared/cv",
+          forceDownload: false
+        }).catch((error) => {
+          console.warn("[branded-cv] prewarm_failed route=/company/candidates/:id/share-cv-link", String(error?.message || error || ""));
+        });
+      }
       const baseUrl = getRequestBaseUrl(req);
       sendJson(res, 200, {
         ok: true,
@@ -20527,6 +20604,19 @@ const server = http.createServer(async (req, res) => {
         mimeType,
         expiresAt
       });
+      if (wantBranded) {
+        void prewarmBrandedCvShareCache({
+          companyId: actor.companyId,
+          companyName: String(actor?.companyName || actor?.company_name || "Your Company").trim() || "Your Company",
+          candidate: matchedCandidate,
+          assessment: null,
+          fileRef: { provider: fileProvider, key: fileKey, url: fileUrl, filename, mimeType },
+          route: "/shared/cv",
+          forceDownload: false
+        }).catch((error) => {
+          console.warn("[branded-cv] prewarm_failed route=/company/share-cv-link", String(error?.message || error || ""));
+        });
+      }
       const baseUrl = getRequestBaseUrl(req);
       sendJson(res, 200, {
         ok: true,
