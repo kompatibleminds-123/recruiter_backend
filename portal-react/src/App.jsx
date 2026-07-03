@@ -18759,31 +18759,24 @@ function PortalApp({ token, onLogout }) {
     }
     setStatus("interview", "Saving assessment...");
     const optimisticUpdatedAt = new Date().toISOString();
-    const optimisticAssessment = hydrateAssessmentCvRefs({
-      ...assessment,
-      updatedAt: optimisticUpdatedAt,
-      updated_at: optimisticUpdatedAt
-    }, interviewCandidate);
-    applyAssessmentChange({
-      type: "UPSERT_ROW",
-      scope: "all",
-      assessment: optimisticAssessment,
-      source: "LOCAL_PATCH"
-    });
     if (interviewMeta.assessmentId) {
+      const optimisticAssessment = hydrateAssessmentCvRefs({
+        ...assessment,
+        updatedAt: optimisticUpdatedAt,
+        updated_at: optimisticUpdatedAt
+      }, interviewCandidate);
+      applyAssessmentChange({
+        type: "UPSERT_ROW",
+        scope: "all",
+        assessment: optimisticAssessment,
+        source: "LOCAL_PATCH"
+      });
       setInterviewMeta((current) => ({
         ...current,
         assessmentUpdatedAt: optimisticUpdatedAt
       }));
     }
-    setStatus("interview", interviewMeta.candidateId ? "Assessment saved. Syncing in background..." : "Assessment saved. Syncing in background...", "ok");
-    if (lockKey) {
-      setAssessmentActionBusyIds((current) => {
-        const next = { ...current };
-        delete next[lockKey];
-        return next;
-      });
-    }
+    setStatus("interview", "Saving assessment...");
     void (async () => {
       try {
         const savedAssessment = await api("/company/assessments", token, "POST", { assessment });
@@ -18842,6 +18835,7 @@ function PortalApp({ token, onLogout }) {
           void patchCandidateQuiet(interviewMeta.candidateId, candidatePatchPayload).catch((error) => {
             setStatus("interview", `Assessment saved, but candidate sync is still pending: ${String(error?.message || error)}`, "error");
           });
+          setStatus("interview", "Assessment saved. Syncing in background...", "ok");
         } else {
           void refreshDashboardAfterAssessmentChange().catch(() => {});
           setStatus("interview", "Assessment saved.", "ok");
@@ -18854,6 +18848,11 @@ function PortalApp({ token, onLogout }) {
       } finally {
         if (lockKey) {
           assessmentStatusSaveLockRef.current.delete(lockKey);
+          setAssessmentActionBusyIds((current) => {
+            const next = { ...current };
+            delete next[lockKey];
+            return next;
+          });
         }
       }
     })();
