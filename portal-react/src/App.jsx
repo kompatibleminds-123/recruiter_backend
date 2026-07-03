@@ -5094,12 +5094,25 @@ function mergeStoredCvIntoApplicantMeta(existingMeta = {}, cvAnalysis = null) {
   const meta = existingMeta && typeof existingMeta === "object" ? { ...existingMeta } : {};
   const stored = cvAnalysis?.storedFile && typeof cvAnalysis.storedFile === "object" ? cvAnalysis.storedFile : null;
   if (!stored) return meta;
-  // Only fill missing CV pointers; never overwrite a real stored link/key already present.
-  if (!meta.fileProvider && stored.provider) meta.fileProvider = String(stored.provider || "").trim();
-  if (!meta.fileKey && stored.key) meta.fileKey = String(stored.key || "").trim();
-  if (!meta.fileUrl && stored.url) meta.fileUrl = String(stored.url || "").trim();
-  if (!meta.filename && stored.filename) meta.filename = String(stored.filename || "").trim();
-  if (!meta.mimeType && stored.mimeType) meta.mimeType = String(stored.mimeType || "").trim();
+  // When user re-uploads/replaces a CV, latest stored file must become source of truth.
+  if (stored.provider) meta.fileProvider = String(stored.provider || "").trim();
+  if (stored.key) meta.fileKey = String(stored.key || "").trim();
+  if (stored.url) meta.fileUrl = String(stored.url || "").trim();
+  if (stored.filename) meta.filename = String(stored.filename || "").trim();
+  if (stored.mimeType) meta.mimeType = String(stored.mimeType || "").trim();
+  if (meta.cvAnalysisCache && typeof meta.cvAnalysisCache === "object") {
+    meta.cvAnalysisCache = {
+      ...meta.cvAnalysisCache,
+      storedFile: {
+        ...(meta.cvAnalysisCache.storedFile && typeof meta.cvAnalysisCache.storedFile === "object" ? meta.cvAnalysisCache.storedFile : {}),
+        provider: String(stored.provider || "").trim(),
+        key: String(stored.key || "").trim(),
+        url: String(stored.url || "").trim(),
+        filename: String(stored.filename || "").trim(),
+        mimeType: String(stored.mimeType || "").trim()
+      }
+    };
+  }
   return meta;
 }
 
