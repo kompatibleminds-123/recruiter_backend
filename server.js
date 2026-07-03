@@ -6420,6 +6420,53 @@ async function unlinkAssessmentFromCompanyCandidates(companyId, assessmentId) {
   return changedCandidates;
 }
 
+async function moveAssessmentBackToCandidatePool({ actor, assessmentId }) {
+  const scopedAssessmentId = String(assessmentId || "").trim();
+  const scopedCompanyId = String(actor?.companyId || "").trim();
+  if (!scopedAssessmentId || !scopedCompanyId) {
+    throw new Error("Assessment id is required.");
+  }
+  const assessment = await getAssessmentById({ companyId: scopedCompanyId, assessmentId: scopedAssessmentId }).catch(() => null);
+  if (!assessment) {
+    throw new Error("Assessment not found or not allowed.");
+  }
+  const candidateId = String(assessment?.candidateId || assessment?.candidate_id || "").trim();
+  let updatedCandidate = null;
+  if (candidateId) {
+    updatedCandidate = await patchCandidate(candidateId, {
+      hidden_from_captured: false,
+      used_in_assessment: false,
+      assessment_id: null,
+      assessment_status: "",
+      updated_at: new Date().toISOString()
+    }, { companyId: scopedCompanyId });
+  }
+  const deleted = await deleteAssessment({
+    actorUserId: String(actor?.id || "").trim(),
+    companyId: scopedCompanyId,
+    assessmentId: scopedAssessmentId
+  });
+  const fallbackChanges = !updatedCandidate
+    ? await unlinkAssessmentFromCompanyCandidates(scopedCompanyId, scopedAssessmentId)
+    : [];
+  const restoredCandidate = updatedCandidate || fallbackChanges?.[0]?.candidate || null;
+  const restoreToApplicants = isInboundApplicantSourceValue(
+    restoredCandidate?.source
+    || assessment?.source
+    || assessment?.sourcePlatform
+    || assessment?.payload?.source
+    || assessment?.payload?.sourcePlatform
+    || ""
+  );
+  return {
+    deleted,
+    assessment,
+    candidate: restoredCandidate,
+    candidateId: String(restoredCandidate?.id || candidateId || "").trim(),
+    destination: restoreToApplicants ? "applicants" : "captured"
+  };
+}
+
 async function ingestApplicantSubmission(body, req) {
   const payload = normalizeApplicantBody(body);
   if (!payload.companyId) {
@@ -21925,6 +21972,37 @@ const server = http.createServer(async (req, res) => {
         });
       }
       sendJson(res, 200, { ok: true, result: restored });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/company/assessments/move-back") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const assessmentId = String(body.assessmentId || "").trim();
+      const result = await moveAssessmentBackToCandidatePool({ actor, assessmentId });
+      if (result?.candidateId) {
+        emitCapturedStreamEvent(actor.companyId, "candidate_changed", {
+          candidateId: result.candidateId,
+          candidate: result?.candidate || undefined,
+          assessmentId: ""
+        });
+        emitApplicantStreamEvent(actor.companyId, "candidate_changed", {
+          candidateId: result.candidateId,
+          candidate: result?.candidate || undefined,
+          assessmentId: ""
+        });
+      }
+      emitAssessmentStreamEvent(actor.companyId, "assessment_deleted", {
+        assessmentId,
+        candidateId: String(result?.candidateId || result?.assessment?.candidateId || result?.assessment?.candidate_id || "").trim(),
+        recruiterId: String(result?.assessment?.recruiterId || result?.assessment?.recruiter_id || actor.id || "").trim(),
+        assessment: result?.assessment || null
+      });
+      sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

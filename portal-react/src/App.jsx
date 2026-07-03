@@ -25271,14 +25271,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       setCapturedOptionPool((current) => removeCandidatesById(current, [candidateId]));
     }
     try {
-      await api("/company/assessments", token, "DELETE", { assessmentId });
-      // Clear the candidate link so it shows up in captured notes again.
-      await patchCandidateQuiet(candidateId, {
-        assessment_id: "",
-        used_in_assessment: false,
-        assessment_status: "",
-        hidden_from_captured: false
-      }, { skipRefresh: true });
+      await api("/company/assessments/move-back", token, "POST", { assessmentId });
       void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
       navigate(restoreToApplicants ? "/applicants" : "/captured-notes");
       void refreshDashboardAfterAssessmentChange().catch(() => {});
