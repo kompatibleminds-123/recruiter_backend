@@ -22767,6 +22767,12 @@ function PortalApp({ token, onLogout }) {
         },
         updatedAt: String(current?.updatedAt || current?.updated_at || "").trim()
       };
+      delete next.expectedUpdatedAt;
+      delete next.expected_updated_at;
+      if (next.payload && typeof next.payload === "object") {
+        delete next.payload.expectedUpdatedAt;
+        delete next.payload.expected_updated_at;
+      }
       const saved = await api("/company/assessments", token, "POST", { assessment: next });
       const savedId = String(saved?.id || assessmentId).trim();
       applyAssessmentChange({
