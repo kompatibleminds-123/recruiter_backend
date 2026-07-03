@@ -3954,25 +3954,86 @@ function signatureLinksHtmlBlock(links = []) {
     .join("");
 }
 
-function formatExcelMultilineCell(value) {
-  const raw = String(value ?? "");
-  if (!raw) return "";
-  // Preserve existing formulas (e.g. HYPERLINK) and avoid double-wrapping.
-  if (raw.startsWith("=")) return raw;
-  if (!/\r?\n/.test(raw)) return raw;
-  const lines = raw.split(/\r?\n/).map((line) => String(line ?? ""));
-  const parts = [];
-  lines.forEach((line, idx) => {
-    const escaped = String(line).replace(/\"/g, "\"\"");
-    parts.push(`\"${escaped}\"`);
-    if (idx < lines.length - 1) parts.push("CHAR(10)");
-  });
-  // `"a"&CHAR(10)&"b"` (blank lines work because "" is a valid segment)
-  return `=${parts.join("&")}`;
+function normalizeScreeningQuestionLabel(value) {
+  return String(value || "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\*/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[\s:–—-]+$/g, "")
+    .trim();
 }
 
-function normalizeExcelClipboardCell(value) {
-  return formatExcelMultilineCell(String(value ?? "").replace(/\t/g, " "));
+function normalizeScreeningAnswerText(value) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((line) => String(line || "")
+      .replace(/<[^>]+>/g, "")
+      .replace(/^\s*[:\-–—*]+\s*/, "")
+      .replace(/\*/g, "")
+      .trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function parseExcelHyperlinkFormula(value) {
+  const match = String(value || "").match(/^=HYPERLINK\("((?:[^"]|"")*)","((?:[^"]|"")*)"\)$/i);
+  if (!match) return null;
+  return {
+    url: match[1].replace(/""/g, "\""),
+    label: match[2].replace(/""/g, "\"")
+  };
+}
+
+function buildClipboardTableCell(value) {
+  const hyperlink = parseExcelHyperlinkFormula(value);
+  if (hyperlink?.url) {
+    const url = String(hyperlink.url || "").trim();
+    const label = String(hyperlink.label || hyperlink.url || "").trim() || url;
+    return {
+      text: url,
+      html: `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`
+    };
+  }
+  const text = String(value ?? "").replace(/\t/g, " ");
+  return {
+    text,
+    html: escapeHtml(text).replace(/\r?\n/g, "<br/>")
+  };
+}
+
+function escapeClipboardTsvCell(value) {
+  const text = String(value ?? "").replace(/\r/g, "");
+  if (/[\"\t\n]/.test(text)) return `"${text.replace(/"/g, "\"\"")}"`;
+  return text;
+}
+
+function buildClipboardTablePayload(headers = [], rows = []) {
+  const safeHeaders = Array.isArray(headers) ? headers : [];
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const textRows = [
+    safeHeaders.map((cell) => escapeClipboardTsvCell(cell)).join("\t"),
+    ...safeRows.map((row) => (Array.isArray(row) ? row : []).map((cell) => {
+      const normalized = buildClipboardTableCell(cell);
+      return escapeClipboardTsvCell(normalized.text);
+    }).join("\t"))
+  ].join("\n");
+  const htmlRows = [
+    `<tr>${safeHeaders.map((cell) => `<th style="text-align:left;padding:6px 8px;border:1px solid #d9dde5;background:#f7f8fb;">${escapeHtml(cell)}</th>`).join("")}</tr>`,
+    ...safeRows.map((row) => `<tr>${(Array.isArray(row) ? row : []).map((cell) => {
+      const normalized = buildClipboardTableCell(cell);
+      return `<td style="vertical-align:top;padding:6px 8px;border:1px solid #d9dde5;white-space:pre-wrap;">${normalized.html}</td>`;
+    }).join("")}</tr>`)
+  ].join("");
+  return {
+    text: textRows,
+    html: `<table style="border-collapse:collapse;">${htmlRows}</table>`
+  };
+}
+
+async function copyTableToClipboard(headers = [], rows = []) {
+  const payload = buildClipboardTablePayload(headers, rows);
+  await copyHtmlAndText(payload.html, payload.text);
 }
 
 function getCapturedOutcome(candidate, assessment) {
@@ -4262,18 +4323,8 @@ function buildCombinedAssessmentInsightsForExportV2(item = {}) {
   const seen = new Set();
 
   const pushQa = (question, answer) => {
-    const q = String(question || "")
-      .replace(/<[^>]+>/g, "")
-      .replace(/\*/g, "")
-      .replace(/\s+/g, " ")
-      .trim()
-      .replace(/:+$/, "");
-    const a = String(answer || "")
-      .replace(/<[^>]+>/g, "")
-      .replace(/^\s*[:\-]+\s*/, "")
-      .replace(/\*/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
+    const q = normalizeScreeningQuestionLabel(question);
+    const a = normalizeScreeningAnswerText(answer).replace(/\r?\n+/g, " ").trim();
     if (!q || !a) return;
     if (!/[a-z]/i.test(q)) return;
     if (/^reason\s+of\s+change$/i.test(q)) return;
@@ -4310,20 +4361,12 @@ function buildCombinedAssessmentInsightsForExportV2(item = {}) {
     .map((value) => String(value || "").trim())
     .filter(Boolean)
     .slice(0, 3);
-  const reasonOfChange = String(item.reason_of_change || "").trim();
+  const reasonOfChange = normalizeScreeningAnswerText(String(item.reason_of_change || "").trim());
   const parts = [];
-  if (strongPoints.length) {
-    parts.push(
-      [
-        "Strong points:",
-        ...strongPoints.map((value, index) => `${index + 1}. *${value}*`)
-      ].join("\n")
-    );
-  }
   if (qaLines.length) {
     parts.push(
       [
-        "Screening pointers:",
+        "Screening Q&A:",
         ...qaLines.map((entry, index) => `${index + 1}. ${entry.question} - *${entry.answer}*`)
       ].join("\n")
     );
@@ -4435,8 +4478,8 @@ function buildCombinedAssessmentInsightsForExport(item = {}) {
     const normalizedLine = line.replace(/^[\d\.\-\)\s]+/, "").trim();
     const separatorIndex = normalizedLine.indexOf(":");
     if (separatorIndex <= 0) return;
-    const label = normalizedLine.slice(0, separatorIndex).trim();
-    const answer = normalizedLine.slice(separatorIndex + 1).trim();
+    const label = normalizeScreeningQuestionLabel(normalizedLine.slice(0, separatorIndex));
+    const answer = normalizeScreeningAnswerText(normalizedLine.slice(separatorIndex + 1));
     const normalizedLabel = label.toLowerCase();
     if (!label || !answer) return;
     if (normalizedLabel === "reason of change") {
@@ -4444,12 +4487,18 @@ function buildCombinedAssessmentInsightsForExport(item = {}) {
       return;
     }
     if (fixedFieldLabels.has(normalizedLabel)) return;
-    questionLines.push(`${questionLines.length + 1}. ${label} - *${answer}*`);
+    questionLines.push(`${questionLines.length + 1}. ${label} - *${answer.replace(/\r?\n+/g, " ")}*`);
   });
 
-  const finalReasonOfChange = inlineReasonOfChange || reasonOfChangeValue;
+  const finalReasonOfChange = normalizeScreeningAnswerText(inlineReasonOfChange || reasonOfChangeValue);
   const parts = [];
-  if (finalReasonOfChange) parts.push(`Reason of change: *${finalReasonOfChange}*`);
+  if (finalReasonOfChange) {
+    parts.push("Reason of change:");
+    normalizeScreeningAnswerText(finalReasonOfChange)
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .forEach((line) => parts.push(`*${line}*`));
+  }
   if (questionLines.length) parts.push(...questionLines);
   return parts.join("\n");
 }
@@ -4487,8 +4536,8 @@ function buildScreeningQaOnlyForExport(item = {}) {
   const questionItems = [];
   let currentQuestion = null;
   const pushQa = (label, answer) => {
-    const safeLabel = String(label || "").trim();
-    const safeAnswer = String(answer || "").trim();
+    const safeLabel = normalizeScreeningQuestionLabel(label);
+    const safeAnswer = normalizeScreeningAnswerText(answer);
     const normalizedLabel = safeLabel.toLowerCase();
     if (!safeLabel || !safeAnswer) return;
     if (!/[a-z]/i.test(safeLabel)) return;
@@ -4512,17 +4561,18 @@ function buildScreeningQaOnlyForExport(item = {}) {
       const normalizedLine = trimmedLine.replace(/^[\d\.\-\)\s]+/, "").trim();
       const separatorIndex = normalizedLine.indexOf(":");
       if (separatorIndex > 0) {
-        const label = normalizedLine.slice(0, separatorIndex).trim();
-        const answer = normalizedLine
-          .slice(separatorIndex + 1)
-          .replace(/^[\s:\-]+/, "")
-          .trim();
+        const label = normalizeScreeningQuestionLabel(normalizedLine.slice(0, separatorIndex));
+        const answer = normalizeScreeningAnswerText(
+          normalizedLine
+            .slice(separatorIndex + 1)
+            .replace(/^[\s:\-]+/, "")
+        );
         if (!label || !answer) return;
-        if (String(label || "").trim().toLowerCase() === "reason of change") {
+        if (label.toLowerCase() === "reason of change") {
           currentQuestion = null;
           return;
         }
-        if (fixedFieldLabels.has(String(label || "").trim().toLowerCase())) {
+        if (fixedFieldLabels.has(label.toLowerCase())) {
           currentQuestion = null;
           return;
         }
@@ -4531,7 +4581,7 @@ function buildScreeningQaOnlyForExport(item = {}) {
         return;
       }
       if (currentQuestion) {
-        currentQuestion.answer = `${currentQuestion.answer}\n${trimmedLine}`;
+        currentQuestion.answer = normalizeScreeningAnswerText(`${currentQuestion.answer}\n${trimmedLine}`);
       }
     });
   }
@@ -4601,13 +4651,15 @@ function buildScreeningRemarksForExport(item = {}) {
     const separatorIndex = normalizedLine.indexOf(":");
     if (separatorIndex > 0) {
       const label = normalizedLine.slice(0, separatorIndex).trim();
-      const answer = normalizedLine
-        .slice(separatorIndex + 1)
-        .replace(/^[\s:\-]+/, "")
-        .trim();
-      const normalizedLabel = label.toLowerCase();
-      if (!label || !answer) return;
-      if (!/[a-z]/i.test(label)) return;
+      const answer = normalizeScreeningAnswerText(
+        normalizedLine
+          .slice(separatorIndex + 1)
+          .replace(/^[\s:\-]+/, "")
+      );
+      const cleanLabel = normalizeScreeningQuestionLabel(label);
+      const normalizedLabel = cleanLabel.toLowerCase();
+      if (!cleanLabel || !answer) return;
+      if (!/[a-z]/i.test(cleanLabel)) return;
       if (normalizedLabel === "reason of change") {
         inlineReasonOfChange = answer;
         currentQuestion = null;
@@ -4617,12 +4669,12 @@ function buildScreeningRemarksForExport(item = {}) {
         currentQuestion = null;
         return;
       }
-      currentQuestion = { label, answer };
+      currentQuestion = { label: cleanLabel, answer };
       questionItems.push(currentQuestion);
       return;
     }
     if (currentQuestion) {
-      currentQuestion.answer = `${currentQuestion.answer}\n${trimmedLine}`;
+      currentQuestion.answer = normalizeScreeningAnswerText(`${currentQuestion.answer}\n${trimmedLine}`);
     }
   });
 
@@ -4630,8 +4682,8 @@ function buildScreeningRemarksForExport(item = {}) {
   if (ctx.screeningMap) {
     const nextItems = [];
     Object.entries(ctx.screeningMap).forEach(([question, answer]) => {
-      const label = String(question || "").trim();
-      const value = String(answer || "").trim();
+      const label = normalizeScreeningQuestionLabel(question);
+      const value = normalizeScreeningAnswerText(answer);
       if (!label || !value) return;
       const normalizedLabel = label.toLowerCase();
       if (normalizedLabel === "reason of change") {
@@ -4647,7 +4699,7 @@ function buildScreeningRemarksForExport(item = {}) {
     }
   }
 
-  const finalReasonOfChange = inlineReasonOfChange || reasonOfChangeValue;
+  const finalReasonOfChange = normalizeScreeningAnswerText(inlineReasonOfChange || reasonOfChangeValue);
   const parts = [];
   if (questionItems.length) {
     parts.push("Screening Q&A:");
@@ -4665,7 +4717,10 @@ function buildScreeningRemarksForExport(item = {}) {
   if (finalReasonOfChange) {
     if (parts.length) parts.push("");
     parts.push("Reason of change:");
-    parts.push(`*${finalReasonOfChange}*`);
+    finalReasonOfChange
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .forEach((line) => parts.push(`*${line}*`));
   }
   return parts.join("\n");
 }
@@ -20380,8 +20435,7 @@ function PortalApp({ token, onLogout }) {
   async function copyCapturedExcel() {
     const rows = buildCapturedCopyRows();
     const preset = buildCapturedExcelRows(rows, activeCopyPresetId || copySettings.excelPreset, effectiveCopySettings);
-    const lines = [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
-    await copyText(lines);
+    await copyTableToClipboard(preset.headers, preset.rows);
     setStatus("captured", "Filtered candidates copied in Excel format.", "ok");
   }
 
@@ -20444,8 +20498,7 @@ function PortalApp({ token, onLogout }) {
   async function copyApplicantsExcel() {
     const rows = buildApplicantCopyRows();
     const preset = buildCapturedExcelRows(rows, activeCopyPresetId || copySettings.excelPreset, effectiveCopySettings);
-    const lines = [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
-    await copyText(lines);
+    await copyTableToClipboard(preset.headers, preset.rows);
     setStatus("applicants", "Filtered applied candidates copied in Excel format.", "ok");
   }
 
@@ -20465,8 +20518,7 @@ function PortalApp({ token, onLogout }) {
 
   async function copyAssessmentsExcel() {
     const preset = buildCapturedExcelRows(normalizedAssessmentCopyRows, activeCopyPresetId || copySettings.excelPreset, effectiveCopySettings);
-    const lines = [preset.headers.join("\t"), ...preset.rows.map((row) => row.map((cell) => String(cell || "").replace(/\t/g, " ").replace(/\r?\n/g, " ")).join("\t"))].join("\n");
-    await copyText(lines);
+    await copyTableToClipboard(preset.headers, preset.rows);
     setStatus("assessments", "Filtered assessments copied in Excel format.", "ok");
   }
 
@@ -20625,11 +20677,7 @@ function PortalApp({ token, onLogout }) {
   async function copyCandidatesExcel() {
     const rows = await fetchFilteredDatabaseExportRows();
     const preset = buildCapturedExcelRows(rows, activeCopyPresetId || copySettings.excelPreset, effectiveCopySettings);
-    const lines = [
-      preset.headers.join("\t"),
-      ...preset.rows.map((row) => row.map((cell) => normalizeExcelClipboardCell(cell)).join("\t"))
-    ].join("\n");
-    await copyText(lines);
+    await copyTableToClipboard(preset.headers, preset.rows);
     setStatus("workspace", "Candidate search results copied in Excel format.", "ok");
   }
 
@@ -22697,11 +22745,7 @@ function PortalApp({ token, onLogout }) {
       ? row
       : [...row, getCapturedExportFieldValue({ cv_link: getClientShareCvText(rows[index] || {}) }, "cv_link")]
     ));
-    const lines = [
-      headers.join("\t"),
-      ...outputRows.map((row) => row.map((cell) => normalizeExcelClipboardCell(cell)).join("\t"))
-    ].join("\n");
-    await copyText(lines);
+    await copyTableToClipboard(headers, outputRows);
     setStatus("clientShare", "Selected profiles copied as tracker in the chosen preset.", "ok");
   }
 
