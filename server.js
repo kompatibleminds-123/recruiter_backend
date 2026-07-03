@@ -2244,6 +2244,209 @@ async function resolveBrandedCvContext({
   };
 }
 
+function buildStoredFileFingerprint(fileRef = {}) {
+  const safe = fileRef && typeof fileRef === "object" ? fileRef : {};
+  return sha256Hex(stableStringifyForCache({
+    provider: String(safe.provider || "").trim(),
+    key: String(safe.key || "").trim(),
+    url: String(safe.url || "").trim(),
+    filename: String(safe.filename || "").trim(),
+    mimeType: String(safe.mimeType || "").trim()
+  }));
+}
+
+function buildBrandedCvArtifactFingerprint({
+  candidateId = "",
+  assessmentId = "",
+  sourceFingerprint = "",
+  brandedCtx = {}
+} = {}) {
+  const ctx = brandedCtx && typeof brandedCtx === "object" ? brandedCtx : {};
+  return sha256Hex(stableStringifyForCache({
+    candidateId: String(candidateId || "").trim(),
+    assessmentId: String(assessmentId || "").trim(),
+    sourceFingerprint: String(sourceFingerprint || "").trim(),
+    companyName: String(ctx.companyName || "").trim(),
+    candidateName: String(ctx.candidateName || "").trim(),
+    headerLine: String(ctx.headerLine || "").trim(),
+    headerValues: ctx.headerValues && typeof ctx.headerValues === "object" ? ctx.headerValues : {},
+    resumeFormatting: ctx.resumeFormatting && typeof ctx.resumeFormatting === "object" ? ctx.resumeFormatting : {}
+  }));
+}
+
+function getCandidateBrandedCvArtifactMeta(candidate = {}) {
+  const meta = decodeApplicantMetadata(candidate);
+  const cache = meta?.cvAnalysisCache && typeof meta.cvAnalysisCache === "object" ? meta.cvAnalysisCache : null;
+  const artifact = cache?.brandedSharedCvArtifact;
+  return artifact && typeof artifact === "object" ? artifact : null;
+}
+
+async function saveCandidateBrandedCvArtifact({
+  companyId = "",
+  candidate = null,
+  fingerprint = "",
+  sourceFingerprint = "",
+  brandedCtx = {},
+  brandedPdf = null
+} = {}) {
+  const safeCandidate = candidate && typeof candidate === "object" ? candidate : null;
+  const candidateId = String(safeCandidate?.id || "").trim();
+  const scopedCompanyId = String(companyId || "").trim();
+  const safeFingerprint = String(fingerprint || "").trim();
+  if (!safeCandidate || !candidateId || !scopedCompanyId || !safeFingerprint || !Buffer.isBuffer(brandedPdf?.buffer)) return null;
+  const storedFile = await storeUploadedFile({
+    filename: `${toSafeCvFilenameBase(brandedCtx?.candidateName || safeCandidate?.name || "Candidate")}_branded_cv.pdf`,
+    mimeType: "application/pdf",
+    fileData: brandedPdf.buffer.toString("base64")
+  }, {
+    objectPrefix: `${scopedCompanyId}/branded-shared-cv`
+  });
+  const existingMeta = decodeApplicantMetadata(safeCandidate);
+  const nextMeta = {
+    ...(existingMeta || {}),
+    cvAnalysisCache: {
+      ...(existingMeta?.cvAnalysisCache && typeof existingMeta.cvAnalysisCache === "object" ? existingMeta.cvAnalysisCache : {}),
+      brandedSharedCvArtifact: {
+        fingerprint: safeFingerprint,
+        sourceFingerprint: String(sourceFingerprint || "").trim(),
+        storedFile,
+        brandedFallbackUsed: Boolean(brandedPdf?.brandedFallbackUsed),
+        candidateName: String(brandedCtx?.candidateName || "").trim(),
+        headerLine: String(brandedCtx?.headerLine || "").trim(),
+        generatedAt: new Date().toISOString()
+      }
+    }
+  };
+  await patchCandidate(candidateId, {
+    raw_note: encodeApplicantMetadata(nextMeta)
+  }, { companyId: scopedCompanyId });
+  return nextMeta.cvAnalysisCache.brandedSharedCvArtifact;
+}
+
+async function resolveBrandedCvResponse({
+  companyId = "",
+  companyName = "",
+  candidate = null,
+  assessment = null,
+  fileRef = {},
+  route = "/shared/cv",
+  forceDownload = false
+} = {}) {
+  const safeFileRef = fileRef && typeof fileRef === "object" ? fileRef : {};
+  const scopedCompanyId = String(companyId || "").trim();
+  const candidateId = String(candidate?.id || candidate?.candidate_id || candidate?.candidateId || "").trim();
+  const assessmentId = String(assessment?.id || candidate?.assessment_id || candidate?.assessmentId || "").trim();
+  const brandedCtx = await resolveBrandedCvContext({
+    companyId: scopedCompanyId,
+    companyName,
+    candidate,
+    assessment
+  });
+  const sourceFingerprint = buildStoredFileFingerprint(safeFileRef);
+  const artifactFingerprint = buildBrandedCvArtifactFingerprint({
+    candidateId,
+    assessmentId,
+    sourceFingerprint,
+    brandedCtx
+  });
+  const cacheKey = buildBrandedCvResponseCacheKey({
+    route: String(route || "/shared/cv").trim() || "/shared/cv",
+    companyId: scopedCompanyId,
+    candidateId,
+    assessmentId,
+    forceDownload: Boolean(forceDownload),
+    companyName: brandedCtx.companyName,
+    candidateName: brandedCtx.candidateName,
+    headerLine: brandedCtx.headerLine,
+    resumeFormatting: brandedCtx.resumeFormatting,
+    fileHash: artifactFingerprint
+  });
+  const brandedName = `${toSafeCvFilenameBase(brandedCtx.candidateName)}_CV.pdf`;
+  const contentDisposition = `${forceDownload ? "attachment" : "inline"}; filename="${brandedName.replace(/"/g, "")}"`;
+  const cachedBrandedPdf = getBrandedCvResponseFromCache(cacheKey);
+  if (cachedBrandedPdf?.buffer && cachedBrandedPdf?.etag) {
+    return {
+      buffer: cachedBrandedPdf.buffer,
+      etag: cachedBrandedPdf.etag,
+      cacheControl: cachedBrandedPdf.cacheControl || "private, max-age=0, must-revalidate",
+      contentDisposition: cachedBrandedPdf.contentDisposition || contentDisposition,
+      contentType: cachedBrandedPdf.contentType || "application/pdf",
+      brandedFallbackUsed: Boolean(cachedBrandedPdf.brandedFallbackUsed),
+      candidateName: brandedCtx.candidateName,
+      headerLine: brandedCtx.headerLine,
+      resumeFormatting: brandedCtx.resumeFormatting
+    };
+  }
+  const persistedArtifact = getCandidateBrandedCvArtifactMeta(candidate);
+  if (candidateId && persistedArtifact?.fingerprint === artifactFingerprint && persistedArtifact?.storedFile) {
+    const stored = await loadStoredFile(persistedArtifact.storedFile);
+    const brandedEtag = `"${sha256Hex(stored.buffer)}"`;
+    const cacheControl = "private, max-age=0, must-revalidate";
+    setBrandedCvResponseCache(cacheKey, {
+      buffer: stored.buffer,
+      etag: brandedEtag,
+      cacheControl,
+      contentType: "application/pdf",
+      contentDisposition,
+      brandedFallbackUsed: persistedArtifact?.brandedFallbackUsed
+    });
+    return {
+      buffer: stored.buffer,
+      etag: brandedEtag,
+      cacheControl,
+      contentDisposition,
+      contentType: "application/pdf",
+      brandedFallbackUsed: Boolean(persistedArtifact?.brandedFallbackUsed),
+      candidateName: brandedCtx.candidateName,
+      headerLine: brandedCtx.headerLine,
+      resumeFormatting: brandedCtx.resumeFormatting
+    };
+  }
+  const sourceFile = await loadStoredFile(safeFileRef);
+  const brandedPdf = await buildBrandedPdfBuffer({
+    pdfBase64: sourceFile.buffer.toString("base64"),
+    companyName: brandedCtx.companyName,
+    resumeFormatting: brandedCtx.resumeFormatting,
+    candidateName: brandedCtx.candidateName,
+    headerLine: brandedCtx.headerLine
+  });
+  const brandedEtag = `"${sha256Hex(brandedPdf.buffer)}"`;
+  const cacheControl = "private, max-age=0, must-revalidate";
+  if (candidateId) {
+    try {
+      await saveCandidateBrandedCvArtifact({
+        companyId: scopedCompanyId,
+        candidate,
+        fingerprint: artifactFingerprint,
+        sourceFingerprint,
+        brandedCtx,
+        brandedPdf
+      });
+    } catch (error) {
+      console.warn("[branded-cv] artifact_persist_failed", String(error?.message || error || ""));
+    }
+  }
+  setBrandedCvResponseCache(cacheKey, {
+    buffer: brandedPdf.buffer,
+    etag: brandedEtag,
+    cacheControl,
+    contentType: "application/pdf",
+    contentDisposition,
+    brandedFallbackUsed: brandedPdf?.brandedFallbackUsed
+  });
+  return {
+    buffer: brandedPdf.buffer,
+    etag: brandedEtag,
+    cacheControl,
+    contentDisposition,
+    contentType: "application/pdf",
+    brandedFallbackUsed: Boolean(brandedPdf?.brandedFallbackUsed),
+    candidateName: brandedCtx.candidateName,
+    headerLine: brandedCtx.headerLine,
+    resumeFormatting: brandedCtx.resumeFormatting
+  };
+}
+
 async function prewarmBrandedCvShareCache({
   companyId = "",
   companyName = "",
@@ -2257,54 +2460,18 @@ async function prewarmBrandedCvShareCache({
   const safeFileRef = fileRef && typeof fileRef === "object" ? fileRef : {};
   if (!scopedCompanyId) return null;
   if (!safeFileRef.provider && !safeFileRef.key && !safeFileRef.url) return null;
-  const file = await loadStoredFile(safeFileRef);
-  const brandedCtx = await resolveBrandedCvContext({
+  const branded = await resolveBrandedCvResponse({
     companyId: scopedCompanyId,
     companyName,
     candidate,
-    assessment
-  });
-  const cacheKey = buildBrandedCvResponseCacheKey({
-    route: String(route || "/shared/cv").trim() || "/shared/cv",
-    companyId: scopedCompanyId,
-    candidateId: String(candidate?.id || candidate?.candidate_id || candidate?.candidateId || "").trim(),
-    assessmentId: String(assessment?.id || candidate?.assessment_id || candidate?.assessmentId || "").trim(),
-    forceDownload: Boolean(forceDownload),
-    companyName: brandedCtx.companyName,
-    candidateName: brandedCtx.candidateName,
-    headerLine: brandedCtx.headerLine,
-    resumeFormatting: brandedCtx.resumeFormatting,
-    fileBuffer: file.buffer
-  });
-  const cached = getBrandedCvResponseFromCache(cacheKey);
-  if (cached?.buffer && cached?.etag) {
-    return {
-      cacheKey,
-      warmed: false,
-      brandedFallbackUsed: Boolean(cached?.brandedFallbackUsed)
-    };
-  }
-  const brandedPdf = await buildBrandedPdfBuffer({
-    pdfBase64: file.buffer.toString("base64"),
-    companyName: brandedCtx.companyName,
-    resumeFormatting: brandedCtx.resumeFormatting,
-    candidateName: brandedCtx.candidateName,
-    headerLine: brandedCtx.headerLine
-  });
-  const brandedName = `${toSafeCvFilenameBase(brandedCtx.candidateName)}_CV.pdf`;
-  const contentDisposition = `${forceDownload ? "attachment" : "inline"}; filename="${brandedName.replace(/"/g, "")}"`;
-  setBrandedCvResponseCache(cacheKey, {
-    buffer: brandedPdf.buffer,
-    etag: `"${sha256Hex(brandedPdf.buffer)}"`,
-    cacheControl: "private, max-age=0, must-revalidate",
-    contentType: "application/pdf",
-    contentDisposition,
-    brandedFallbackUsed: brandedPdf?.brandedFallbackUsed
+    assessment,
+    fileRef: safeFileRef,
+    route,
+    forceDownload
   });
   return {
-    cacheKey,
     warmed: true,
-    brandedFallbackUsed: Boolean(brandedPdf?.brandedFallbackUsed)
+    brandedFallbackUsed: Boolean(branded?.brandedFallbackUsed)
   };
 }
 
@@ -20155,73 +20322,32 @@ const server = http.createServer(async (req, res) => {
         if (!candidate) throw new Error("Candidate not found in this company.");
         throw new Error("CV file not available for this candidate.");
       }
-      const file = await loadStoredFile(fileRef);
-      const isPdf = String(file.mimeType || "").toLowerCase().includes("pdf") || /\.pdf$/i.test(String(file.filename || ""));
-      const fileEtag = `"${sha256Hex(file.buffer)}"`;
       if (wantBranded) {
+        const isPdf = String(fileRef.mimeType || "").toLowerCase().includes("pdf") || /\.pdf$/i.test(String(fileRef.filename || ""));
         if (!isPdf) throw new Error("Branded CV is available only for PDF files.");
-        const brandedCtx = await resolveBrandedCvContext({
+        const branded = await resolveBrandedCvResponse({
           companyId: String(actor.companyId || "").trim(),
           companyName: String(actor?.companyName || actor?.company_name || "").trim() || "Your Company",
           candidate,
-          assessment: null
-        });
-        let headerLine = String(brandedCtx.headerLine || "").trim();
-        if (!headerLine && requestedHeaderLine) headerLine = requestedHeaderLine;
-        const candidateName = String(brandedCtx.candidateName || requestedCandidateName || "").trim() || "Candidate Name";
-        const cacheKey = buildBrandedCvResponseCacheKey({
+          assessment: null,
+          fileRef,
           route: "/company/candidates/:id/cv",
-          companyId: String(actor.companyId || "").trim(),
-          candidateId,
-          forceDownload,
-          companyName: brandedCtx.companyName,
-          candidateName,
-          headerLine,
-          resumeFormatting: brandedCtx.resumeFormatting,
-          fileBuffer: file.buffer
+          forceDownload
         });
-        const brandedName = `${toSafeCvFilenameBase(candidateName)}_CV.pdf`;
-        const contentDisposition = `${forceDownload ? "attachment" : "inline"}; filename="${brandedName.replace(/"/g, "")}"`;
-        const cachedBrandedPdf = getBrandedCvResponseFromCache(cacheKey);
-        if (cachedBrandedPdf?.buffer && cachedBrandedPdf?.etag) {
-          sendConditionalBuffer(req, res, 200, cachedBrandedPdf.buffer, {
-            "Content-Type": cachedBrandedPdf.contentType || "application/pdf",
-            "Content-Disposition": cachedBrandedPdf.contentDisposition || contentDisposition,
-            "Cache-Control": cachedBrandedPdf.cacheControl || "private, max-age=0, must-revalidate",
-            "ETag": cachedBrandedPdf.etag,
-            "X-Branded-Fallback-Used": cachedBrandedPdf.brandedFallbackUsed ? "1" : "0"
-          });
-          return;
-        }
-        const brandedPdf = await buildBrandedPdfBuffer({
-          pdfBase64: file.buffer.toString("base64"),
-          companyName: brandedCtx.companyName,
-          resumeFormatting: brandedCtx.resumeFormatting,
-          candidateName,
-          headerLine
-        });
-        if (brandedPdf?.brandedFallbackUsed) {
+        if (branded?.brandedFallbackUsed) {
           console.warn("[branded-cv] branded_fallback_used=true route=/company/candidates/cv");
         }
-        const brandedEtag = `"${sha256Hex(brandedPdf.buffer)}"`;
-        const cacheControl = "private, max-age=0, must-revalidate";
-        setBrandedCvResponseCache(cacheKey, {
-          buffer: brandedPdf.buffer,
-          etag: brandedEtag,
-          cacheControl,
-          contentType: "application/pdf",
-          contentDisposition,
-          brandedFallbackUsed: brandedPdf?.brandedFallbackUsed
-        });
-        sendConditionalBuffer(req, res, 200, brandedPdf.buffer, {
-          "Content-Type": "application/pdf",
-          "Content-Disposition": contentDisposition,
-          "Cache-Control": cacheControl,
-          "ETag": brandedEtag,
-          "X-Branded-Fallback-Used": brandedPdf?.brandedFallbackUsed ? "1" : "0"
+        sendConditionalBuffer(req, res, 200, branded.buffer, {
+          "Content-Type": branded.contentType || "application/pdf",
+          "Content-Disposition": branded.contentDisposition,
+          "Cache-Control": branded.cacheControl || "private, max-age=0, must-revalidate",
+          "ETag": branded.etag,
+          "X-Branded-Fallback-Used": branded.brandedFallbackUsed ? "1" : "0"
         });
         return;
       }
+      const file = await loadStoredFile(fileRef);
+      const fileEtag = `"${sha256Hex(file.buffer)}"`;
       const downloadName = String(file.filename || "resume.pdf").replace(/"/g, "");
       sendConditionalBuffer(req, res, 200, file.buffer, {
         "Content-Type": String(file.mimeType || "application/octet-stream").trim(),
@@ -20242,95 +20368,49 @@ const server = http.createServer(async (req, res) => {
       if (!payload) throw new Error("Invalid or expired CV share link.");
       const wantBranded = ["1", "true", "yes", "branded"].includes(String(requestUrl.searchParams.get("mode") || "").trim().toLowerCase())
         || payload?.branded === true;
-      const file = await loadStoredFile({
+      const sharedFileRef = {
         provider: payload.fileProvider,
         key: payload.fileKey,
         url: payload.fileUrl,
         filename: payload.filename,
         mimeType: payload.mimeType
-      });
-      const fileEtag = `"${sha256Hex(file.buffer)}"`;
-      if (wantBranded && String(file.mimeType || payload.mimeType || "").toLowerCase().includes("pdf")) {
+      };
+      const sharedIsPdf = String(sharedFileRef.mimeType || payload.mimeType || "").toLowerCase().includes("pdf")
+        || /\.pdf$/i.test(String(sharedFileRef.filename || payload.filename || ""));
+      if (wantBranded && sharedIsPdf) {
         const scopedCompanyId = String(payload.companyId || "").trim();
-        let resolvedCandidateName = String(payload.candidateName || "Candidate Name").trim() || "Candidate Name";
-        let resolvedHeaderLine = String(payload.headerLine || "").trim();
-        let resolvedResumeFormatting = {};
+        let candidate = null;
         const payloadCandidateId = String(payload.candidateId || "").trim();
         if (payloadCandidateId && scopedCompanyId) {
-          const candidate = (await listCandidates({
+          candidate = (await listCandidates({
             id: payloadCandidateId,
             companyId: scopedCompanyId,
             limit: 1
           }).catch(() => []))[0] || null;
-          const brandedCtx = await resolveBrandedCvContext({
-            companyId: scopedCompanyId,
-            companyName: String(payload.companyName || "Your Company").trim() || "Your Company",
-            candidate,
-            assessment: null
-          });
-          resolvedResumeFormatting = brandedCtx.resumeFormatting;
-          resolvedCandidateName = String(brandedCtx.candidateName || resolvedCandidateName).trim() || resolvedCandidateName;
-          resolvedHeaderLine = String(brandedCtx.headerLine || resolvedHeaderLine).trim() || resolvedHeaderLine;
-        } else {
-          const sharedSettings = await getCompanySharedExportPresets(scopedCompanyId).catch(() => ({}));
-          resolvedResumeFormatting = sharedSettings?.resumeFormatting && typeof sharedSettings.resumeFormatting === "object"
-            ? sharedSettings.resumeFormatting
-            : {};
         }
-        const brandedName = `${toSafeCvFilenameBase(resolvedCandidateName)}_CV.pdf`;
-        const cacheKey = buildBrandedCvResponseCacheKey({
-          route: "/shared/cv",
+        const branded = await resolveBrandedCvResponse({
           companyId: scopedCompanyId,
-          candidateId: payloadCandidateId,
-          assessmentId: String(payload.assessmentId || "").trim(),
-          forceDownload: false,
           companyName: String(payload.companyName || "Your Company").trim() || "Your Company",
-          candidateName: resolvedCandidateName,
-          headerLine: resolvedHeaderLine,
-          resumeFormatting: resolvedResumeFormatting,
-          fileBuffer: file.buffer
+          candidate,
+          assessment: null,
+          fileRef: sharedFileRef,
+          route: "/shared/cv",
+          forceDownload: false
         });
-        const contentDisposition = `inline; filename="${brandedName.replace(/"/g, "")}"`;
-        const cachedBrandedPdf = getBrandedCvResponseFromCache(cacheKey);
-        if (cachedBrandedPdf?.buffer && cachedBrandedPdf?.etag) {
-          sendConditionalBuffer(req, res, 200, cachedBrandedPdf.buffer, {
-            "Content-Type": cachedBrandedPdf.contentType || "application/pdf",
-            "Content-Disposition": cachedBrandedPdf.contentDisposition || contentDisposition,
-            "Cache-Control": cachedBrandedPdf.cacheControl || "private, max-age=0, must-revalidate",
-            "ETag": cachedBrandedPdf.etag,
-            "X-Branded-Fallback-Used": cachedBrandedPdf.brandedFallbackUsed ? "1" : "0"
-          });
-          return;
-        }
-        const brandedPdf = await buildBrandedPdfBuffer({
-          pdfBase64: file.buffer.toString("base64"),
-          companyName: String(payload.companyName || "Your Company").trim() || "Your Company",
-          resumeFormatting: resolvedResumeFormatting,
-          candidateName: resolvedCandidateName,
-          headerLine: resolvedHeaderLine
-        });
-        if (brandedPdf?.brandedFallbackUsed) {
+        if (branded?.brandedFallbackUsed) {
           console.warn("[branded-cv] branded_fallback_used=true route=/shared/cv");
         }
-        const brandedEtag = `"${sha256Hex(brandedPdf.buffer)}"`;
-        const cacheControl = "private, max-age=0, must-revalidate";
-        setBrandedCvResponseCache(cacheKey, {
-          buffer: brandedPdf.buffer,
-          etag: brandedEtag,
-          cacheControl,
-          contentType: "application/pdf",
-          contentDisposition,
-          brandedFallbackUsed: brandedPdf?.brandedFallbackUsed
-        });
-        sendConditionalBuffer(req, res, 200, brandedPdf.buffer, {
-          "Content-Type": "application/pdf",
-          "Content-Disposition": contentDisposition,
-          "Cache-Control": cacheControl,
-          "ETag": brandedEtag,
-          "X-Branded-Fallback-Used": brandedPdf?.brandedFallbackUsed ? "1" : "0"
+        sendConditionalBuffer(req, res, 200, branded.buffer, {
+          "Content-Type": branded.contentType || "application/pdf",
+          "Content-Disposition": branded.contentDisposition,
+          "Cache-Control": branded.cacheControl || "private, max-age=0, must-revalidate",
+          "ETag": branded.etag,
+          "X-Branded-Fallback-Used": branded.brandedFallbackUsed ? "1" : "0"
         });
         return;
       }
+      const file = await loadStoredFile(sharedFileRef);
+      const fileEtag = `"${sha256Hex(file.buffer)}"`;
       const downloadName = String(file.filename || payload.filename || "resume.pdf").replace(/"/g, "");
       sendConditionalBuffer(req, res, 200, file.buffer, {
         "Content-Type": String(file.mimeType || payload.mimeType || "application/octet-stream").trim(),
