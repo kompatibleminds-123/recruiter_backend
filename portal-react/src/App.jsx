@@ -10605,8 +10605,6 @@ function PortalApp({ token, onLogout }) {
   const directShareThreadTemplateTextareaRef = useRef(null);
   const signatureTextTemplateTextareaRef = useRef(null);
   const jdDescriptionEditorRef = useRef(null);
-  const jdDescriptionSelectionRef = useRef(null);
-  const jdDescriptionEditorLastHtmlRef = useRef("");
   const JOB_CLOSE_REASONS = [
     "Position closed by us",
     "Position put on hold",
@@ -14199,35 +14197,6 @@ function PortalApp({ token, onLogout }) {
   }, []);
 
   useEffect(() => {
-    try {
-      const editor = jdDescriptionEditorRef.current;
-      if (!editor) return;
-      const nextHtml = jdDescriptionToEditorHtml(jobDraft.jobDescription || "");
-      const normalizedNext = String(nextHtml || "").trim();
-      const currentHtml = String(editor.innerHTML || "").trim();
-      const lastSynced = String(jdDescriptionEditorLastHtmlRef.current || "").trim();
-      if (currentHtml === normalizedNext && lastSynced === normalizedNext) return;
-      if (document.activeElement === editor) return;
-      editor.innerHTML = normalizedNext;
-      jdDescriptionEditorLastHtmlRef.current = normalizedNext;
-    } catch {}
-  }, [jobDraft.id, jobDraft.jobDescription]);
-
-  useEffect(() => {
-    const editor = jdDescriptionEditorRef.current;
-    if (!editor) return undefined;
-    const rememberSelection = () => captureJdDescriptionSelection();
-    editor.addEventListener("mouseup", rememberSelection);
-    editor.addEventListener("keyup", rememberSelection);
-    editor.addEventListener("focus", rememberSelection);
-    return () => {
-      editor.removeEventListener("mouseup", rememberSelection);
-      editor.removeEventListener("keyup", rememberSelection);
-      editor.removeEventListener("focus", rememberSelection);
-    };
-  }, [selectedJobId]);
-
-  useEffect(() => {
     setJobCloseMenuOpen(false);
   }, [selectedJobId, jobDraft.isArchived]);
 
@@ -15079,19 +15048,7 @@ function PortalApp({ token, onLogout }) {
         }
       };
     });
-    const isAdmin = String(state.user?.role || "").toLowerCase() === "admin";
-    if (isAdmin) return databaseRows;
-    const currentUserId = String(state.user?.id || "").trim();
-    const currentUserName = String(state.user?.name || "").trim().toLowerCase();
-    return databaseRows.filter((item) => {
-      const assignedUserId = String(item?.assigned_to_user_id || item?.assignedToUserId || "").trim();
-      const ownerRecruiterId = String(item?.ownerRecruiterId || item?.recruiter_id || "").trim();
-      const assignedToName = String(item?.assigned_to_name || item?.assignedToName || "").trim().toLowerCase();
-      const recruiterName = String(item?.recruiter_name || item?.recruiterName || item?.applyAssignedToName || item?.apply_assigned_to_name || "").trim().toLowerCase();
-      if (currentUserId && (assignedUserId === currentUserId || ownerRecruiterId === currentUserId)) return true;
-      if (currentUserName && (assignedToName === currentUserName || recruiterName === currentUserName)) return true;
-      return false;
-    });
+    return databaseRows;
   }, [databaseListItems, state.assessments, state.candidates, state.databaseCandidates, state.user]);
   const getDatabaseQuickFilterRecruiterLabel = useCallback((item = {}) => {
     const sourceKind = String(item?.sourceType || item?.source || "").trim().toLowerCase();
@@ -15639,8 +15596,8 @@ function PortalApp({ token, onLogout }) {
   }, [activeCandidateQuickChipId, candidateSmartChipRowsEffective, candidateUniverse]);
   const databaseFiltersActive = !candidateHasSmartChipSelection && (candidateStructuredFiltersActive || candidateQuickFiltersActive);
   const databaseSearchResultsMode = !candidateHasSmartChipSelection && candidateSearchMode === "search";
-  const databaseAllMode = !candidateHasSmartChipSelection;
-  const databaseServerQueryMode = false;
+  const databaseServerQueryMode = databaseSearchResultsMode;
+  const databaseAllMode = !candidateHasSmartChipSelection && !databaseServerQueryMode;
   const safeDatabasePageSize = [10, 25, 50].includes(Number(candidatePageSize || 10)) ? Number(candidatePageSize || 10) : 10;
   const databaseChipItems = useMemo(() => (
     Array.isArray(candidateVisibleChipRows)
@@ -15649,8 +15606,18 @@ function PortalApp({ token, onLogout }) {
   ), [candidateVisibleChipRows]);
   const databaseRenderedTotal = candidateHasSmartChipSelection
     ? databaseChipItems.length
-    : Math.max(0, Array.isArray(candidateUniverse) ? candidateUniverse.length : 0);
-  const totalCandidatePages = Math.max(1, Math.ceil(databaseRenderedTotal / Math.max(1, safeDatabasePageSize)));
+    : (
+      databaseServerQueryMode
+        ? Math.max(0, Number(databaseQueryMeta?.total || 0))
+        : Math.max(0, Array.isArray(candidateUniverse) ? candidateUniverse.length : 0)
+    );
+  const totalCandidatePages = candidateHasSmartChipSelection
+    ? Math.max(1, Math.ceil(databaseRenderedTotal / Math.max(1, safeDatabasePageSize)))
+    : (
+      databaseServerQueryMode
+        ? Math.max(1, Number(databaseQueryMeta?.totalPages || 1))
+        : Math.max(1, Math.ceil(databaseRenderedTotal / Math.max(1, safeDatabasePageSize)))
+    );
   const databaseRenderedItems = useMemo(() => {
     if (candidateHasSmartChipSelection) {
       const rows = Array.isArray(databaseChipItems) ? databaseChipItems : [];
@@ -15658,11 +15625,14 @@ function PortalApp({ token, onLogout }) {
       const offset = (safePage - 1) * safeDatabasePageSize;
       return rows.slice(offset, offset + safeDatabasePageSize);
     }
+    if (databaseServerQueryMode) {
+      return Array.isArray(databaseQueryItems) ? databaseQueryItems : [];
+    }
     const rows = Array.isArray(candidateUniverse) ? candidateUniverse : [];
     const safePage = Math.max(1, Number(candidatePage || 1));
     const offset = (safePage - 1) * safeDatabasePageSize;
     return rows.slice(offset, offset + safeDatabasePageSize);
-  }, [candidateHasSmartChipSelection, databaseChipItems, candidateUniverse, candidatePage, safeDatabasePageSize]);
+  }, [candidateHasSmartChipSelection, databaseChipItems, databaseServerQueryMode, databaseQueryItems, candidateUniverse, candidatePage, safeDatabasePageSize]);
   const databaseExportSourceItems = useMemo(() => (
     candidateHasSmartChipSelection
       ? databaseChipItems
@@ -22363,116 +22333,6 @@ function PortalApp({ token, onLogout }) {
     const raw = String(value || "");
     if (looksLikeHtml(raw)) return raw;
     return escapeHtml(raw).replace(/\n/g, "<br/>");
-  }
-
-  function captureJdDescriptionSelection() {
-    try {
-      const editor = jdDescriptionEditorRef.current;
-      if (!editor) return;
-      const selection = window.getSelection?.();
-      if (!selection || selection.rangeCount < 1) return;
-      const range = selection.getRangeAt(0);
-      const anchorNode = selection.anchorNode;
-      if (!anchorNode || !editor.contains(anchorNode)) return;
-      jdDescriptionSelectionRef.current = range.cloneRange();
-    } catch {}
-  }
-
-  function restoreJdDescriptionSelection() {
-    try {
-      const editor = jdDescriptionEditorRef.current;
-      const savedRange = jdDescriptionSelectionRef.current;
-      if (!editor || !savedRange) return false;
-      const selection = window.getSelection?.();
-      if (!selection) return false;
-      selection.removeAllRanges();
-      selection.addRange(savedRange);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  function syncJdDescriptionEditorHtml() {
-    const nextHtml = String(jdDescriptionEditorRef.current?.innerHTML || "").trim();
-    jdDescriptionEditorLastHtmlRef.current = nextHtml;
-    setJobDraft((current) => ({ ...current, jobDescription: nextHtml }));
-  }
-
-  function runJdDescriptionCommand(command, value = null) {
-    try {
-      const editor = jdDescriptionEditorRef.current;
-      if (!editor || jobDraftReadOnly || jobActionBusy) return;
-      editor.focus();
-      const selection = window.getSelection?.();
-      const hasLiveEditorSelection = Boolean(
-        selection
-        && selection.rangeCount > 0
-        && selection.anchorNode
-        && editor.contains(selection.anchorNode)
-      );
-      const restored = hasLiveEditorSelection ? true : restoreJdDescriptionSelection();
-      if (!restored) {
-        const selection = window.getSelection?.();
-        const range = document.createRange();
-        range.selectNodeContents(editor);
-        range.collapse(false);
-        selection?.removeAllRanges();
-        selection?.addRange(range);
-      }
-      const beforeHtml = String(editor.innerHTML || "");
-      document.execCommand(command, false, value);
-      if (command === "bold") {
-        const afterHtml = String(editor.innerHTML || "");
-        const sel = window.getSelection?.();
-        const range = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
-        if (
-          beforeHtml === afterHtml
-          && range
-          && !range.collapsed
-          && editor.contains(range.commonAncestorContainer)
-        ) {
-          const node = document.createElement("strong");
-          node.appendChild(range.extractContents());
-          range.insertNode(node);
-          sel.removeAllRanges();
-          const nextRange = document.createRange();
-          nextRange.selectNodeContents(node);
-          sel.addRange(nextRange);
-        }
-      }
-      captureJdDescriptionSelection();
-      syncJdDescriptionEditorHtml();
-    } catch {}
-  }
-
-  function clearJdDescriptionFormatting() {
-    try {
-      const editor = jdDescriptionEditorRef.current;
-      if (!editor || jobDraftReadOnly || jobActionBusy) return;
-      editor.focus();
-      const selection = window.getSelection?.();
-      const hadRange = restoreJdDescriptionSelection();
-      if (!hadRange) {
-        const range = document.createRange();
-        range.selectNodeContents(editor);
-        selection?.removeAllRanges();
-        selection?.addRange(range);
-      }
-      document.execCommand("styleWithCSS", false, false);
-      document.execCommand("removeFormat", false, null);
-      document.execCommand("unlink", false, null);
-      captureJdDescriptionSelection();
-      syncJdDescriptionEditorHtml();
-    } catch {}
-  }
-
-  function applyJdDescriptionLink() {
-    const raw = window.prompt("Enter link URL");
-    const url = String(raw || "").trim();
-    if (!url) return;
-    const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`;
-    runJdDescriptionCommand("createLink", normalized);
   }
 
   function getClientShareSignature() {
