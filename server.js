@@ -11787,6 +11787,56 @@ function buildCandidateSearchHay(item = {}) {
   return normalizeCandidateSearchDocText(base);
 }
 
+function attachPersistedSearchDocsToUniverse(universe = [], docs = []) {
+  const byId = new Map((Array.isArray(docs) ? docs : []).map((row) => [String(row?.candidate_id || "").trim(), row]));
+  let docsAttached = 0;
+  let fullCvAttached = 0;
+  for (const item of Array.isArray(universe) ? universe : []) {
+    const candidateId = String(item?.raw?.candidate?.id || item?.id || "").trim();
+    if (!candidateId) continue;
+    const doc = byId.get(candidateId) || null;
+    if (!doc) continue;
+    docsAttached += 1;
+    if (!item.raw || typeof item.raw !== "object") item.raw = { candidate: item?.raw?.candidate || null, assessment: item?.raw?.assessment || null, metadata: null };
+    if (!item.raw.metadata || typeof item.raw.metadata !== "object") item.raw.metadata = {};
+    if (doc?.doc_v1) item.raw.metadata.searchDocV1 = String(doc.doc_v1 || "").trim();
+    if (!item.hiddenCvText && doc?.cv_text_full) {
+      const cvText = String(doc.cv_text_full || "");
+      item.hiddenCvText = cvText.length > 60000 ? `${cvText.slice(0, 60000)}...` : cvText;
+      if (item.hiddenCvText) fullCvAttached += 1;
+    }
+  }
+  return { docsAttached, fullCvAttached };
+}
+
+function flattenCandidateSearchResultItem(item = {}) {
+  const candidate = item?.raw?.candidate && typeof item.raw.candidate === "object" ? item.raw.candidate : {};
+  const assessment = item?.raw?.assessment && typeof item.raw.assessment === "object" ? item.raw.assessment : {};
+  const draftPayload = candidate?.draft_payload && typeof candidate.draft_payload === "object"
+    ? candidate.draft_payload
+    : candidate?.draftPayload && typeof candidate.draftPayload === "object"
+      ? candidate.draftPayload
+      : {};
+  const screeningAnswers = candidate?.screening_answers && typeof candidate.screening_answers === "object"
+    ? candidate.screening_answers
+    : candidate?.screeningAnswers && typeof candidate.screeningAnswers === "object"
+      ? candidate.screeningAnswers
+      : {};
+  return {
+    ...item,
+    phone: String(candidate?.phone || assessment?.phoneNumber || assessment?.phone || "").trim(),
+    email: String(candidate?.email || assessment?.emailId || assessment?.email || "").trim(),
+    linkedin: String(candidate?.linkedin || assessment?.linkedinUrl || "").trim(),
+    current_ctc: String(candidate?.current_ctc || assessment?.currentCtc || "").trim(),
+    expected_ctc: String(candidate?.expected_ctc || assessment?.expectedCtc || "").trim(),
+    notice_period: String(candidate?.notice_period || assessment?.noticePeriod || "").trim(),
+    lwd_or_doj: String(candidate?.lwd_or_doj || assessment?.lwdOrDoj || assessment?.offerDoj || "").trim(),
+    draft_payload: draftPayload,
+    screening_answers: screeningAnswers,
+    other_standard_questions: String(candidate?.last_contact_notes || candidate?.other_standard_questions || assessment?.other_standard_questions || "").trim()
+  };
+}
+
 function deriveInterviewAtFromHistory(assessment) {
   if (!assessment || typeof assessment !== "object") return "";
   const history = Array.isArray(assessment.statusHistory) ? assessment.statusHistory : [];
@@ -20936,21 +20986,7 @@ const server = http.createServer(async (req, res) => {
       // without changing any workflow behavior. Missing table/rows are treated as a no-op.
       try {
         const docs = await listCandidateSearchDocsForCompany(user.companyId);
-        const byId = new Map((docs || []).map((row) => [String(row?.candidate_id || "").trim(), row]));
-        for (const item of universe) {
-          const candidateId = String(item?.raw?.candidate?.id || item?.id || "").trim();
-          if (!candidateId) continue;
-          const doc = byId.get(candidateId) || null;
-          if (!doc) continue;
-          if (!item.raw || typeof item.raw !== "object") item.raw = { candidate: item?.raw?.candidate || null, assessment: item?.raw?.assessment || null, metadata: null };
-          if (!item.raw.metadata || typeof item.raw.metadata !== "object") item.raw.metadata = {};
-          if (doc?.doc_v1) item.raw.metadata.searchDocV1 = String(doc.doc_v1 || "").trim();
-          // Provide a safe excerpt for semantic text building (avoid loading huge payloads into UI).
-          if (!item.hiddenCvText && doc?.cv_text_full) {
-            const cvText = String(doc.cv_text_full || "");
-            item.hiddenCvText = cvText.length > 60000 ? `${cvText.slice(0, 60000)}...` : cvText;
-          }
-        }
+        attachPersistedSearchDocsToUniverse(universe, docs);
       } catch (_) {}
 
       // Disambiguate "in <client>" vs "in <location>" when the token matches a known client label.
@@ -21084,38 +21120,7 @@ const server = http.createServer(async (req, res) => {
           filters = fallbackFilters;
         }
       }
-      const matches = (finalHybrid.items || []).map((item) => {
-        // Keep backward-compatible "universe" shape but also flatten the most-used candidate fields
-        // so exports/indicators do not depend on raw.candidate.
-        const candidate = item?.raw?.candidate && typeof item.raw.candidate === "object" ? item.raw.candidate : {};
-        const assessment = item?.raw?.assessment && typeof item.raw.assessment === "object" ? item.raw.assessment : {};
-        const draftPayload = candidate?.draft_payload && typeof candidate.draft_payload === "object"
-          ? candidate.draft_payload
-          : candidate?.draftPayload && typeof candidate.draftPayload === "object"
-            ? candidate.draftPayload
-            : {};
-        const screeningAnswers = candidate?.screening_answers && typeof candidate.screening_answers === "object"
-          ? candidate.screening_answers
-          : candidate?.screeningAnswers && typeof candidate.screeningAnswers === "object"
-            ? candidate.screeningAnswers
-            : {};
-        return {
-          ...item,
-          // core contact fields
-          phone: String(candidate?.phone || assessment?.phoneNumber || assessment?.phone || "").trim(),
-          email: String(candidate?.email || assessment?.emailId || assessment?.email || "").trim(),
-          linkedin: String(candidate?.linkedin || assessment?.linkedinUrl || "").trim(),
-          // common indicator fields
-          current_ctc: String(candidate?.current_ctc || assessment?.currentCtc || "").trim(),
-          expected_ctc: String(candidate?.expected_ctc || assessment?.expectedCtc || "").trim(),
-          notice_period: String(candidate?.notice_period || assessment?.noticePeriod || "").trim(),
-          lwd_or_doj: String(candidate?.lwd_or_doj || assessment?.lwdOrDoj || assessment?.offerDoj || "").trim(),
-          // structured Q/A sources used by Screening remarks indicator
-          draft_payload: draftPayload,
-          screening_answers: screeningAnswers,
-          other_standard_questions: String(candidate?.last_contact_notes || candidate?.other_standard_questions || assessment?.other_standard_questions || "").trim()
-        };
-      });
+      const matches = (finalHybrid.items || []).map((item) => flattenCandidateSearchResultItem(item));
       sendJson(res, 200, {
         ok: true,
         result: {
@@ -21972,6 +21977,50 @@ const server = http.createServer(async (req, res) => {
         });
       }
       sendJson(res, 200, { ok: true, result: restored });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/candidates/search-deep") {
+    try {
+      const user = await requireSessionUser(getBearerToken(req));
+      await requireSaasAccess(user, "database save and search");
+      const body = await readJsonBody(req);
+      const query = String(body?.query || body?.q || "").trim();
+      const recruiterFilter = String(body?.recruiterLabel || "").trim();
+      if (!query) {
+        sendJson(res, 200, { ok: true, result: { items: [], total: 0, query, mode: "deep_boolean" } });
+        return;
+      }
+      const [candidates, assessments, jobs, docs] = await Promise.all([
+        listCandidatesForUser(user, { limit: 5000, scope: "company" }),
+        listAssessments({ actorUserId: user.id, companyId: user.companyId }),
+        listCompanyJobs(user.companyId, user.id),
+        listCandidateSearchDocsForCompany(user.companyId).catch(() => [])
+      ]);
+      const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
+      const attachStats = attachPersistedSearchDocsToUniverse(universe, docs);
+      const scopedUniverse = universe.filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter);
+      const items = scopedUniverse
+        .filter((item) => candidateMatchesBooleanQuery(item, query))
+        .map((item) => flattenCandidateSearchResultItem(item));
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          items,
+          total: items.length,
+          query,
+          mode: "deep_boolean",
+          debug: {
+            source: "backend_candidate_search_docs",
+            totalUniverse: scopedUniverse.length,
+            docsAttached: attachStats.docsAttached,
+            fullCvAttached: attachStats.fullCvAttached
+          }
+        }
+      });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

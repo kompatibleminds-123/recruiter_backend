@@ -823,6 +823,24 @@ function candidateMatchesBooleanQueryLocal(item = {}, rawQuery = "") {
   );
 }
 
+function shouldUseDeepCandidateSearchFallback(rawQuery = "", localCount = 0) {
+  const query = String(rawQuery || "").trim();
+  if (!query) return false;
+  const groups = parseBooleanSearchQueryLocal(query);
+  const termCount = groups.reduce((sum, group) => sum + group.length, 0);
+  const hasExplicitBoolean = /\bAND\b|\bOR\b/i.test(query);
+  if (!hasExplicitBoolean && termCount < 2) return false;
+  return Number(localCount || 0) <= 2;
+}
+
+function formatCandidateSearchDebugSource(debugPayload = null) {
+  const source = String(debugPayload?.debug?.source || "").trim().toLowerCase();
+  if (!source) return "";
+  if (source === "portal_local_database_universe") return "Search source: Local hydrated database";
+  if (source === "backend_candidate_search_docs") return "Search source: Backend deep CV/doc fallback";
+  return `Search source: ${String(debugPayload?.debug?.source || "").trim()}`;
+}
+
 function toIsoDateOnly(value) {
   return String(value || "").trim().slice(0, 10);
 }
@@ -20086,10 +20104,11 @@ function PortalApp({ token, onLogout }) {
     setStatus("workspace", "Searching candidates...", "ok");
     try {
       setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
-      const resultItems = (Array.isArray(candidateUniverseAll) ? candidateUniverseAll : []).filter((item) =>
+      const localResultItems = (Array.isArray(candidateUniverseAll) ? candidateUniverseAll : []).filter((item) =>
         candidateMatchesBooleanQueryLocal(item, localBooleanQuery)
       );
-      setCandidateSearchDebug({
+      let resultItems = localResultItems;
+      let debugPayload = {
         mode: "local_boolean",
         semantic: false,
         query: effectiveSearchText,
@@ -20100,7 +20119,26 @@ function PortalApp({ token, onLogout }) {
           source: "portal_local_database_universe",
           totalUniverse: Array.isArray(candidateUniverseAll) ? candidateUniverseAll.length : 0
         }
-      });
+      };
+      if (shouldUseDeepCandidateSearchFallback(localBooleanQuery, localResultItems.length)) {
+        const deepResult = await api("/company/candidates/search-deep", token, "POST", {
+          query: localBooleanQuery
+        });
+        const deepItems = Array.isArray(deepResult?.result?.items) ? deepResult.result.items : [];
+        if (deepItems.length > localResultItems.length) {
+          resultItems = deepItems;
+          debugPayload = {
+            mode: "deep_boolean_fallback",
+            semantic: false,
+            query: effectiveSearchText,
+            searchingAsBoolean: localBooleanQuery,
+            filters: null,
+            interpretation: null,
+            debug: deepResult?.result?.debug || { source: "backend_candidate_search_docs" }
+          };
+        }
+      }
+      setCandidateSearchDebug(debugPayload);
       setCandidateSearchQueryUsed(effectiveSearchText);
       setCandidateSearchingAs(localBooleanQuery);
       setCandidateSearchResults(resultItems);
@@ -26801,6 +26839,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 {!candidateSearchBusy && candidateSearchMode === "search" && String(candidateSearchQueryUsed || "").trim() ? (
                   <div className="status ok" style={{ marginTop: 8 }}>
                     {`${candidateAiQueryMode === "boolean" ? "Boolean" : "Smart"} search found ${databaseRenderedTotal} profiles.`}
+                  </div>
+                ) : null}
+                {!candidateSearchBusy && candidateSearchMode === "search" && String(candidateSearchQueryUsed || "").trim() && formatCandidateSearchDebugSource(candidateSearchDebug) ? (
+                  <div className="muted" style={{ marginTop: 6 }}>
+                    {formatCandidateSearchDebugSource(candidateSearchDebug)}
                   </div>
                 ) : null}
                 {candidateAiQueryMode === "natural" && candidateSearchingAs ? (
