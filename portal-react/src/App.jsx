@@ -702,6 +702,127 @@ function buildBooleanFromKeywordBars({ must = "", any = "", anyGroups = [], excl
   return [positiveQuery, excludeQuery].filter(Boolean).join(" ").trim();
 }
 
+function normalizeCandidateSearchText(value = "") {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeCandidateSearchDocTextLocal(value = "") {
+  const base = normalizeCandidateSearchText(value);
+  if (!base) return "";
+  return base
+    .replace(/\basp\s*\.?\s*net\b/g, "asp.net")
+    .replace(/\b\.net\b/g, "dotnet .net")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function splitBooleanTermsLocal(raw = "") {
+  const normalized = String(raw || "")
+    .replace(/[â€œâ€]/g, "\"")
+    .replace(/[â€˜â€™]/g, "'");
+  const matches = normalized.match(/"[^"]+"|'[^']+'|\S+/g) || [];
+  return matches
+    .map((part) => String(part || "").trim().replace(/^["']|["']$/g, ""))
+    .filter(Boolean);
+}
+
+const LOCAL_BOOLEAN_TERM_SYNONYMS = {
+  saas: ["saas", "\"software as a service\"", "software"],
+  sales: ["sales", "\"business development\"", "\"account executive\"", "\"account manager\"", "\"enterprise sales\"", "\"corporate sales\""],
+  b2b: ["b2b", "\"enterprise sales\"", "\"corporate sales\"", "\"business development\""],
+  ae: ["ae", "\"account executive\"", "\"account manager\""],
+  hr: ["hr", "\"human resources\"", "\"talent acquisition\""],
+  node: ["node", "nodejs", "\"node js\"", "\"node.js\""],
+  react: ["react", "reactjs", "\"react js\"", "\"react.js\""],
+  golang: ["golang", "go", "\"go lang\"", "\"go-language\""],
+  ".net": [".net", "dotnet", "\"dot net\"", "asp.net", "aspnet", "c#", "csharp"],
+  dotnet: ["dotnet", ".net", "\"dot net\"", "asp.net", "aspnet", "c#", "csharp"],
+  frontend: ["frontend", "\"front end\"", "\"front-end\""],
+  backend: ["backend", "\"back end\"", "\"back-end\""],
+  devops: ["devops", "\"dev ops\"", "\"dev ops engineer\""]
+};
+
+function expandBooleanTermLocal(term = "") {
+  const normalized = normalizeCandidateSearchText(term);
+  const synonyms = LOCAL_BOOLEAN_TERM_SYNONYMS[normalized];
+  if (!synonyms) return [normalized].filter(Boolean);
+  return Array.from(new Set([normalized, ...synonyms.map((item) => normalizeCandidateSearchText(item))].filter(Boolean)));
+}
+
+function parseBooleanSearchQueryLocal(rawQuery = "") {
+  const query = String(rawQuery || "").trim();
+  if (!query) return [];
+  const compact = query.replace(/[()]/g, " ").replace(/\s+/g, " ").trim();
+  if (!compact) return [];
+  if (/\bAND\b|\bOR\b/i.test(compact)) {
+    return compact
+      .split(/\bAND\b/i)
+      .map((group) => splitBooleanTermsLocal(group.split(/\bOR\b/i).join(" ")))
+      .map((group) => group.filter(Boolean))
+      .filter((group) => group.length);
+  }
+  return splitBooleanTermsLocal(compact).map((term) => [term]);
+}
+
+function buildCandidateSearchHayLocal(item = {}) {
+  return normalizeCandidateSearchDocTextLocal([
+    item?.candidateName || item?.name || "",
+    item?.phone || item?.raw?.candidate?.phone || item?.raw?.assessment?.phoneNumber || "",
+    item?.email || item?.raw?.candidate?.email || item?.raw?.assessment?.emailId || "",
+    item?.role || "",
+    item?.position || item?.jdTitle || item?.jd_title || "",
+    item?.company || item?.currentCompany || "",
+    item?.location || "",
+    item?.clientName || item?.client_name || "",
+    item?.recruiterName || item?.recruiter_name || "",
+    item?.sourcedRecruiter || "",
+    item?.ownerRecruiter || "",
+    item?.currentCtc || item?.current_ctc || "",
+    item?.expectedCtc || item?.expected_ctc || "",
+    item?.noticePeriod || item?.notice_period || "",
+    item?.totalExperience || item?.experience || "",
+    item?.currentOrgTenure || "",
+    item?.highestEducation || item?.highest_education || "",
+    Array.isArray(item?.skills) ? item.skills.join(" ") : "",
+    Array.isArray(item?.inferredTags) ? item.inferredTags.join(" ") : "",
+    item?.hiddenCvText || "",
+    item?.notesText || item?.notes || "",
+    item?.candidateStatus || "",
+    item?.pipelineStage || "",
+    item?.workflowStatus || "",
+    item?.attemptStatus || "",
+    item?.other_pointers || "",
+    item?.recruiter_context_notes || ""
+  ].join(" "));
+}
+
+function candidateMatchesBooleanQueryLocal(item = {}, rawQuery = "") {
+  const groups = parseBooleanSearchQueryLocal(rawQuery);
+  if (!groups.length) return true;
+  const hay = buildCandidateSearchHayLocal(item);
+  const matchesVariant = (variant = "") => {
+    const needle = String(variant || "").trim();
+    if (!needle) return false;
+    if (needle.includes(" ") || needle.startsWith(".") || /[^a-z0-9]/i.test(needle)) {
+      return hay.includes(needle);
+    }
+    if (needle.length <= 3) {
+      try {
+        return new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\b`, "i").test(hay);
+      } catch {
+        return hay.includes(needle);
+      }
+    }
+    return hay.includes(needle);
+  };
+  return groups.every((group) =>
+    group.some((term) => expandBooleanTermLocal(term).some((variant) => matchesVariant(variant)))
+  );
+}
+
 function toIsoDateOnly(value) {
   return String(value || "").trim().slice(0, 10);
 }
@@ -19956,76 +20077,39 @@ function PortalApp({ token, onLogout }) {
       setStatus("workspace", "Showing candidates using structured filters.", "ok");
       return;
     }
-    const mode = hasKeywordBuilder
-      ? "boolean"
-      : (candidateAiQueryMode === "natural" ? "ai" : "boolean");
-    const semanticEnabled = copySettings.semanticSearchEnabled !== false;
     setCandidateSearchBusy(true);
     setCandidatePendingScrollTarget("database");
     setCandidateQuickChipIds([]);
     setCandidateSearchDebug(null);
-    setCandidateSearchingAs(hasKeywordBuilder ? keywordDrivenBoolean : "");
+    const localBooleanQuery = hasKeywordBuilder ? keywordDrivenBoolean : rawInput;
+    setCandidateSearchingAs(localBooleanQuery);
     setStatus("workspace", "Searching candidates...", "ok");
     try {
-      // Avoid previous applied filters (especially notice bucket) silently wiping results.
-      // Search results should render as-is; filters remain editable and can be applied manually.
       setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
-      const result = await api(
-        `/company/candidates/search-natural?q=${encodeURIComponent(effectiveSearchText)}&mode=${encodeURIComponent(mode)}&semantic=${semanticEnabled ? "1" : "0"}`,
-        token
+      const resultItems = (Array.isArray(candidateUniverseAll) ? candidateUniverseAll : []).filter((item) =>
+        candidateMatchesBooleanQueryLocal(item, localBooleanQuery)
       );
       setCandidateSearchDebug({
-        mode,
-        semantic: semanticEnabled,
+        mode: "local_boolean",
+        semantic: false,
         query: effectiveSearchText,
-        searchingAsBoolean: result?.searchingAsBoolean || "",
-        filters: result?.filters || null,
-        interpretation: result?.interpretation || result?.parsed || result?.planner || null,
-        debug: result?.debug || null
+        searchingAsBoolean: localBooleanQuery,
+        filters: null,
+        interpretation: null,
+        debug: {
+          source: "portal_local_database_universe",
+          totalUniverse: Array.isArray(candidateUniverseAll) ? candidateUniverseAll.length : 0
+        }
       });
       setCandidateSearchQueryUsed(effectiveSearchText);
-      setCandidateSearchingAs(hasKeywordBuilder ? keywordDrivenBoolean : String(result?.searchingAsBoolean || "").trim());
-      setCandidateSearchResults(result.items || []);
+      setCandidateSearchingAs(localBooleanQuery);
+      setCandidateSearchResults(resultItems);
       setCandidateSearchMode("search");
       setCandidatePage(1);
-      if (candidateAiQueryMode === "natural" && result.filters) {
-        const next = {
-          ...EMPTY_CANDIDATE_STRUCTURED_FILTERS,
-          minExperience: result.filters.minExperienceYears != null ? String(result.filters.minExperienceYears) : "",
-          maxExperience: result.filters.maxExperienceYears != null ? String(result.filters.maxExperienceYears) : "",
-          location: result.filters.location || (Array.isArray(result.filters.locations) ? result.filters.locations.filter(Boolean).join(", ") : ""),
-          // Smart keyword builder already captures skills/keywords above.
-          keySkills: "",
-          currentCompany: result.filters.currentCompany || "",
-          client: result.filters.client || "",
-          minCurrentCtc: result.filters.minCurrentCtcLpa != null ? String(result.filters.minCurrentCtcLpa) : "",
-          maxCurrentCtc: result.filters.maxCurrentCtcLpa != null ? String(result.filters.maxCurrentCtcLpa) : "",
-          minExpectedCtc: result.filters.minExpectedCtcLpa != null ? String(result.filters.minExpectedCtcLpa) : "",
-          maxExpectedCtc: result.filters.maxExpectedCtcLpa != null ? String(result.filters.maxExpectedCtcLpa) : "",
-          qualification: result.filters.qualification || "",
-          // Never auto-select notice period buckets; keep it explicit/manual.
-          maxNoticeDays: "",
-          noticeBucket: "",
-          recruiter: result.filters.recruiterName || "",
-          gender: result.filters.gender || "",
-          assessmentStatus: result.filters.assessmentStatus || "",
-          attemptOutcome: result.filters.attemptOutcome || ""
-        };
-        setCandidateQuickFiltersDraft((current) => ({
-          ...current,
-          recruiter: result.filters.recruiterName || current.recruiter || "",
-          client: result.filters.client || current.client || "",
-          jd: result.filters.targetLabel || current.jd || ""
-        }));
-        // AI Search fills filters; keep them editable but do NOT auto-apply,
-        // otherwise we end up double-filtering already-filtered results and the list can look empty.
-        setCandidateStructuredFiltersDraft(next);
-      } else {
-        setCandidateStructuredFiltersDraft(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
-      }
-      setStatus("workspace", `${mode === "boolean" ? "Boolean search" : "Smart search"} returned ${result.items?.length || 0} candidates.`, "ok");
+      setCandidateStructuredFiltersDraft(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
+      setStatus("workspace", `${candidateAiQueryMode === "boolean" ? "Boolean" : "Smart"} search returned ${resultItems.length || 0} candidates.`, "ok");
     } catch (error) {
-      setCandidateSearchDebug({ error: String(error?.message || error), query: effectiveSearchText, mode });
+      setCandidateSearchDebug({ error: String(error?.message || error), query: effectiveSearchText, mode: "local_boolean" });
       setCandidateSearchingAs("");
       setStatus("workspace", `Search failed: ${String(error?.message || error)}`, "error");
     } finally {
@@ -26638,7 +26722,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <div className="candidate-database-top-grid">
                   <div className="item-card compact-card">
                     <h3>Search mode</h3>
-                    <p className="muted">Use Boolean for exact keyword retrieval. Use Smart when you want plain-English converted into deterministic Boolean + filters.</p>
+                    <p className="muted">Use Boolean for raw boolean text. Use Smart for the guided must/OR/exclude keyword builder. Both search the full hydrated database instantly.</p>
                     <div className="button-row">
                       <button className={candidateAiQueryMode === "boolean" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("boolean")}>Boolean</button>
                       <button className={candidateAiQueryMode === "natural" ? "" : "ghost-btn"} onClick={() => setCandidateAiQueryMode("natural")}>Smart</button>
