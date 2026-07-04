@@ -2211,44 +2211,6 @@ textarea { min-height: 92px; resize: vertical; }
   box-shadow: var(--ring);
   border-color: #8fb3ff;
 }
-.tiptap-editor-shell {
-  position: relative;
-}
-.tiptap-editor-content {
-  padding: 0;
-}
-.tiptap-editor-content .ProseMirror {
-  min-height: 260px;
-  outline: none;
-  padding: 0.72rem 0.86rem;
-  white-space: pre-wrap;
-}
-.tiptap-editor-shell.is-disabled .ProseMirror {
-  cursor: not-allowed;
-}
-.tiptap-editor-content .ProseMirror p {
-  margin: 0 0 0.85rem;
-}
-.tiptap-editor-content .ProseMirror p:last-child {
-  margin-bottom: 0;
-}
-.tiptap-editor-content .ProseMirror ul,
-.tiptap-editor-content .ProseMirror ol {
-  margin: 0 0 0.85rem 1.2rem;
-  padding-left: 1rem;
-}
-.tiptap-editor-content .ProseMirror a {
-  color: #2563eb;
-  text-decoration: underline;
-}
-.tiptap-editor-placeholder {
-  position: absolute;
-  top: 0.78rem;
-  left: 0.92rem;
-  right: 0.92rem;
-  color: #94a3b8;
-  pointer-events: none;
-}
 .jd-rich-editor {
   min-height: 260px;
 }
