@@ -1,6 +1,10 @@
 ﻿import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { FaWhatsapp } from "react-icons/fa";
+import { EditorContent, useEditor } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import Link from "@tiptap/extension-link";
+import Underline from "@tiptap/extension-underline";
 import BrandLogo from "./components/branding/BrandLogo";
 import {
   CLIENT_BROWSER_TITLE,
@@ -5684,6 +5688,86 @@ function RichTextEditor({ value, onChange, placeholder = "Write here...", minHei
         onClick={() => editorRef.current?.focus()}
         onInput={() => onChange(String(editorRef.current?.innerHTML || ""))}
       />
+    </div>
+  );
+}
+
+function JobDescriptionTipTapEditor({
+  value,
+  onChange,
+  placeholder = "Paste the full JD here. Hosted apply link will show this as one clean block.",
+  disabled = false
+}) {
+  const [isFocused, setIsFocused] = useState(false);
+  const editor = useEditor({
+    immediatelyRender: false,
+    editable: !disabled,
+    extensions: [
+      StarterKit.configure({
+        heading: false,
+        blockquote: false,
+        code: false,
+        codeBlock: false,
+        horizontalRule: false
+      }),
+      Underline,
+      Link.configure({
+        openOnClick: true,
+        autolink: true,
+        defaultProtocol: "https"
+      })
+    ],
+    content: jdDescriptionToEditorHtml(value || ""),
+    onUpdate: ({ editor: currentEditor }) => {
+      onChange(String(currentEditor.getHTML() || "").trim());
+    },
+    onFocus: () => setIsFocused(true),
+    onBlur: () => setIsFocused(false)
+  });
+
+  useEffect(() => {
+    if (!editor) return;
+    editor.setEditable(!disabled);
+  }, [disabled, editor]);
+
+  useEffect(() => {
+    if (!editor) return;
+    const normalized = String(jdDescriptionToEditorHtml(value || "")).trim();
+    const current = String(editor.getHTML() || "").trim();
+    if (current === normalized) return;
+    if (editor.isFocused) return;
+    editor.commands.setContent(normalized || "<p></p>", { emitUpdate: false });
+  }, [editor, value]);
+
+  const runLinkCommand = () => {
+    if (!editor || disabled) return;
+    const previousUrl = editor.getAttributes("link").href || "";
+    const raw = window.prompt("Enter link URL", previousUrl || "https://");
+    const url = String(raw || "").trim();
+    if (!url) {
+      editor.chain().focus().extendMarkRange("link").unsetLink().run();
+      return;
+    }
+    const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    editor.chain().focus().extendMarkRange("link").setLink({ href: normalized }).run();
+  };
+
+  const isEmpty = Boolean(editor?.isEmpty);
+
+  return (
+    <div className="rich-editor">
+      <div className="rich-editor-toolbar">
+        <button type="button" className="ghost-btn" disabled={disabled} onMouseDown={(e) => e.preventDefault()} onClick={() => editor?.chain().focus().toggleBold().run()}>B</button>
+        <button type="button" className="ghost-btn" disabled={disabled} onMouseDown={(e) => e.preventDefault()} onClick={() => editor?.chain().focus().toggleItalic().run()}>I</button>
+        <button type="button" className="ghost-btn" disabled={disabled} onMouseDown={(e) => e.preventDefault()} onClick={() => editor?.chain().focus().toggleUnderline().run()}>U</button>
+        <button type="button" className="ghost-btn" disabled={disabled} onMouseDown={(e) => e.preventDefault()} onClick={() => editor?.chain().focus().toggleBulletList().run()}>List</button>
+        <button type="button" className="ghost-btn" disabled={disabled} onMouseDown={(e) => e.preventDefault()} onClick={runLinkCommand}>Link</button>
+        <button type="button" className="ghost-btn" disabled={disabled} onMouseDown={(e) => e.preventDefault()} onClick={() => editor?.chain().focus().unsetAllMarks().clearNodes().run()}>Clear format</button>
+      </div>
+      <div className={`tiptap-editor-shell ${disabled ? "is-disabled" : ""}`.trim()}>
+        {!isFocused && isEmpty ? <div className="tiptap-editor-placeholder">{placeholder}</div> : null}
+        <EditorContent editor={editor} className="client-share-rich-editor jd-rich-editor tiptap-editor-content" />
+      </div>
     </div>
   );
 }
@@ -29602,24 +29686,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   ) : null}
                   <div className="full">
                     <span className="form-label">Job description</span>
-                    <div className="rich-editor-toolbar">
-                      <button type="button" className="ghost-btn" disabled={jobDraftReadOnly || jobActionBusy} onMouseDown={(e) => e.preventDefault()} onClick={() => runJdDescriptionCommand("bold")}>B</button>
-                      <button type="button" className="ghost-btn" disabled={jobDraftReadOnly || jobActionBusy} onMouseDown={(e) => e.preventDefault()} onClick={() => runJdDescriptionCommand("italic")}>I</button>
-                      <button type="button" className="ghost-btn" disabled={jobDraftReadOnly || jobActionBusy} onMouseDown={(e) => e.preventDefault()} onClick={() => runJdDescriptionCommand("underline")}>U</button>
-                      <button type="button" className="ghost-btn" disabled={jobDraftReadOnly || jobActionBusy} onMouseDown={(e) => e.preventDefault()} onClick={() => runJdDescriptionCommand("insertUnorderedList")}>List</button>
-                      <button type="button" className="ghost-btn" disabled={jobDraftReadOnly || jobActionBusy} onMouseDown={(e) => e.preventDefault()} onClick={applyJdDescriptionLink}>Link</button>
-                      <button type="button" className="ghost-btn" disabled={jobDraftReadOnly || jobActionBusy} onMouseDown={(e) => e.preventDefault()} onClick={clearJdDescriptionFormatting}>Clear format</button>
-                    </div>
-                    <div
-                      ref={jdDescriptionEditorRef}
-                      className="client-share-rich-editor jd-rich-editor"
-                      contentEditable={!jobDraftReadOnly && !jobActionBusy}
-                      suppressContentEditableWarning
-                      onInput={syncJdDescriptionEditorHtml}
-                      onKeyUp={captureJdDescriptionSelection}
-                      onMouseUp={captureJdDescriptionSelection}
-                      onBlur={syncJdDescriptionEditorHtml}
-                      data-placeholder="Paste the full JD here. Hosted apply link will show this as one clean block."
+                    <JobDescriptionTipTapEditor
+                      value={jobDraft.jobDescription}
+                      onChange={(nextHtml) => setJobDraft((current) => ({ ...current, jobDescription: nextHtml }))}
+                      disabled={jobDraftReadOnly || jobActionBusy}
                     />
                     <span className="field-help">Rich JD is shown on hosted apply link. JD share email still uses the admin JD mail template.</span>
                   </div>
