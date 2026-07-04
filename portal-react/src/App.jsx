@@ -19249,6 +19249,26 @@ function PortalApp({ token, onLogout }) {
     setJobShortcutValue("");
   }
 
+  function applySavedJobToWorkspace(jobRecord = {}) {
+    const nextJob = jobRecord && typeof jobRecord === "object" ? jobRecord : null;
+    const nextId = String(nextJob?.id || "").trim();
+    if (!nextId) return;
+    const applyPatch = (items) => {
+      const list = Array.isArray(items) ? items.slice() : [];
+      const index = list.findIndex((item) => String(item?.id || "").trim() === nextId);
+      if (index >= 0) {
+        list[index] = { ...list[index], ...nextJob };
+        return list;
+      }
+      return [nextJob, ...list];
+    };
+    setState((current) => ({
+      ...current,
+      jobs: applyPatch(current.jobs)
+    }));
+    setJobsCatalog((current) => applyPatch(current));
+  }
+
   async function saveJobDraft() {
     if (jobActionBusy) return;
     setJobActionBusy(true);
@@ -19283,12 +19303,23 @@ function PortalApp({ token, onLogout }) {
           assignedRecruiters: Array.from(dedupedRecruiters.values())
         }
       });
-      void reloadJobsCatalogWorkspace().catch(() => {});
       const nextId = String(result?.id || selectedJobId || jobDraft.id || "").trim();
+      const savedJobRecord = {
+        ...jobDraft,
+        ...(result && typeof result === "object" ? result : {}),
+        id: nextId || String(jobDraft.id || "").trim(),
+        clientName: normalizedClientName,
+        ownerRecruiterId,
+        ownerRecruiterName,
+        assignedRecruiters: Array.from(dedupedRecruiters.values()),
+        isArchived: Boolean(jobDraft.isArchived)
+      };
+      applySavedJobToWorkspace(savedJobRecord);
       if (nextId) {
         setSelectedJobId(nextId);
         setJobDraft((current) => ({ ...current, id: nextId }));
       }
+      await reloadJobsWorkspace().catch(() => {});
       setStatus("jobs", "JD saved.", "ok");
     } catch (error) {
       setStatus("jobs", `JD save failed: ${String(error?.message || error)}`, "error");
@@ -19347,13 +19378,29 @@ function PortalApp({ token, onLogout }) {
         result = await api("/company/jds", token, "POST", { job: buildNewJobPayload(true) });
       }
       const nextId = String(result?.id || "").trim();
+      const savedJobRecord = {
+        ...jobDraft,
+        ...(result && typeof result === "object" ? result : {}),
+        id: nextId,
+        clientName: normalizedClientName,
+        ownerRecruiterId,
+        ownerRecruiterName,
+        assignedRecruiters: Array.from(dedupedRecruiters.values()),
+        isArchived: false,
+        archivedAt: null,
+        archivedBy: "",
+        closeReason: "",
+        closedAt: null,
+        closedBy: ""
+      };
+      applySavedJobToWorkspace(savedJobRecord);
       if (nextId) {
         loadJobIntoDraft(nextId);
       } else {
         resetJobDraftBlank();
       }
       setStatus("jobs", "Saved as a new JD.", "ok");
-      void reloadJobsCatalogWorkspace().catch(() => {});
+      await reloadJobsWorkspace().catch(() => {});
     } catch (error) {
       setStatus("jobs", `Save as new failed: ${String(error?.message || error)}`, "error");
     } finally {
