@@ -3802,6 +3802,64 @@ function buildCuratedCvSearchText(cvResult = {}) {
   return unique.slice(0, 500).join(" ");
 }
 
+const CV_TERM_RULES = [
+  { term: "planswift", patterns: [/\bplanswift\b/i] },
+  { term: "autocad", patterns: [/\bauto\s*cad\b/i, /\bautocad\b/i] },
+  { term: "revit", patterns: [/\brevit\b/i] },
+  { term: "navisworks", patterns: [/\bnavisworks\b/i] },
+  { term: "staad", patterns: [/\bstaad(?:\.?pro)?\b/i] },
+  { term: "tekla", patterns: [/\btekla\b/i] },
+  { term: "sketchup", patterns: [/\bsketch\s*up\b/i, /\bsketchup\b/i] },
+  { term: "bluebeam", patterns: [/\bbluebeam\b/i] },
+  { term: "quantity surveyor", patterns: [/\bquantity surveyor\b/i, /\bqs\b/i] },
+  { term: "quantity takeoff", patterns: [/\bquantity takeoff\b/i, /\btakeoff\b/i] },
+  { term: "estimation", patterns: [/\bestimation\b/i, /\bestimator\b/i, /\bestimating\b/i] },
+  { term: "billing", patterns: [/\bbilling\b/i, /\bbill of quantity\b/i, /\bboq\b/i] },
+  { term: "bim", patterns: [/\bbim\b/i, /\bbuilding information modeling\b/i] },
+  { term: "mep", patterns: [/\bmep\b/i] },
+  { term: "hvac", patterns: [/\bhvac\b/i] },
+  { term: "loan", patterns: [/\bloans?\b/i, /\blending\b/i] },
+  { term: "nbfc", patterns: [/\bnbfc\b/i, /\bnon[- ]bank(?:ing)? finance\b/i] },
+  { term: "mortgage", patterns: [/\bmortgage\b/i] },
+  { term: "lap", patterns: [/\blap\b/i, /\bloan against property\b/i] },
+  { term: "home loan", patterns: [/\bhome loan\b/i, /\bhl\b/i] },
+  { term: "personal loan", patterns: [/\bpersonal loan\b/i] },
+  { term: "underwriting", patterns: [/\bunderwriting\b/i, /\bundewriter\b/i, /\bunderriter\b/i] },
+  { term: "credit analysis", patterns: [/\bcredit analysis\b/i, /\bcredit analyst\b/i] },
+  { term: "banking", patterns: [/\bbanking\b/i, /\bfinancial services\b/i] }
+];
+
+function deriveCandidateCvTerms({
+  rawText = "",
+  cvResult = null,
+  inferredSearchTags = [],
+  skills = []
+} = {}) {
+  const safeCv = cvResult && typeof cvResult === "object" ? cvResult : {};
+  const combined = normalizeCandidateSearchDocText([
+    String(rawText || ""),
+    buildCuratedCvSearchText(safeCv),
+    Array.isArray(inferredSearchTags) ? inferredSearchTags.join(" ") : "",
+    Array.isArray(skills) ? skills.join(" ") : "",
+    Array.isArray(safeCv?.searchKeywords) ? safeCv.searchKeywords.join(" ") : String(safeCv?.searchKeywords || ""),
+    Array.isArray(safeCv?.highlights) ? safeCv.highlights.join(" ") : ""
+  ].filter(Boolean).join(" \n "));
+  if (!combined) return "";
+  const found = new Set();
+  for (const rule of CV_TERM_RULES) {
+    if (rule.patterns.some((pattern) => pattern.test(combined))) found.add(rule.term);
+  }
+  (Array.isArray(inferredSearchTags) ? inferredSearchTags : []).forEach((tag) => {
+    const normalized = normalizeCandidateSearchDocText(String(tag || ""));
+    if (normalized) found.add(normalized);
+  });
+  (Array.isArray(skills) ? skills : []).forEach((skill) => {
+    const normalized = normalizeCandidateSearchDocText(String(skill || ""));
+    if (normalized && normalized.length <= 60) found.add(normalized);
+  });
+  return Array.from(found).slice(0, 200).join(" ");
+}
+
 function deriveCandidateSearchDocV1FromParts({
   candidate = {},
   meta = {},
@@ -4032,7 +4090,12 @@ function scheduleApplicantCvEnrichment({
           companyId: safeCompanyId,
           candidateId: safeCandidateId,
           docV1: String(nextMeta.searchDocV1 || "").trim(),
-          cvTextFull: String(parsed?.rawText || "")
+          cvTextFull: deriveCandidateCvTerms({
+            rawText: String(parsed?.rawText || ""),
+            cvResult: cvResultForSearch,
+            inferredSearchTags,
+            skills: Array.isArray(refreshed?.skills) ? refreshed.skills : []
+          })
         });
       } catch (_) {}
 
@@ -6718,7 +6781,12 @@ async function ingestApplicantSubmission(body, req) {
         companyId: payload.companyId,
         candidateId: String(existing.id || "").trim(),
         docV1: String(nextMeta.searchDocV1 || "").trim(),
-        cvTextFull: String(parsed?.rawText || "")
+        cvTextFull: deriveCandidateCvTerms({
+          rawText: String(parsed?.rawText || ""),
+          cvResult: cvResultForSearch,
+          inferredSearchTags,
+          skills: Array.isArray(existing?.skills) ? existing.skills : Array.isArray(merged?.skills) ? merged.skills : []
+        })
       });
     } catch (_) {}
     emitCapturedStreamEvent(payload.companyId, "candidate_changed", {
@@ -6820,7 +6888,12 @@ async function ingestApplicantSubmission(body, req) {
       companyId: payload.companyId,
       candidateId: String(candidate?.id || "").trim(),
       docV1: String(metadata.searchDocV1 || "").trim(),
-      cvTextFull: String(parsed?.rawText || "")
+      cvTextFull: deriveCandidateCvTerms({
+        rawText: String(parsed?.rawText || ""),
+        cvResult: cvResultForSearch,
+        inferredSearchTags,
+        skills: Array.isArray(merged?.skills) ? merged.skills : []
+      })
     });
   } catch (_) {}
   emitCapturedStreamEvent(payload.companyId, "candidate_created", {
@@ -22764,7 +22837,12 @@ const server = http.createServer(async (req, res) => {
                 companyId: actor.companyId,
                 candidateId: candidate.id,
           docV1: nextMeta.searchDocV1,
-          cvTextFull: String(hybrid?.parsed?.rawText || "")
+          cvTextFull: deriveCandidateCvTerms({
+            rawText: String(hybrid?.parsed?.rawText || ""),
+            cvResult: result,
+            inferredSearchTags: nextMeta.inferredSearchTags,
+            skills: Array.isArray(refreshed?.skills) ? refreshed.skills : Array.isArray(candidate?.skills) ? candidate.skills : []
+          })
               });
             } catch (_) {}
           } catch (error) {
@@ -22860,7 +22938,12 @@ const server = http.createServer(async (req, res) => {
           companyId: actor.companyId,
           candidateId: candidate.id,
           docV1: nextMeta.searchDocV1,
-          cvTextFull: String(hybrid?.parsed?.rawText || "")
+          cvTextFull: deriveCandidateCvTerms({
+            rawText: String(hybrid?.parsed?.rawText || ""),
+            cvResult: result,
+            inferredSearchTags,
+            skills: Array.isArray(candidate?.skills) ? candidate.skills : []
+          })
         });
       } catch (_) {}
 

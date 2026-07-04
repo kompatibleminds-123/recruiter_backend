@@ -826,10 +826,7 @@ function candidateMatchesBooleanQueryLocal(item = {}, rawQuery = "") {
 function shouldUseDeepCandidateSearchFallback(rawQuery = "", localCount = 0) {
   const query = String(rawQuery || "").trim();
   if (!query) return false;
-  const groups = parseBooleanSearchQueryLocal(query);
-  const termCount = groups.reduce((sum, group) => sum + group.length, 0);
-  const hasExplicitBoolean = /\bAND\b|\bOR\b/i.test(query);
-  if (!hasExplicitBoolean && termCount < 2) return false;
+  if (query.length < 2) return false;
   return Number(localCount || 0) <= 2;
 }
 
