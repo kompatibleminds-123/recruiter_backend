@@ -838,6 +838,19 @@ function formatCandidateSearchDebugSource(debugPayload = null) {
   return `Search source: ${String(debugPayload?.debug?.source || "").trim()}`;
 }
 
+function formatCandidateSearchDebugCounts(debugPayload = null) {
+  const localCount = Number(debugPayload?.debug?.localCount ?? NaN);
+  const deepCount = Number(debugPayload?.debug?.deepCount ?? NaN);
+  const adoptedSource = String(debugPayload?.debug?.adoptedSource || "").trim();
+  const parts = [];
+  if (Number.isFinite(localCount)) parts.push(`Local: ${localCount}`);
+  if (Number.isFinite(deepCount)) parts.push(`Deep: ${deepCount}`);
+  if (adoptedSource) {
+    parts.push(`Using: ${adoptedSource === "backend_candidate_search_docs" ? "Deep" : adoptedSource === "portal_local_database_universe" ? "Local" : adoptedSource}`);
+  }
+  return parts.join(" | ");
+}
+
 function toIsoDateOnly(value) {
   return String(value || "").trim().slice(0, 10);
 }
@@ -20137,6 +20150,7 @@ function PortalApp({ token, onLogout }) {
         candidateMatchesBooleanQueryLocal(item, localBooleanQuery)
       );
       let resultItems = localResultItems;
+      let deepResultCount = null;
       let debugPayload = {
         mode: "local_boolean",
         semantic: false,
@@ -20146,7 +20160,10 @@ function PortalApp({ token, onLogout }) {
         interpretation: null,
         debug: {
           source: "portal_local_database_universe",
-          totalUniverse: Array.isArray(candidateUniverseAll) ? candidateUniverseAll.length : 0
+          totalUniverse: Array.isArray(candidateUniverseAll) ? candidateUniverseAll.length : 0,
+          localCount: localResultItems.length,
+          deepCount: null,
+          adoptedSource: "portal_local_database_universe"
         }
       };
       if (shouldUseDeepCandidateSearchFallback(localBooleanQuery, localResultItems.length)) {
@@ -20154,6 +20171,7 @@ function PortalApp({ token, onLogout }) {
           query: localBooleanQuery
         });
         const deepItems = Array.isArray(deepResult?.result?.items) ? deepResult.result.items : [];
+        deepResultCount = deepItems.length;
         if (deepItems.length > localResultItems.length) {
           resultItems = deepItems;
           debugPayload = {
@@ -20163,9 +20181,23 @@ function PortalApp({ token, onLogout }) {
             searchingAsBoolean: localBooleanQuery,
             filters: null,
             interpretation: null,
-            debug: deepResult?.result?.debug || { source: "backend_candidate_search_docs" }
+            debug: {
+              ...(deepResult?.result?.debug || { source: "backend_candidate_search_docs" }),
+              localCount: localResultItems.length,
+              deepCount: deepItems.length,
+              adoptedSource: "backend_candidate_search_docs"
+            }
           };
         }
+      }
+      if (debugPayload?.debug && debugPayload.debug.adoptedSource === "portal_local_database_universe") {
+        debugPayload = {
+          ...debugPayload,
+          debug: {
+            ...debugPayload.debug,
+            deepCount: Number.isFinite(deepResultCount) ? deepResultCount : null
+          }
+        };
       }
       setCandidateSearchDebug(debugPayload);
       setCandidateSearchQueryUsed(effectiveSearchText);
@@ -26873,6 +26905,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 {!candidateSearchBusy && candidateSearchMode === "search" && String(candidateSearchQueryUsed || "").trim() && formatCandidateSearchDebugSource(candidateSearchDebug) ? (
                   <div className="muted" style={{ marginTop: 6 }}>
                     {formatCandidateSearchDebugSource(candidateSearchDebug)}
+                  </div>
+                ) : null}
+                {!candidateSearchBusy && candidateSearchMode === "search" && String(candidateSearchQueryUsed || "").trim() && formatCandidateSearchDebugCounts(candidateSearchDebug) ? (
+                  <div className="muted" style={{ marginTop: 4 }}>
+                    {formatCandidateSearchDebugCounts(candidateSearchDebug)}
                   </div>
                 ) : null}
                 {candidateAiQueryMode === "natural" && candidateSearchingAs ? (
