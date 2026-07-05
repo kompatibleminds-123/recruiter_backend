@@ -11869,16 +11869,6 @@ function candidateMatchesLooseNaturalTokens(item, rawQuery = "") {
 
 function buildCandidateSearchHay(item = {}) {
   const persisted = String(item?.raw?.metadata?.searchDocV1 || item?.raw?.metadata?.search_doc_v1 || "").trim();
-  if (persisted) {
-    const dynamic = normalizeDashboardText([
-      item.candidateStatus || "",
-      item.pipelineStage || "",
-      item.workflowStatus || "",
-      item.attemptStatus || ""
-    ].join(" "));
-    const cvExcerpt = String(item?.hiddenCvText || "").trim();
-    return normalizeCandidateSearchDocText(`${persisted} ${dynamic} ${cvExcerpt}`);
-  }
   const base = normalizeDashboardText([
     item.candidateName || "",
     item.raw?.candidate?.phone || "",
@@ -11908,8 +11898,21 @@ function buildCandidateSearchHay(item = {}) {
     item.workflowStatus || "",
     item.attemptStatus || ""
   ].join(" "));
+  const dynamic = normalizeDashboardText([
+    item.candidateStatus || "",
+    item.pipelineStage || "",
+    item.workflowStatus || "",
+    item.attemptStatus || ""
+  ].join(" "));
+  const cvExcerpt = String(item?.hiddenCvText || "").trim();
+  const combined = [
+    persisted,
+    base,
+    dynamic,
+    cvExcerpt
+  ].filter(Boolean).join(" ");
   // Make common tech keywords searchable even when punctuation/format differs in JSON CV text.
-  return normalizeCandidateSearchDocText(base);
+  return normalizeCandidateSearchDocText(combined);
 }
 
 function attachPersistedSearchDocsToUniverse(universe = [], docs = []) {
