@@ -22163,18 +22163,17 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 200, { ok: true, result: { items: [], total: 0, query, mode: "deep_boolean" } });
         return;
       }
-      const [candidates, assessments, jobs, docs] = await Promise.all([
-        listDatabaseCandidatesForUser(user, { limit: 5000, scope: "company" }),
-        listAssessments({ actorUserId: user.id, companyId: user.companyId }),
-        listCompanyJobs(user.companyId, user.id),
-        listCandidateSearchDocsForCompany(user.companyId).catch(() => [])
-      ]);
-      const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
-      const attachStats = attachPersistedSearchDocsToUniverse(universe, docs);
-      const scopedUniverse = universe.filter((item) => !recruiterFilter || String(item.ownerRecruiter || "").trim() === recruiterFilter);
+      const databaseUniverse = await buildDatabaseUniverseLiteForUser(user);
+      const universe = Array.isArray(databaseUniverse?.universe) ? databaseUniverse.universe : [];
+      const scopedUniverse = universe.filter((item) => !recruiterFilter || String(item.ownerRecruiter || item?.assigned_to_name || "").trim() === recruiterFilter);
       const items = scopedUniverse
         .filter((item) => candidateMatchesBooleanQuery(item, query))
-        .map((item) => flattenCandidateSearchResultItem(item));
+        .map((item) => ({
+          ...item,
+          phone: String(item?.phone || item?.raw?.candidate?.phone || item?.raw?.assessment?.phoneNumber || "").trim(),
+          email: String(item?.email || item?.raw?.candidate?.email || item?.raw?.assessment?.emailId || "").trim(),
+          linkedin: String(item?.linkedin || "").trim()
+        }));
       sendJson(res, 200, {
         ok: true,
         result: {
@@ -22185,8 +22184,6 @@ const server = http.createServer(async (req, res) => {
           debug: {
             source: "backend_canonical_candidate_search",
             totalUniverse: scopedUniverse.length,
-            docsAttached: attachStats.docsAttached,
-            fullCvAttached: attachStats.fullCvAttached,
             matchedCount: items.length,
             queryGroupCount: parseBooleanSearchQuery(query).length
           }
