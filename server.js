@@ -22164,7 +22164,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const [candidates, assessments, jobs, docs] = await Promise.all([
-        listCandidatesForUser(user, { limit: 5000, scope: "company" }),
+        listDatabaseCandidatesForUser(user, { limit: 5000, scope: "company" }),
         listAssessments({ actorUserId: user.id, companyId: user.companyId }),
         listCompanyJobs(user.companyId, user.id),
         listCandidateSearchDocsForCompany(user.companyId).catch(() => [])
