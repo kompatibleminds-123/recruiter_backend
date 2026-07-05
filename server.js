@@ -11917,15 +11917,56 @@ function attachPersistedSearchDocsToUniverse(universe = [], docs = []) {
     const candidateId = String(item?.raw?.candidate?.id || item?.id || "").trim();
     if (!candidateId) continue;
     const doc = byId.get(candidateId) || null;
-    if (!doc) continue;
-    docsAttached += 1;
     if (!item.raw || typeof item.raw !== "object") item.raw = { candidate: item?.raw?.candidate || null, assessment: item?.raw?.assessment || null, metadata: null };
     if (!item.raw.metadata || typeof item.raw.metadata !== "object") item.raw.metadata = {};
-    if (doc?.doc_v1) item.raw.metadata.searchDocV1 = String(doc.doc_v1 || "").trim();
-    if (!item.hiddenCvText && doc?.cv_text_full) {
-      const cvText = String(doc.cv_text_full || "");
-      item.hiddenCvText = cvText.length > 60000 ? `${cvText.slice(0, 60000)}...` : cvText;
-      if (item.hiddenCvText) fullCvAttached += 1;
+    if (doc) docsAttached += 1;
+    if (doc?.doc_v1) {
+      item.raw.metadata.searchDocV1 = String(doc.doc_v1 || "").trim();
+    } else if (!String(item?.raw?.metadata?.searchDocV1 || item?.raw?.metadata?.search_doc_v1 || "").trim()) {
+      const candidate = item?.raw?.candidate && typeof item.raw.candidate === "object" ? item.raw.candidate : {};
+      const meta = item?.raw?.metadata && typeof item.raw.metadata === "object" ? item.raw.metadata : {};
+      const draftPayload = normalizeJsonObjectInput(candidate?.draft_payload || candidate?.draftPayload || {});
+      const screeningAnswers = normalizeJsonObjectInput(candidate?.screening_answers || candidate?.screeningAnswers || {});
+      const cvResult = getVersionedCvAnalysisResult(meta) || null;
+      const inferredSearchTags = Array.isArray(meta?.inferredSearchTags) ? meta.inferredSearchTags : [];
+      const derivedDoc = deriveCandidateSearchDocV1FromParts({
+        candidate,
+        meta,
+        draftPayload,
+        screeningAnswers,
+        cvResult,
+        inferredSearchTags
+      });
+      if (derivedDoc) item.raw.metadata.searchDocV1 = derivedDoc;
+    }
+    const existingHiddenCvText = String(item.hiddenCvText || "").trim();
+    const persistedFullCvText = String(doc?.cv_text_full || "").trim();
+    const looksLikeCachedCvJson = existingHiddenCvText.startsWith("{") || existingHiddenCvText.startsWith("[");
+    if (persistedFullCvText) {
+      if (!existingHiddenCvText || existingHiddenCvText === "{}" || existingHiddenCvText === "[]" || existingHiddenCvText === "null") {
+        item.hiddenCvText = persistedFullCvText.length > 60000 ? `${persistedFullCvText.slice(0, 60000)}...` : persistedFullCvText;
+      } else if (looksLikeCachedCvJson && !existingHiddenCvText.includes(persistedFullCvText.slice(0, 120))) {
+        const merged = `${persistedFullCvText}\n${existingHiddenCvText}`;
+        item.hiddenCvText = merged.length > 60000 ? `${merged.slice(0, 60000)}...` : merged;
+      }
+      if (String(item.hiddenCvText || "").trim()) fullCvAttached += 1;
+    } else if (!existingHiddenCvText) {
+      const fallbackCvTerms = (() => {
+        const candidate = item?.raw?.candidate && typeof item.raw.candidate === "object" ? item.raw.candidate : {};
+        const meta = item?.raw?.metadata && typeof item.raw.metadata === "object" ? item.raw.metadata : {};
+        const cvResult = getVersionedCvAnalysisResult(meta) || null;
+        const inferredSearchTags = Array.isArray(meta?.inferredSearchTags) ? meta.inferredSearchTags : [];
+        return deriveCandidateCvTerms({
+          rawText: "",
+          cvResult,
+          inferredSearchTags,
+          skills: Array.isArray(candidate?.skills) ? candidate.skills : []
+        });
+      })();
+      if (fallbackCvTerms) {
+        item.hiddenCvText = fallbackCvTerms.length > 60000 ? `${fallbackCvTerms.slice(0, 60000)}...` : fallbackCvTerms;
+        fullCvAttached += 1;
+      }
     }
   }
   return { docsAttached, fullCvAttached };

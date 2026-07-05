@@ -5793,6 +5793,37 @@ function RichTextEditor({ value, onChange, placeholder = "Write here...", minHei
     onChange(String(editorRef.current?.innerHTML || ""));
   };
 
+  const handleKeyDown = (event) => {
+    if (disabled) return;
+    const isMod = event.ctrlKey || event.metaKey;
+    if (!isMod) return;
+    const key = String(event.key || "").toLowerCase();
+    if (key === "b") {
+      event.preventDefault();
+      run("bold");
+      return;
+    }
+    if (key === "i") {
+      event.preventDefault();
+      run("italic");
+      return;
+    }
+    if (key === "u") {
+      event.preventDefault();
+      run("underline");
+      return;
+    }
+    if (key === "z" && !event.shiftKey) {
+      event.preventDefault();
+      run("undo");
+      return;
+    }
+    if ((key === "y") || (key === "z" && event.shiftKey)) {
+      event.preventDefault();
+      run("redo");
+    }
+  };
+
   return (
     <div className="rich-editor">
       <div className="rich-editor-toolbar">
@@ -5818,6 +5849,7 @@ function RichTextEditor({ value, onChange, placeholder = "Write here...", minHei
         aria-multiline="true"
         spellCheck
         tabIndex={0}
+        onKeyDown={handleKeyDown}
         onClick={() => {
           if (disabled) return;
           editorRef.current?.focus();
