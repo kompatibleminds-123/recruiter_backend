@@ -838,14 +838,19 @@ function formatCandidateSearchDebugSource(debugPayload = null) {
   if (!source) return "";
   if (source === "portal_local_database_universe") return "Search source: Local hydrated database";
   if (source === "backend_candidate_search_docs") return "Search source: Backend deep CV/doc fallback";
+  if (source === "backend_canonical_candidate_search") return "Search source: Backend canonical candidate search";
   return `Search source: ${String(debugPayload?.debug?.source || "").trim()}`;
 }
 
 function formatCandidateSearchDebugCounts(debugPayload = null) {
+  const universeCount = Number(debugPayload?.debug?.totalUniverse ?? NaN);
+  const matchedCount = Number(debugPayload?.debug?.matchedCount ?? NaN);
   const localCount = Number(debugPayload?.debug?.localCount ?? NaN);
   const deepCount = Number(debugPayload?.debug?.deepCount ?? NaN);
   const adoptedSource = String(debugPayload?.debug?.adoptedSource || "").trim();
   const parts = [];
+  if (Number.isFinite(universeCount)) parts.push(`Universe: ${universeCount}`);
+  if (Number.isFinite(matchedCount)) parts.push(`Matched: ${matchedCount}`);
   if (Number.isFinite(localCount)) parts.push(`Local: ${localCount}`);
   if (Number.isFinite(deepCount)) parts.push(`Deep: ${deepCount}`);
   if (adoptedSource) {
@@ -20187,59 +20192,21 @@ function PortalApp({ token, onLogout }) {
     setStatus("workspace", "Searching candidates...", "ok");
     try {
       setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
-      const localResultItems = (Array.isArray(candidateUniverseAll) ? candidateUniverseAll : []).filter((item) =>
-        candidateMatchesBooleanQueryLocal(item, localBooleanQuery)
-      );
-      let resultItems = localResultItems;
-      let deepResultCount = null;
-      let debugPayload = {
-        mode: "local_boolean",
+      const searchResult = await api("/company/candidates/search-deep", token, "POST", {
+        query: localBooleanQuery
+      });
+      const resultItems = Array.isArray(searchResult?.result?.items) ? searchResult.result.items : [];
+      const debugPayload = {
+        mode: String(searchResult?.result?.mode || "canonical_boolean").trim() || "canonical_boolean",
         semantic: false,
         query: effectiveSearchText,
         searchingAsBoolean: localBooleanQuery,
         filters: null,
         interpretation: null,
         debug: {
-          source: "portal_local_database_universe",
-          totalUniverse: Array.isArray(candidateUniverseAll) ? candidateUniverseAll.length : 0,
-          localCount: localResultItems.length,
-          deepCount: null,
-          adoptedSource: "portal_local_database_universe"
+          ...(searchResult?.result?.debug || { source: "backend_canonical_candidate_search" })
         }
       };
-      if (shouldUseDeepCandidateSearchFallback(localBooleanQuery, localResultItems.length)) {
-        const deepResult = await api("/company/candidates/search-deep", token, "POST", {
-          query: localBooleanQuery
-        });
-        const deepItems = Array.isArray(deepResult?.result?.items) ? deepResult.result.items : [];
-        deepResultCount = deepItems.length;
-        if (deepItems.length > localResultItems.length) {
-          resultItems = deepItems;
-          debugPayload = {
-            mode: "deep_boolean_fallback",
-            semantic: false,
-            query: effectiveSearchText,
-            searchingAsBoolean: localBooleanQuery,
-            filters: null,
-            interpretation: null,
-            debug: {
-              ...(deepResult?.result?.debug || { source: "backend_candidate_search_docs" }),
-              localCount: localResultItems.length,
-              deepCount: deepItems.length,
-              adoptedSource: "backend_candidate_search_docs"
-            }
-          };
-        }
-      }
-      if (debugPayload?.debug && debugPayload.debug.adoptedSource === "portal_local_database_universe") {
-        debugPayload = {
-          ...debugPayload,
-          debug: {
-            ...debugPayload.debug,
-            deepCount: Number.isFinite(deepResultCount) ? deepResultCount : null
-          }
-        };
-      }
       setCandidateSearchDebug(debugPayload);
       setCandidateSearchQueryUsed(effectiveSearchText);
       setCandidateSearchingAs(localBooleanQuery);

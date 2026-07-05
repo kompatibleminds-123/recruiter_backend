@@ -22178,12 +22178,14 @@ const server = http.createServer(async (req, res) => {
           items,
           total: items.length,
           query,
-          mode: "deep_boolean",
+          mode: "canonical_boolean",
           debug: {
-            source: "backend_candidate_search_docs",
+            source: "backend_canonical_candidate_search",
             totalUniverse: scopedUniverse.length,
             docsAttached: attachStats.docsAttached,
-            fullCvAttached: attachStats.fullCvAttached
+            fullCvAttached: attachStats.fullCvAttached,
+            matchedCount: items.length,
+            queryGroupCount: parseBooleanSearchQuery(query).length
           }
         }
       });
