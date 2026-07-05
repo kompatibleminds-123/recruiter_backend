@@ -11743,16 +11743,19 @@ function expandBooleanTerm(term = "") {
 function parseBooleanSearchQuery(rawQuery = "") {
   const query = String(rawQuery || "").trim();
   if (!query) return [];
-  const compact = query.replace(/[()]/g, " ").replace(/\s+/g, " ").trim();
+  const compact = query.replace(/\s+/g, " ").trim();
   if (!compact) return [];
   if (/\bAND\b|\bOR\b/i.test(compact)) {
     return compact
       .split(/\bAND\b/i)
-      .map((group) => splitBooleanTerms(group.split(/\bOR\b/i).join(" ")))
-      .map((group) => group.filter(Boolean))
+      .map((group) => String(group || "").replace(/[()]/g, " ").trim())
+      .map((group) => group
+        .split(/\bOR\b/i)
+        .flatMap((part) => splitBooleanTerms(part))
+        .filter(Boolean))
       .filter((group) => group.length);
   }
-  return splitBooleanTerms(compact).map((term) => [term]);
+  return splitBooleanTerms(compact.replace(/[()]/g, " ")).map((term) => [term]);
 }
 
 function quoteBooleanTerm(term = "") {
