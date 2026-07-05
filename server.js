@@ -22166,7 +22166,7 @@ const server = http.createServer(async (req, res) => {
       const databaseUniverse = await buildDatabaseUniverseLiteForUser(user);
       const universe = Array.isArray(databaseUniverse?.universe) ? databaseUniverse.universe : [];
       const scopedUniverse = universe.filter((item) => !recruiterFilter || String(item.ownerRecruiter || item?.assigned_to_name || "").trim() === recruiterFilter);
-      const items = scopedUniverse
+      let items = scopedUniverse
         .filter((item) => candidateMatchesBooleanQuery(item, query))
         .map((item) => ({
           ...item,
@@ -22174,6 +22174,18 @@ const server = http.createServer(async (req, res) => {
           email: String(item?.email || item?.raw?.candidate?.email || item?.raw?.assessment?.emailId || "").trim(),
           linkedin: String(item?.linkedin || "").trim()
         }));
+      let fallbackUsed = false;
+      if (!items.length) {
+        fallbackUsed = true;
+        items = scopedUniverse
+          .filter((item) => candidateMatchesLooseNaturalTokens(item, query))
+          .map((item) => ({
+            ...item,
+            phone: String(item?.phone || item?.raw?.candidate?.phone || item?.raw?.assessment?.phoneNumber || "").trim(),
+            email: String(item?.email || item?.raw?.candidate?.email || item?.raw?.assessment?.emailId || "").trim(),
+            linkedin: String(item?.linkedin || "").trim()
+          }));
+      }
       sendJson(res, 200, {
         ok: true,
         result: {
@@ -22185,7 +22197,8 @@ const server = http.createServer(async (req, res) => {
             source: "backend_canonical_candidate_search",
             totalUniverse: scopedUniverse.length,
             matchedCount: items.length,
-            queryGroupCount: parseBooleanSearchQuery(query).length
+            queryGroupCount: parseBooleanSearchQuery(query).length,
+            fallbackUsed
           }
         }
       });
