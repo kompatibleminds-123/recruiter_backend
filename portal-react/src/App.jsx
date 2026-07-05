@@ -9867,6 +9867,7 @@ function PortalApp({ token, onLogout }) {
     }, 350);
   }, [location?.pathname, refreshDashboardAfterAssessmentChange]);
   const databaseCandidatesHydratedRef = useRef(false);
+  const databaseUniverseHydrationInFlightRef = useRef(false);
   const [candidateFilterPanelOpen, setCandidateFilterPanelOpen] = useState(true);
   const [candidateFilterDrawerOpen, setCandidateFilterDrawerOpen] = useState(false);
   const [isCandidateFilterMobile, setIsCandidateFilterMobile] = useState(() => (
@@ -12545,6 +12546,7 @@ function PortalApp({ token, onLogout }) {
       forceCore ||
       forceAll);
     const needsDatabaseCandidates = pathname === "/candidates" || forceAll;
+    const deferDatabaseUniverseHydration = pathname === "/candidates" && !forceAll;
     const needsAssessments =
       !isDashboardRoute && (
       pathname === "/dashboard" ||
@@ -12620,7 +12622,7 @@ function PortalApp({ token, onLogout }) {
         ? api("/company/employees", token).catch(() => ({ employees: [] }))
         : Promise.resolve(null),
       needsCandidates ? api(`/candidates?limit=${candidateFetchLimit}&page=${candidateFetchPage}${candidateFetchMetaSuffix}`, token).catch(() => []) : Promise.resolve(null),
-      needsDatabaseCandidates ? api("/company/database-universe-lite", token).catch(() => ({ result: { universe: [], total: 0 } })) : Promise.resolve(null),
+      needsDatabaseCandidates && !deferDatabaseUniverseHydration ? api("/company/database-universe-lite", token).catch(() => ({ result: { universe: [], total: 0 } })) : Promise.resolve(null),
       needsAssessments ? api("/company/assessments", token).catch(() => ({ assessments: [] })) : Promise.resolve(null),
       needsAssessmentEvents
         ? api("/company/assessment-events?limit=10000", token).catch(() => ({ result: { rows: [] } }))
@@ -12689,7 +12691,7 @@ function PortalApp({ token, onLogout }) {
       candidates: needsCandidates
         ? mergeCandidatesByFreshness(current.candidates, candidateRows)
         : current.candidates,
-      databaseCandidates: needsDatabaseCandidates
+      databaseCandidates: needsDatabaseCandidates && !deferDatabaseUniverseHydration
         ? mergeCandidatesByFreshness(
             current.databaseCandidates,
             Array.isArray((((databaseCandidatesResult?.result && typeof databaseCandidatesResult.result === "object")
@@ -12719,7 +12721,7 @@ function PortalApp({ token, onLogout }) {
       assessmentEvents: needsAssessmentEvents ? (assessmentEventsResult?.result?.rows || []) : current.assessmentEvents
     }));
     if (seq !== workspaceLoadSeqRef.current) return;
-    if (needsDatabaseCandidates) {
+    if (needsDatabaseCandidates && !deferDatabaseUniverseHydration) {
       databaseCandidatesHydratedRef.current = true;
       const databasePayload = databaseCandidatesResult?.result && typeof databaseCandidatesResult.result === "object"
         ? databaseCandidatesResult.result
@@ -12736,6 +12738,8 @@ function PortalApp({ token, onLogout }) {
         limit: Math.max(1, Number(databasePayload?.limit || databaseFetchLimit || 10)),
         totalPages: Math.max(1, Number(databasePayload?.totalPages || Math.ceil(Math.max(0, Number(databasePayload?.total || nextDatabaseItems.length || 0)) / Math.max(1, Number(databasePayload?.limit || databaseFetchLimit || 10))) || 1))
       });
+    } else if (needsDatabaseCandidates && deferDatabaseUniverseHydration) {
+      databaseCandidatesHydratedRef.current = false;
     }
     if (needsJobs) {
       archivedJobsLoadedRef.current = false;
@@ -13342,6 +13346,33 @@ function PortalApp({ token, onLogout }) {
         ? mergeCandidatesByFreshness(current.databaseCandidates, databaseRows)
         : current.databaseCandidates
     }));
+  }
+
+  async function hydrateDatabaseUniverseLiteBackground(expectedSeq = 0) {
+    if (!token) return;
+    if (databaseUniverseHydrationInFlightRef.current) return;
+    if (String(location?.pathname || "").trim() !== "/candidates") return;
+    databaseUniverseHydrationInFlightRef.current = true;
+    try {
+      const envelope = await api("/company/database-universe-lite", token).catch(() => ({ result: { universe: [], total: 0 } }));
+      if (expectedSeq && expectedSeq !== workspaceLoadSeqRef.current) return;
+      if (String(location?.pathname || "").trim() !== "/candidates") return;
+      const payload = envelope?.result && typeof envelope.result === "object"
+        ? envelope.result
+        : envelope;
+      const universeRows = Array.isArray(payload?.universe)
+        ? payload.universe
+        : (Array.isArray(payload)
+          ? payload
+          : (Array.isArray(payload?.items) ? payload.items : []));
+      databaseCandidatesHydratedRef.current = true;
+      setState((current) => ({
+        ...current,
+        databaseCandidates: mergeCandidatesByFreshness(current.databaseCandidates, universeRows)
+      }));
+    } finally {
+      databaseUniverseHydrationInFlightRef.current = false;
+    }
   }
 
   async function reloadDatabaseListPage(page = candidatePage, limit = candidatePageSize) {
@@ -15822,6 +15853,13 @@ function PortalApp({ token, onLogout }) {
     if (!databaseAllMode) return;
     void reloadDatabaseListPage(candidatePage, candidatePageSize);
   }, [token, location?.pathname, databaseAllMode, candidatePage, candidatePageSize, candidateQuickFiltersApplied]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (String(location?.pathname || "").trim() !== "/candidates") return;
+    if (databaseCandidatesHydratedRef.current) return;
+    void hydrateDatabaseUniverseLiteBackground(workspaceLoadSeqRef.current || 0);
+  }, [token, location?.pathname, hydrateDatabaseUniverseLiteBackground]);
 
   useEffect(() => {
     if (!token) return;
