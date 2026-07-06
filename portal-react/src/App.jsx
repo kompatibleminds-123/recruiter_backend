@@ -15214,11 +15214,8 @@ function PortalApp({ token, onLogout }) {
     item?.raw?.candidate?.id,
     item?.raw?.assessment?.id
   ].map((value) => String(value || "").trim()).filter(Boolean)), []);
-  const candidateUniverseAll = useMemo(() => {
-    const rawDatabaseRows = Array.isArray(state.databaseCandidates) && state.databaseCandidates.length
-      ? state.databaseCandidates
-      : (Array.isArray(databaseListItems) && databaseListItems.length ? databaseListItems : (state.candidates || []));
-    const assessmentById = new Map((Array.isArray(state.assessments) ? state.assessments : []).map((item) => [String(item?.id || "").trim(), item]));
+  const buildCandidateUniverseView = useCallback((rawRows = [], assessments = []) => {
+    const assessmentById = new Map((Array.isArray(assessments) ? assessments : []).map((item) => [String(item?.id || "").trim(), item]));
     const firstNonEmpty = (...values) => {
       for (const value of values) {
         if (value == null) continue;
@@ -15270,7 +15267,13 @@ function PortalApp({ token, onLogout }) {
       };
     });
     return databaseRows;
-  }, [databaseListItems, state.assessments, state.candidates, state.databaseCandidates, state.user]);
+  }, []);
+  const candidateUniverseAll = useMemo(() => {
+    const rawDatabaseRows = Array.isArray(state.databaseCandidates) && state.databaseCandidates.length
+      ? state.databaseCandidates
+      : (Array.isArray(databaseListItems) && databaseListItems.length ? databaseListItems : (state.candidates || []));
+    return buildCandidateUniverseView(rawDatabaseRows, state.assessments || []);
+  }, [buildCandidateUniverseView, databaseListItems, state.assessments, state.candidates, state.databaseCandidates, state.user]);
   const getDatabaseQuickFilterRecruiterLabel = useCallback((item = {}) => {
     const sourceKind = String(item?.sourceType || item?.source || "").trim().toLowerCase();
     if (sourceKind === "assessment_only") {
@@ -20189,9 +20192,14 @@ function PortalApp({ token, onLogout }) {
       let localUniverse = Array.isArray(candidateUniverseAll) ? candidateUniverseAll : [];
       if (!databaseCandidatesHydratedRef.current || !localUniverse.length) {
         const hydratedRows = await hydrateDatabaseUniverseLiteBackground(workspaceLoadSeqRef.current || 0);
-        localUniverse = Array.isArray(hydratedRows) && hydratedRows.length
+        const rawUniverseRows = Array.isArray(hydratedRows) && hydratedRows.length
           ? hydratedRows
-          : (Array.isArray(candidateUniverseAll) ? candidateUniverseAll : []);
+          : (
+              Array.isArray(state.databaseCandidates) && state.databaseCandidates.length
+                ? state.databaseCandidates
+                : (Array.isArray(databaseListItems) && databaseListItems.length ? databaseListItems : (state.candidates || []))
+            );
+        localUniverse = buildCandidateUniverseView(rawUniverseRows, state.assessments || []);
       }
       const localResultItems = localUniverse.filter((item) =>
         candidateMatchesBooleanQueryLocal(item, localBooleanQuery)

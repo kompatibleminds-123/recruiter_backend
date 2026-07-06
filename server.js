@@ -22425,6 +22425,8 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const existing = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
+      let mergedMeta = null;
+      let mergedCvResult = null;
       if (existing) {
         if (Object.prototype.hasOwnProperty.call(patch, "draft_payload")) {
           patch.draft_payload = mergeDraftPayloadPreservingExisting(
@@ -22445,7 +22447,7 @@ const server = http.createServer(async (req, res) => {
           otherPointers: patch.other_pointers ?? existing.other_pointers ?? "",
           tags: Array.isArray(input.skills) ? input.skills : (Array.isArray(existing.skills) ? existing.skills : [])
         });
-        const mergedMeta = {
+        mergedMeta = {
           ...(existingMeta || {}),
           ...(incomingMeta || {}),
           inferredSearchTags
@@ -22461,7 +22463,7 @@ const server = http.createServer(async (req, res) => {
           : existing?.screening_answers && typeof existing.screening_answers === "object"
             ? existing.screening_answers
             : {};
-        const mergedCvResult = mergedMeta?.cvAnalysisCache?.result && typeof mergedMeta.cvAnalysisCache.result === "object"
+        mergedCvResult = mergedMeta?.cvAnalysisCache?.result && typeof mergedMeta.cvAnalysisCache.result === "object"
           ? mergedMeta.cvAnalysisCache.result
           : cvResult && typeof cvResult === "object"
             ? cvResult
