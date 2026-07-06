@@ -13355,7 +13355,7 @@ function PortalApp({ token, onLogout }) {
 
   async function hydrateDatabaseUniverseLiteBackground(expectedSeq = 0) {
     if (!token) return;
-    if (databaseUniverseHydrationInFlightRef.current) return;
+    if (databaseUniverseHydrationInFlightRef.current) return [];
     if (String(location?.pathname || "").trim() !== "/candidates") return;
     databaseUniverseHydrationInFlightRef.current = true;
     try {
@@ -13375,6 +13375,7 @@ function PortalApp({ token, onLogout }) {
         ...current,
         databaseCandidates: mergeCandidatesByFreshness(current.databaseCandidates, universeRows)
       }));
+      return universeRows;
     } finally {
       databaseUniverseHydrationInFlightRef.current = false;
     }
@@ -15858,13 +15859,6 @@ function PortalApp({ token, onLogout }) {
     if (!databaseAllMode) return;
     void reloadDatabaseListPage(candidatePage, candidatePageSize);
   }, [token, location?.pathname, databaseAllMode, candidatePage, candidatePageSize, candidateQuickFiltersApplied]);
-
-  useEffect(() => {
-    if (!token) return;
-    if (String(location?.pathname || "").trim() !== "/candidates") return;
-    if (databaseCandidatesHydratedRef.current) return;
-    void hydrateDatabaseUniverseLiteBackground(workspaceLoadSeqRef.current || 0);
-  }, [token, location?.pathname, hydrateDatabaseUniverseLiteBackground]);
 
   useEffect(() => {
     if (!token) return;
@@ -20192,29 +20186,43 @@ function PortalApp({ token, onLogout }) {
     setStatus("workspace", "Searching candidates...", "ok");
     try {
       setCandidateStructuredFilters(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
-      const searchResult = await api("/company/candidates/search-deep", token, "POST", {
+      let localUniverse = Array.isArray(candidateUniverseAll) ? candidateUniverseAll : [];
+      if (!databaseCandidatesHydratedRef.current || !localUniverse.length) {
+        const hydratedRows = await hydrateDatabaseUniverseLiteBackground(workspaceLoadSeqRef.current || 0);
+        localUniverse = Array.isArray(hydratedRows) && hydratedRows.length
+          ? hydratedRows
+          : (Array.isArray(candidateUniverseAll) ? candidateUniverseAll : []);
+      }
+      const localResultItems = localUniverse.filter((item) =>
+        candidateMatchesBooleanQueryLocal(item, localBooleanQuery)
+      );
+      const deepResult = await api("/company/candidates/search-deep", token, "POST", {
         query: localBooleanQuery
-      });
-      const resultItems = Array.isArray(searchResult?.result?.items) ? searchResult.result.items : [];
+      }).catch(() => ({ result: { items: [], debug: { source: "backend_candidate_search_docs" } } }));
+      const deepItems = Array.isArray(deepResult?.result?.items) ? deepResult.result.items : [];
       const debugPayload = {
-        mode: String(searchResult?.result?.mode || "canonical_boolean").trim() || "canonical_boolean",
+        mode: "local_boolean",
         semantic: false,
         query: effectiveSearchText,
         searchingAsBoolean: localBooleanQuery,
         filters: null,
         interpretation: null,
         debug: {
-          ...(searchResult?.result?.debug || { source: "backend_canonical_candidate_search" })
+          ...(deepResult?.result?.debug || { source: "portal_local_database_universe" }),
+          source: "portal_local_database_universe",
+          localCount: localResultItems.length,
+          deepCount: deepItems.length,
+          adoptedSource: "portal_local_database_universe"
         }
       };
       setCandidateSearchDebug(debugPayload);
       setCandidateSearchQueryUsed(effectiveSearchText);
       setCandidateSearchingAs(localBooleanQuery);
-      setCandidateSearchResults(resultItems);
+      setCandidateSearchResults(localResultItems);
       setCandidateSearchMode("search");
       setCandidatePage(1);
       setCandidateStructuredFiltersDraft(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
-      setStatus("workspace", `${candidateAiQueryMode === "boolean" ? "Boolean" : "Smart"} search returned ${resultItems.length || 0} candidates.`, "ok");
+      setStatus("workspace", `${candidateAiQueryMode === "boolean" ? "Boolean" : "Smart"} search returned ${localResultItems.length || 0} candidates.`, "ok");
     } catch (error) {
       setCandidateSearchDebug({ error: String(error?.message || error), query: effectiveSearchText, mode: "local_boolean" });
       setCandidateSearchingAs("");

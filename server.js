@@ -11834,25 +11834,8 @@ function candidateMatchesBooleanQuery(item, rawQuery = "") {
   const groups = parseBooleanSearchQuery(rawQuery);
   if (!groups.length) return true;
   const hay = buildCandidateSearchHay(item);
-  const matchesVariant = (variant = "") => {
-    const needle = String(variant || "").trim();
-    if (!needle) return false;
-    // Phrase match: keep substring semantics.
-    if (needle.includes(" ") || needle.startsWith(".") || /[^a-z0-9]/i.test(needle)) {
-      return hay.includes(needle);
-    }
-    // Short acronyms/terms like "ats" should match whole words only (avoid substring noise).
-    if (needle.length <= 3) {
-      try {
-        return new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\b`, "i").test(hay);
-      } catch {
-        return hay.includes(needle);
-      }
-    }
-    return hay.includes(needle);
-  };
   return groups.every((group) =>
-    group.some((term) => expandBooleanTerm(term).some((variant) => matchesVariant(variant)))
+    group.some((term) => expandBooleanTerm(term).some((variant) => candidateHayMatchesTerm(hay, variant)))
   );
 }
 
@@ -22163,42 +22146,32 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 200, { ok: true, result: { items: [], total: 0, query, mode: "deep_boolean" } });
         return;
       }
-      const databaseUniverse = await buildDatabaseUniverseLiteForUser(user);
-      const universe = Array.isArray(databaseUniverse?.universe) ? databaseUniverse.universe : [];
+      const [candidates, assessments, jobs, docs] = await Promise.all([
+        listCandidatesForUser(user, { limit: 5000, scope: "company" }),
+        listAssessments({ actorUserId: user.id, companyId: user.companyId }),
+        listCompanyJobs(user.companyId, user.id),
+        listCandidateSearchDocsForCompany(user.companyId).catch(() => [])
+      ]);
+      const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
+      const attachStats = attachPersistedSearchDocsToUniverse(universe, docs);
       const scopedUniverse = universe.filter((item) => !recruiterFilter || String(item.ownerRecruiter || item?.assigned_to_name || "").trim() === recruiterFilter);
-      let items = scopedUniverse
+      const items = scopedUniverse
         .filter((item) => candidateMatchesBooleanQuery(item, query))
-        .map((item) => ({
-          ...item,
-          phone: String(item?.phone || item?.raw?.candidate?.phone || item?.raw?.assessment?.phoneNumber || "").trim(),
-          email: String(item?.email || item?.raw?.candidate?.email || item?.raw?.assessment?.emailId || "").trim(),
-          linkedin: String(item?.linkedin || "").trim()
-        }));
-      let fallbackUsed = false;
-      if (!items.length) {
-        fallbackUsed = true;
-        items = scopedUniverse
-          .filter((item) => candidateMatchesLooseNaturalTokens(item, query))
-          .map((item) => ({
-            ...item,
-            phone: String(item?.phone || item?.raw?.candidate?.phone || item?.raw?.assessment?.phoneNumber || "").trim(),
-            email: String(item?.email || item?.raw?.candidate?.email || item?.raw?.assessment?.emailId || "").trim(),
-            linkedin: String(item?.linkedin || "").trim()
-          }));
-      }
+        .map((item) => flattenCandidateSearchResultItem(item));
       sendJson(res, 200, {
         ok: true,
         result: {
           items,
           total: items.length,
           query,
-          mode: "canonical_boolean",
+          mode: "deep_boolean",
           debug: {
-            source: "backend_canonical_candidate_search",
+            source: "backend_candidate_search_docs",
             totalUniverse: scopedUniverse.length,
+            docsAttached: attachStats.docsAttached,
+            fullCvAttached: attachStats.fullCvAttached,
             matchedCount: items.length,
-            queryGroupCount: parseBooleanSearchQuery(query).length,
-            fallbackUsed
+            queryGroupCount: parseBooleanSearchQuery(query).length
           }
         }
       });
