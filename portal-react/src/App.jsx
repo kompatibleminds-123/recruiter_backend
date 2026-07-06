@@ -852,7 +852,7 @@ function formatCandidateSearchDebugCounts(debugPayload = null) {
   if (Number.isFinite(universeCount)) parts.push(`Universe: ${universeCount}`);
   if (Number.isFinite(matchedCount)) parts.push(`Matched: ${matchedCount}`);
   if (Number.isFinite(localCount)) parts.push(`Local: ${localCount}`);
-  if (Number.isFinite(deepCount)) parts.push(`Deep: ${deepCount}`);
+  if (Number.isFinite(deepCount) && (!Number.isFinite(localCount) || deepCount > localCount)) parts.push(`Deep: ${deepCount}`);
   if (adoptedSource) {
     parts.push(`Using: ${adoptedSource === "backend_candidate_search_docs" ? "Deep" : adoptedSource === "portal_local_database_universe" ? "Local" : adoptedSource}`);
   }
