@@ -22155,9 +22155,14 @@ const server = http.createServer(async (req, res) => {
       const universe = buildCandidateSearchUniverse(candidates, assessments, jobs);
       const attachStats = attachPersistedSearchDocsToUniverse(universe, docs);
       const scopedUniverse = universe.filter((item) => !recruiterFilter || String(item.ownerRecruiter || item?.assigned_to_name || "").trim() === recruiterFilter);
+      const parsedGroups = parseBooleanSearchQuery(query);
+      const sampleUniverseItem = scopedUniverse[0] || null;
+      const sampleUniverseHay = sampleUniverseItem ? buildCandidateSearchHay(sampleUniverseItem) : "";
       const items = scopedUniverse
         .filter((item) => candidateMatchesBooleanQuery(item, query))
         .map((item) => flattenCandidateSearchResultItem(item));
+      const sampleMatchedItem = items[0] || null;
+      const sampleMatchedHay = sampleMatchedItem ? buildCandidateSearchHay(sampleMatchedItem) : "";
       sendJson(res, 200, {
         ok: true,
         result: {
@@ -22171,7 +22176,18 @@ const server = http.createServer(async (req, res) => {
             docsAttached: attachStats.docsAttached,
             fullCvAttached: attachStats.fullCvAttached,
             matchedCount: items.length,
-            queryGroupCount: parseBooleanSearchQuery(query).length
+            queryGroupCount: parsedGroups.length,
+            parsedGroups,
+            sampleCandidateName: String(sampleUniverseItem?.candidateName || "").trim(),
+            sampleRole: String(sampleUniverseItem?.role || "").trim(),
+            samplePosition: String(sampleUniverseItem?.position || "").trim(),
+            sampleClientName: String(sampleUniverseItem?.clientName || "").trim(),
+            sampleOwnerRecruiter: String(sampleUniverseItem?.ownerRecruiter || "").trim(),
+            sampleHasDocV1: Boolean(String(sampleUniverseItem?.raw?.metadata?.searchDocV1 || sampleUniverseItem?.raw?.metadata?.search_doc_v1 || "").trim()),
+            sampleHasFullCv: Boolean(String(sampleUniverseItem?.hiddenCvText || "").trim()),
+            sampleHayPreview: sampleUniverseHay ? String(sampleUniverseHay).slice(0, 500) : "",
+            sampleMatchedCandidateName: String(sampleMatchedItem?.candidateName || "").trim(),
+            sampleMatchedHayPreview: sampleMatchedHay ? String(sampleMatchedHay).slice(0, 500) : ""
           }
         }
       });
