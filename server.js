@@ -4177,6 +4177,16 @@ function scheduleApplicantCvEnrichment({
   });
 }
 
+function deferCandidateSearchDocUpsert(payload = {}) {
+  setImmediate(async () => {
+    try {
+      await upsertCandidateSearchDocV1(payload);
+    } catch (error) {
+      console.warn("Deferred candidate_search_docs upsert failed:", error?.message || error);
+    }
+  });
+}
+
 function normalizeApplicantBody(body = {}) {
   const input = body && typeof body === "object" ? body : {};
   return {
@@ -22470,6 +22480,17 @@ const server = http.createServer(async (req, res) => {
         });
       }
       const result = await patchCandidate(candidateId, patch, { companyId: actor.companyId });
+      deferCandidateSearchDocUpsert({
+        companyId: actor.companyId,
+        candidateId: String(result?.id || candidateId || "").trim(),
+        docV1: String(mergedMeta?.searchDocV1 || "").trim(),
+        cvTextFull: deriveCandidateCvTerms({
+          rawText: "",
+          cvResult: mergedCvResult,
+          inferredSearchTags: Array.isArray(mergedMeta?.inferredSearchTags) ? mergedMeta.inferredSearchTags : [],
+          skills: Array.isArray(result?.skills) ? result.skills : Array.isArray(existing?.skills) ? existing.skills : []
+        })
+      });
       emitCapturedStreamEvent(actor.companyId, "candidate_changed", { candidateId, candidate: result });
       emitApplicantStreamEvent(actor.companyId, "candidate_changed", { candidateId, candidate: result });
       sendJson(res, 200, { ok: true, result });
@@ -22543,6 +22564,23 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const result = await saveCandidate(candidate, { companyId: actor.companyId });
+      try {
+        const savedMeta = decodeApplicantMetadata(result);
+        const savedCvResult = savedMeta?.cvAnalysisCache?.result && typeof savedMeta.cvAnalysisCache.result === "object"
+          ? savedMeta.cvAnalysisCache.result
+          : null;
+        deferCandidateSearchDocUpsert({
+          companyId: actor.companyId,
+          candidateId: String(result?.id || "").trim(),
+          docV1: String(savedMeta?.searchDocV1 || "").trim(),
+          cvTextFull: deriveCandidateCvTerms({
+            rawText: "",
+            cvResult: savedCvResult,
+            inferredSearchTags: Array.isArray(savedMeta?.inferredSearchTags) ? savedMeta.inferredSearchTags : [],
+            skills: Array.isArray(result?.skills) ? result.skills : []
+          })
+        });
+      } catch (_) {}
       const license = await incrementCompanyCaptureUsage(actor.companyId, 1);
       emitCapturedStreamEvent(actor.companyId, "candidate_created", { candidateId: String(result?.id || "").trim() || undefined });
       emitApplicantStreamEvent(actor.companyId, "candidate_created", { candidateId: String(result?.id || "").trim() || undefined });
