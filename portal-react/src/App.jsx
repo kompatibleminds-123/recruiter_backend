@@ -15224,7 +15224,7 @@ function PortalApp({ token, onLogout }) {
       }
       return "";
     };
-    const databaseRows = rawDatabaseRows.map((item) => {
+    const databaseRows = (Array.isArray(rawRows) ? rawRows : []).map((item) => {
       const normalized = normalizeApplicantVisibleRow(item);
       const assessmentId = String(normalized?.assessment_id || normalized?.assessmentId || "").trim();
       const linkedAssessment = assessmentId ? assessmentById.get(assessmentId) : null;
