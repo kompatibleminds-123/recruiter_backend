@@ -16814,6 +16814,14 @@ function PortalApp({ token, onLogout }) {
   async function openAssessmentStatusFromSearch(item) {
     const assessmentId = String(item?.assessment_id || item?.assessmentId || item?.raw?.assessment?.id || item?.assessment?.id || "").trim();
     if (assessmentId) {
+      const immediateSnapshot = item?.raw?.assessment
+        || item?.assessment
+        || (item?.raw && typeof item.raw === "object" && String(item.raw?.id || "").trim() === assessmentId ? item.raw : null)
+        || (item && typeof item === "object" && String(item?.id || "").trim() === assessmentId ? item : null)
+        || null;
+      if (immediateSnapshot && typeof immediateSnapshot === "object") {
+        setAssessmentStatusItemSnapshot(immediateSnapshot);
+      }
       setAssessmentStatusId(assessmentId);
       return;
     }
@@ -16827,6 +16835,7 @@ function PortalApp({ token, onLogout }) {
       return linkedCandidateId && linkedCandidateId === candidateId;
     });
     if (matchedAssessment?.id) {
+      setAssessmentStatusItemSnapshot(matchedAssessment);
       setAssessmentStatusId(String(matchedAssessment.id));
       return;
     }
