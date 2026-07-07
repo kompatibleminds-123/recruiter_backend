@@ -24747,8 +24747,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     pushAssessmentStatus(`Updated status for ${assessment?.candidateName || "candidate"}.`, "ok");
     if (options.closeModal !== false) setAssessmentStatusId("");
 
-    // Persist in background; if fails, surface error and refresh to resync.
-    void (async () => {
+    // Persist after optimistic UI patch; callers should await the real backend result.
+    return await (async () => {
       try {
         const savedAssessment = await api("/company/assessments", token, "POST", {
           assessment: {
@@ -24787,9 +24787,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         void syncPostAssessmentMutation({ candidateId: linkedCandidateId }).catch(() => {});
         void refreshDashboardAfterAssessmentChange().catch(() => {});
         // Skip immediate workspace refresh to keep viewport stable after status update.
+        return persistedAssessment;
       } catch (error) {
         pushAssessmentStatus(`Status sync failed: ${String(error?.message || error)}`, "error");
         void refreshAssessmentFallback({ candidateId: linkedCandidateId }).catch(() => {});
+        throw error;
       } finally {
         if (lockKey) {
           assessmentStatusSaveLockRef.current.delete(lockKey);
