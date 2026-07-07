@@ -18562,17 +18562,8 @@ function PortalApp({ token, onLogout }) {
 
   async function openSavedAssessment(assessmentInput) {
     const requestedId = String(assessmentInput?.id || "").trim();
-    let assessment = assessmentInput && typeof assessmentInput === "object" ? assessmentInput : {};
-    setInterviewLatestLoading(true);
-    resetInterviewCvParseTransientState();
-    setInterviewMeta({
-      candidateId: String(assessment?.candidateId || assessment?.candidate_id || ""),
-      assessmentId: String(assessment?.id || ""),
-      assessmentUpdatedAt: String(assessment?.updatedAt || assessment?.updated_at || "").trim()
-    });
-    navigate("/interview");
-    setStatus("interview", `Opening saved assessment for ${assessment?.candidateName || "candidate"}...`, "ok");
-    const hydrateSavedAssessment = () => {
+    const assessment = assessmentInput && typeof assessmentInput === "object" ? assessmentInput : {};
+    setInterviewLatestLoading(false);
     const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
     const normalizePhone = (value) => {
       const digits = String(value || "").replace(/[^\d]/g, "");
@@ -18589,7 +18580,13 @@ function PortalApp({ token, onLogout }) {
       const phone = normalizePhone(item?.phone || item?.phoneNumber || "");
       return (wantedEmail && email && wantedEmail === email) || (wantedPhone && phone && wantedPhone === phone);
     }) || null;
+    resetInterviewCvParseTransientState();
     const candidateDraft = getCandidateDraftState(matchedCandidate || {});
+    setInterviewMeta({
+      candidateId: String(matchedCandidate?.id || assessment?.candidateId || ""),
+      assessmentId: String(assessment?.id || ""),
+      assessmentUpdatedAt: String(assessment?.updatedAt || assessment?.updated_at || "").trim()
+    });
     const parsedRecruiterBase = normalizeRecruiterMergeBase(matchedCandidate || assessment || {});
     const cvMeta = decodePortalApplicantMetadata(matchedCandidate || {});
     const candidateCvAnalysis = cvMeta?.cvAnalysisCache?.result
@@ -18637,16 +18634,8 @@ function PortalApp({ token, onLogout }) {
       cvAnalysisApplied: Boolean(assessment?.cvAnalysisApplied),
       statusHistory: Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : []
     });
-    setInterviewLatestLoading(false);
+    navigate("/interview");
     setStatus("interview", `Opened saved assessment for ${assessment?.candidateName || "candidate"}.`, "ok");
-    };
-    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(hydrateSavedAssessment);
-      });
-    } else {
-      setTimeout(hydrateSavedAssessment, 0);
-    }
 
     if (requestedId && token) {
       void (async () => {
