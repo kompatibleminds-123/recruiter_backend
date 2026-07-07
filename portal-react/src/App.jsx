@@ -8068,6 +8068,10 @@ function compactDashboardAgendaItem(item = {}) {
   };
 }
 
+function isTransientAssessmentId(value) {
+  return /^(quick-note|assessment)-/i.test(String(value || "").trim());
+}
+
 function patchDashboardAgendaSnapshotForAssessment(snapshot, assessment) {
   if (!snapshot || typeof snapshot !== "object" || !assessment || typeof assessment !== "object") return snapshot;
   const assessmentId = String(assessment?.id || assessment?.assessmentId || "").trim();
@@ -16757,7 +16761,7 @@ function PortalApp({ token, onLogout }) {
 
   async function openAssessmentStatusFromSearch(item) {
     const assessmentId = String(item?.assessment_id || item?.assessmentId || item?.raw?.assessment?.id || item?.assessment?.id || "").trim();
-    if (assessmentId) {
+    if (assessmentId && !isTransientAssessmentId(assessmentId)) {
       setAssessmentStatusId(assessmentId);
       return;
     }
@@ -16770,7 +16774,7 @@ function PortalApp({ token, onLogout }) {
       const linkedCandidateId = String(assessment?.candidateId || "").trim();
       return linkedCandidateId && linkedCandidateId === candidateId;
     });
-    if (matchedAssessment?.id) {
+    if (matchedAssessment?.id && !isTransientAssessmentId(matchedAssessment.id)) {
       setAssessmentStatusId(String(matchedAssessment.id));
       return;
     }
