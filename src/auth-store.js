@@ -6668,9 +6668,11 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
     throw new Error("candidateId is required for assessments.");
   }
   const deterministicId = deterministicAssessmentRowId(companyId, incoming);
-  const safeAssessment = existingId
-    ? { ...incoming, id: existingId }
-    : (deterministicId ? { ...incoming, id: deterministicId } : incoming);
+  const safeAssessment = incomingAssessmentId
+    ? { ...incoming, id: incomingAssessmentId }
+    : existingId
+      ? { ...incoming, id: existingId }
+      : (deterministicId ? { ...incoming, id: deterministicId } : incoming);
   const expectedUpdatedAt = String(
     assessment?.expectedUpdatedAt
     || assessment?.expected_updated_at
