@@ -24569,7 +24569,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       pushAssessmentStatus("Status update already in progress for this candidate.", "error");
       return;
     }
-    if (lockKey) assessmentStatusSaveLockRef.current.add(lockKey);
     const inferText = String(payload?.inferText || payload?.notes || "").trim();
     const manualRemarks = String(payload?.manualRemarks || "").trim();
     const combinedNotes = [inferText, manualRemarks ? `Remarks: ${manualRemarks}` : ""].filter(Boolean).join("\n");
@@ -24719,6 +24718,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       const currentDraft = getCandidateDraftState(currentCandidate);
       nextScreeningAnswers = currentDraft.jdScreeningAnswers || parsePortalObjectField(currentCandidate?.screening_answers || currentCandidate?.screeningAnswers);
     }
+    if (lockKey) assessmentStatusSaveLockRef.current.add(lockKey);
 
     // Optimistic UI first: reflect status immediately everywhere.
     applyAssessmentChange({

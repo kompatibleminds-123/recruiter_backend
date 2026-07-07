@@ -6658,7 +6658,10 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
   // De-duplicate: if an assessment already exists for the same candidate (and same client/JD when present),
   // reuse that id instead of creating a brand-new row. This prevents "assessment created twice" when admin
   // and recruiter both try converting the same captured note.
-  const existingId = await findExistingAssessmentIdForCandidate({ actorUserId: actor.id, companyId, assessment }).catch(() => "");
+  const incomingAssessmentId = String(assessment?.id || assessment?.assessment_id || "").trim();
+  const existingId = incomingAssessmentId
+    ? ""
+    : await findExistingAssessmentIdForCandidate({ actorUserId: actor.id, companyId, assessment }).catch(() => "");
   const incoming = sanitizeAssessment(assessment);
   const candidateId = String(incoming?.candidateId || incoming?.candidate_id || "").trim();
   if (!candidateId) {
@@ -6673,29 +6676,6 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
     || assessment?.expected_updated_at
     || ""
   ).trim();
-
-  if (expectedUpdatedAt) {
-    try {
-      const candidateRows = await sbSel(
-        "candidates",
-        `select=id,assessment_id,used_in_assessment,hidden_from_captured&company_id=eq.${enc(companyId)}&id=eq.${enc(candidateId)}&limit=1`
-      ).catch(() => []);
-      const candidateRow = candidateRows && candidateRows[0] ? candidateRows[0] : null;
-      const linkedAssessmentId = String(candidateRow?.assessment_id || "").trim();
-      // Soft validation only: do not block save on transient link races.
-      if (linkedAssessmentId && String(linkedAssessmentId) !== String(safeAssessment.id || "").trim()) {
-        console.warn("[assessment-save] candidate link mismatch during optimistic lock", {
-          companyId,
-          candidateId,
-          linkedAssessmentId,
-          safeAssessmentId: String(safeAssessment.id || "").trim()
-        });
-      }
-    } catch (error) {
-      // Ignore candidate-link lookup failures here; canonical optimistic lock check
-      // continues below using assessment.updated_at vs expectedUpdatedAt.
-    }
-  }
 
   // Read previous row (best-effort) so we can create factual events (status changes, interview done, offered, etc.)
   // without breaking existing flows if the table isn't present.
