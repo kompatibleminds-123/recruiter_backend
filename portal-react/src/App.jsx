@@ -8111,52 +8111,6 @@ function patchDashboardAgendaSnapshotForAssessment(snapshot, assessment) {
   return nextSnapshot;
 }
 
-function normalizeCandidateSmartChipRowsSnapshot(snapshot = {}) {
-  if (!snapshot || typeof snapshot !== "object") return {};
-  const normalizeRow = (row = {}) => {
-    if (!row || typeof row !== "object") return row;
-    const item = row?.item && typeof row.item === "object" ? row.item : null;
-    if (!item) return row;
-    const rawAssessment = item?.raw?.assessment && typeof item.raw.assessment === "object" ? item.raw.assessment : null;
-    const directAssessment = item?.assessment && typeof item.assessment === "object" ? item.assessment : null;
-    const resolvedAssessment = rawAssessment || directAssessment || null;
-    const resolvedAssessmentId = String(
-      item?.assessment_id
-      || item?.assessmentId
-      || rawAssessment?.id
-      || directAssessment?.id
-      || ""
-    ).trim();
-    const resolvedCandidateId = String(
-      item?.candidate_id
-      || item?.candidateId
-      || item?.raw?.candidate?.id
-      || item?.id
-      || ""
-    ).trim();
-    return {
-      ...row,
-      item: {
-        ...item,
-        candidate_id: resolvedCandidateId || item?.candidate_id || item?.candidateId || "",
-        candidateId: resolvedCandidateId || item?.candidateId || item?.candidate_id || "",
-        assessment_id: resolvedAssessmentId || item?.assessment_id || item?.assessmentId || "",
-        assessmentId: resolvedAssessmentId || item?.assessmentId || item?.assessment_id || "",
-        assessment: resolvedAssessment || item?.assessment || null,
-        raw: item?.raw && typeof item.raw === "object"
-          ? {
-              ...item.raw,
-              assessment: resolvedAssessment || item.raw.assessment || null
-            }
-          : item?.raw
-      }
-    };
-  };
-  return Object.fromEntries(
-    Object.entries(snapshot).map(([key, rows]) => [key, Array.isArray(rows) ? rows.map((row) => normalizeRow(row)) : []])
-  );
-}
-
 function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs = true, currentUser = null, users = [] }) {
   const location = useLocation();
   const forcedCampaignIdFromUrl = useMemo(() => {
@@ -11226,9 +11180,8 @@ function PortalApp({ token, onLogout }) {
         joined_candidates: Array.isArray(parsed.joined_candidates) ? parsed.joined_candidates : [],
         cv_shared: Array.isArray(parsed.cv_shared) ? parsed.cv_shared : []
       };
-      const normalizedRows = normalizeCandidateSmartChipRowsSnapshot(normalized);
-      if (isEmptySmartChipSnapshot(normalizedRows)) return;
-      candidateSmartChipRowsStableRef.current = normalizedRows;
+      if (isEmptySmartChipSnapshot(normalized)) return;
+      candidateSmartChipRowsStableRef.current = normalized;
     } catch {
       // Ignore cache parse issues and rebuild from live data.
     }
@@ -15804,7 +15757,7 @@ function PortalApp({ token, onLogout }) {
       });
       if (candidateSmartChipSummaryRequestRef.current !== requestId) return;
       const payload = result?.result && typeof result.result === "object" ? result.result : result;
-      const rows = normalizeCandidateSmartChipRowsSnapshot(payload?.rows && typeof payload.rows === "object" ? payload.rows : {});
+      const rows = payload?.rows && typeof payload.rows === "object" ? payload.rows : {};
       const summary = payload?.summary && typeof payload.summary === "object" ? payload.summary : null;
       candidateSmartChipRowsStableRef.current = rows;
       setCandidateSmartChipRowsRemote(rows);
@@ -16808,7 +16761,29 @@ function PortalApp({ token, onLogout }) {
       setAssessmentStatusId(assessmentId);
       return;
     }
-    setStatus("workspace", "Quick-chip row is missing assessment id. Refresh once and retry.", "error");
+    const candidateId = String(item?.id || item?.candidate_id || item?.candidateId || "").trim();
+    if (!candidateId) {
+      setStatus("workspace", "Assessment status update is not available for this row.", "error");
+      return;
+    }
+    const matchedAssessment = (Array.isArray(assessmentListItems) ? assessmentListItems : []).find((assessment) => {
+      const linkedCandidateId = String(assessment?.candidateId || "").trim();
+      return linkedCandidateId && linkedCandidateId === candidateId;
+    });
+    if (matchedAssessment?.id) {
+      setAssessmentStatusId(String(matchedAssessment.id));
+      return;
+    }
+    try {
+      const fresh = await api(`/company/assessments/search?q=${encodeURIComponent(candidateId)}&limit=10`, token);
+      const freshAssessment = Array.isArray(fresh?.assessments) ? fresh.assessments.find((assessment) => String(assessment?.candidateId || assessment?.candidate_id || "").trim() === candidateId) : null;
+      if (freshAssessment?.id) {
+        setAssessmentStatusItemSnapshot(freshAssessment);
+        setAssessmentStatusId(String(freshAssessment.id));
+        return;
+      }
+    } catch {}
+    setStatus("workspace", "No linked assessment found for this candidate yet.", "error");
   }
 
   function openInterviewStoredCv() {
@@ -17846,14 +17821,7 @@ function PortalApp({ token, onLogout }) {
         setStatus("quickUpdate", "Date of joining is required for Joined.", "error");
         return;
       }
-      const quickAssessmentId = String(quickUpdateLinkedAssessment?.id || "").trim();
-      const freshQuickAssessment = quickAssessmentId
-        ? await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(quickAssessmentId)}`, token).catch(() => null)
-        : null;
-      const assessmentForSave = freshQuickAssessment && typeof freshQuickAssessment === "object"
-        ? freshQuickAssessment
-        : quickUpdateLinkedAssessment;
-      await saveAssessmentStatusUpdate(assessmentForSave, {
+      await saveAssessmentStatusUpdate(quickUpdateLinkedAssessment, {
         candidateStatus,
         atValue: quickUpdateStatusAt || "",
         notes: "",
@@ -24588,29 +24556,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
   async function saveAssessmentStatusUpdate(assessment, payload, options = {}) {
     const statusTarget = options.statusTarget || "assessments";
-    const shouldAwaitPersist = options.awaitPersist === true;
-    const shouldResolveLatestAssessment = shouldAwaitPersist && options.skipFreshResolve !== true;
-    if (shouldResolveLatestAssessment) {
-      const incomingAssessmentId = String(assessment?.id || "").trim();
-      let freshestAssessment = null;
-      if (incomingAssessmentId) {
-        try {
-          const byId = await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(incomingAssessmentId)}`, token).catch(() => null);
-          if (byId && typeof byId === "object" && String(byId?.id || "").trim()) {
-            freshestAssessment = byId;
-          }
-        } catch {}
-      }
-      if (freshestAssessment && String(freshestAssessment?.id || "").trim()) {
-        const freshestId = String(freshestAssessment.id || "").trim();
-        if (freshestId && freshestId !== String(assessment?.id || "").trim()) {
-          setAssessmentStatusItemSnapshot(freshestAssessment);
-          setAssessmentStatusId(freshestId);
-        }
-        return saveAssessmentStatusUpdate(freshestAssessment, payload, { ...options, skipFreshResolve: true });
-      }
-      throw new Error("Assessment id missing or stale for this quick-chip row. Refresh once and retry.");
-    }
     const lockKey = String(assessment?.id || assessment?.candidateId || "").trim();
     const useInlineAssessmentStatus = String(statusTarget || "").trim() === "assessments";
     const pushAssessmentStatus = (message, kind = "") => {
@@ -24800,9 +24745,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       });
     }
     pushAssessmentStatus(`Updated status for ${assessment?.candidateName || "candidate"}.`, "ok");
-    if (!shouldAwaitPersist && options.closeModal !== false) setAssessmentStatusId("");
+    if (options.closeModal !== false) setAssessmentStatusId("");
 
-    const persistTask = (async () => {
+    // Persist in background; if fails, surface error and refresh to resync.
+    void (async () => {
       try {
         const savedAssessment = await api("/company/assessments", token, "POST", {
           assessment: {
@@ -24840,25 +24786,16 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         }
         void syncPostAssessmentMutation({ candidateId: linkedCandidateId }).catch(() => {});
         void refreshDashboardAfterAssessmentChange().catch(() => {});
-        if (shouldAwaitPersist && options.closeModal !== false) {
-          setAssessmentStatusId("");
-        }
         // Skip immediate workspace refresh to keep viewport stable after status update.
-        return persistedAssessment;
       } catch (error) {
         pushAssessmentStatus(`Status sync failed: ${String(error?.message || error)}`, "error");
         void refreshAssessmentFallback({ candidateId: linkedCandidateId }).catch(() => {});
-        throw error;
       } finally {
         if (lockKey) {
           assessmentStatusSaveLockRef.current.delete(lockKey);
         }
       }
     })();
-    if (shouldAwaitPersist) {
-      return await persistTask;
-    }
-    void persistTask;
   }
 
   async function deleteAssessmentItem(assessment) {
@@ -31796,15 +31733,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         </div>
       ) : null}
       <AttemptsModal open={Boolean(attemptsCandidateId)} candidate={attemptsCandidate} attempts={attempts} onClose={() => setAttemptsCandidateId("")} onRefresh={refreshAttempts} onSave={saveAttempt} />
-      <AssessmentStatusModal
-        open={Boolean(assessmentStatusId)}
-        assessment={assessmentStatusItem}
-        onClose={() => setAssessmentStatusId("")}
-        onSave={(payload) => saveAssessmentStatusUpdate(assessmentStatusItem, payload, {
-          awaitPersist: String(location?.pathname || "").trim() === "/candidates",
-          statusTarget: String(location?.pathname || "").trim() === "/candidates" ? "workspace" : "assessments"
-        })}
-      />
+      <AssessmentStatusModal open={Boolean(assessmentStatusId)} assessment={assessmentStatusItem} onClose={() => setAssessmentStatusId("")} onSave={(payload) => saveAssessmentStatusUpdate(assessmentStatusItem, payload)} />
       <DrilldownModal
         open={drilldownState.open && String(location?.pathname || "") !== "/dashboard"}
         loading={Boolean(drilldownState.loading)}

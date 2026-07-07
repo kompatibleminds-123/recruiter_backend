@@ -12101,10 +12101,6 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
     const isUnmappedApplicant = isApplicantSource && !resolvedJob && Boolean(rawPosition);
     universe.push({
       id: String(candidate?.id || linkedAssessment?.id || "").trim(),
-      candidateId: String(candidate?.id || "").trim(),
-      candidate_id: String(candidate?.id || "").trim(),
-      assessmentId: assessmentId,
-      assessment_id: assessmentId,
       candidateName: String(candidate?.name || linkedAssessment?.candidateName || "").trim(),
       role: String(
         candidate?.role
@@ -12208,10 +12204,6 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
     const assessmentScreeningText = screeningAnswersToSearchText(assessmentScreeningAnswers);
     universe.push({
       id: assessmentId,
-      candidateId: String(assessment?.candidateId || assessment?.candidate_id || "").trim(),
-      candidate_id: String(assessment?.candidateId || assessment?.candidate_id || "").trim(),
-      assessmentId: assessmentId,
-      assessment_id: assessmentId,
       candidateName: String(assessment?.candidateName || "").trim(),
       role: String(assessment?.currentDesignation || assessment?.current_designation || "").trim(),
       position: resolvedJob?.title
