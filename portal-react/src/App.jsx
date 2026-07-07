@@ -18669,23 +18669,6 @@ function PortalApp({ token, onLogout }) {
       }));
     })();
 
-    if (requestedId && token) {
-      void (async () => {
-        try {
-          const fresh = await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(requestedId)}`, token);
-          if (fresh && typeof fresh === "object" && String(fresh.id || "").trim() === requestedId) {
-            applyAssessmentChange({
-              type: "UPSERT_ROW",
-              scope: "all",
-              assessment: fresh,
-              source: "API_RELOAD"
-            });
-          }
-        } catch {
-          // Keep the instantly opened form; latest snapshot can be reloaded on save if needed.
-        }
-      })();
-    }
   }
 
   async function createAssessmentFromCandidate(candidateId) {
