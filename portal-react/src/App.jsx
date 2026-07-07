@@ -16761,29 +16761,7 @@ function PortalApp({ token, onLogout }) {
       setAssessmentStatusId(assessmentId);
       return;
     }
-    const candidateId = String(item?.id || item?.candidate_id || item?.candidateId || "").trim();
-    if (!candidateId) {
-      setStatus("workspace", "Assessment status update is not available for this row.", "error");
-      return;
-    }
-    const matchedAssessment = (Array.isArray(assessmentListItems) ? assessmentListItems : []).find((assessment) => {
-      const linkedCandidateId = String(assessment?.candidateId || "").trim();
-      return linkedCandidateId && linkedCandidateId === candidateId;
-    });
-    if (matchedAssessment?.id) {
-      setAssessmentStatusId(String(matchedAssessment.id));
-      return;
-    }
-    try {
-      const fresh = await api(`/company/assessments/search?q=${encodeURIComponent(candidateId)}&limit=10`, token);
-      const freshAssessment = Array.isArray(fresh?.assessments) ? fresh.assessments.find((assessment) => String(assessment?.candidateId || assessment?.candidate_id || "").trim() === candidateId) : null;
-      if (freshAssessment?.id) {
-        setAssessmentStatusItemSnapshot(freshAssessment);
-        setAssessmentStatusId(String(freshAssessment.id));
-        return;
-      }
-    } catch {}
-    setStatus("workspace", "No linked assessment found for this candidate yet.", "error");
+    setStatus("workspace", "Quick-chip row is missing assessment id. Refresh once and retry.", "error");
   }
 
   function openInterviewStoredCv() {
@@ -24567,24 +24545,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const shouldResolveLatestAssessment = shouldAwaitPersist && options.skipFreshResolve !== true;
     if (shouldResolveLatestAssessment) {
       const incomingAssessmentId = String(assessment?.id || "").trim();
-      const incomingCandidateId = String(assessment?.candidateId || assessment?.candidate_id || "").trim();
       let freshestAssessment = null;
       if (incomingAssessmentId) {
         try {
           const byId = await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(incomingAssessmentId)}`, token).catch(() => null);
           if (byId && typeof byId === "object" && String(byId?.id || "").trim()) {
             freshestAssessment = byId;
-          }
-        } catch {}
-      }
-      if ((!freshestAssessment || !String(freshestAssessment?.id || "").trim()) && incomingCandidateId) {
-        try {
-          const searchResult = await api(`/company/assessments/search?q=${encodeURIComponent(incomingCandidateId)}&limit=10`, token).catch(() => null);
-          const matched = Array.isArray(searchResult?.assessments)
-            ? searchResult.assessments.find((item) => String(item?.candidateId || item?.candidate_id || "").trim() === incomingCandidateId)
-            : null;
-          if (matched && typeof matched === "object" && String(matched?.id || "").trim()) {
-            freshestAssessment = matched;
           }
         } catch {}
       }
@@ -24596,6 +24562,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         }
         return saveAssessmentStatusUpdate(freshestAssessment, payload, { ...options, skipFreshResolve: true });
       }
+      throw new Error("Assessment id missing or stale for this quick-chip row. Refresh once and retry.");
     }
     const lockKey = String(assessment?.id || assessment?.candidateId || "").trim();
     const useInlineAssessmentStatus = String(statusTarget || "").trim() === "assessments";
