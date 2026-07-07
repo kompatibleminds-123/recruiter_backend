@@ -11087,22 +11087,22 @@ function PortalApp({ token, onLogout }) {
     }
     const localMatch = (Array.isArray(assessmentListItems) ? assessmentListItems : []).find((item) => String(item?.id || "").trim() === requestedId) || null;
     const backingMatch = (Array.isArray(state.assessments) ? state.assessments : []).find((item) => String(item?.id || "").trim() === requestedId) || null;
-    if (localMatch) {
-      setAssessmentStatusItemSnapshot(localMatch);
-      return;
-    }
-    if (backingMatch) {
-      setAssessmentStatusItemSnapshot(backingMatch);
-      return;
+    const initialSnapshot = localMatch || backingMatch || null;
+    if (initialSnapshot) {
+      setAssessmentStatusItemSnapshot(initialSnapshot);
     }
     let cancelled = false;
     void (async () => {
       try {
         const fresh = await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(requestedId)}`, token);
         if (cancelled) return;
-        setAssessmentStatusItemSnapshot(fresh && typeof fresh === "object" && String(fresh.id || "").trim() === requestedId ? fresh : null);
+        if (fresh && typeof fresh === "object" && String(fresh.id || "").trim() === requestedId) {
+          setAssessmentStatusItemSnapshot(fresh);
+          return;
+        }
+        if (!initialSnapshot) setAssessmentStatusItemSnapshot(null);
       } catch {
-        if (!cancelled) setAssessmentStatusItemSnapshot(null);
+        if (!cancelled && !initialSnapshot) setAssessmentStatusItemSnapshot(null);
       }
     })();
     return () => {
@@ -16811,6 +16811,19 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function openAssessmentStatusFromSearch(item) {
+    const immediateAssessmentId = String(
+      item?.id
+      || item?.assessment_id
+      || item?.assessmentId
+      || item?.raw?.assessment?.id
+      || item?.assessment?.id
+      || ""
+    ).trim();
+    if (immediateAssessmentId && !isTransientAssessmentId(immediateAssessmentId)) {
+      setAssessmentStatusItemSnapshot(item?.raw?.assessment || item?.assessment || item || null);
+      setAssessmentStatusId(immediateAssessmentId);
+      return;
+    }
     const freshAssessment = await resolveFreshAssessmentForStatus(item, token, assessmentListItems, state.assessments).catch(() => null);
     if (freshAssessment?.id) {
       setAssessmentStatusItemSnapshot(freshAssessment);
