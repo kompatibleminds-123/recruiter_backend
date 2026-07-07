@@ -18563,79 +18563,111 @@ function PortalApp({ token, onLogout }) {
   async function openSavedAssessment(assessmentInput) {
     const requestedId = String(assessmentInput?.id || "").trim();
     const assessment = assessmentInput && typeof assessmentInput === "object" ? assessmentInput : {};
-    setInterviewLatestLoading(false);
-    const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
-    const normalizePhone = (value) => {
-      const digits = String(value || "").replace(/[^\d]/g, "");
-      return digits.length > 10 ? digits.slice(-10) : digits;
-    };
-    const pickDefined = (...values) => values.find((value) => value !== undefined && value !== null);
-    const isSavedAssessment = Boolean(String(assessment?.id || "").trim());
-    const wantedCandidateId = String(assessment?.candidateId || assessment?.candidate_id || "").trim();
-    const wantedEmail = normalizeEmail(assessment?.emailId || assessment?.email || "");
-    const wantedPhone = normalizePhone(assessment?.phoneNumber || assessment?.phone || "");
-    const matchedCandidate = (state.candidates || []).find((item) => {
-      if (wantedCandidateId && String(item.id) === wantedCandidateId) return true;
-      const email = normalizeEmail(item?.email || item?.emailId || "");
-      const phone = normalizePhone(item?.phone || item?.phoneNumber || "");
-      return (wantedEmail && email && wantedEmail === email) || (wantedPhone && phone && wantedPhone === phone);
-    }) || null;
     resetInterviewCvParseTransientState();
-    const candidateDraft = getCandidateDraftState(matchedCandidate || {});
     setInterviewMeta({
-      candidateId: String(matchedCandidate?.id || assessment?.candidateId || ""),
+      candidateId: String(assessment?.candidateId || assessment?.candidate_id || ""),
       assessmentId: String(assessment?.id || ""),
       assessmentUpdatedAt: String(assessment?.updatedAt || assessment?.updated_at || "").trim()
     });
-    const parsedRecruiterBase = normalizeRecruiterMergeBase(matchedCandidate || assessment || {});
-    const cvMeta = decodePortalApplicantMetadata(matchedCandidate || {});
-    const candidateCvAnalysis = cvMeta?.cvAnalysisCache?.result
-      ? buildInterviewCvAnalysis({
-          currentCompany: assessment?.currentCompany || candidateDraft.currentCompany || matchedCandidate?.company || "",
-          currentDesignation: assessment?.currentDesignation || candidateDraft.currentDesignation || matchedCandidate?.role || "",
-          totalExperience: assessment?.totalExperience || candidateDraft.totalExperience || matchedCandidate?.experience || "",
-          currentOrgTenure: assessment?.currentOrgTenure || candidateDraft.currentOrgTenure || matchedCandidate?.current_org_tenure || ""
-        }, cvMeta.cvAnalysisCache.result, cvMeta.cvAnalysisCache.storedFile || null)
-      : null;
     setInterviewForm({
-      candidateName: String(pickDefined(assessment?.candidateName, candidateDraft.candidateName, matchedCandidate?.name) || ""),
-      phoneNumber: String(pickDefined(assessment?.phoneNumber, candidateDraft.phoneNumber, matchedCandidate?.phone) || ""),
-      emailId: String(pickDefined(assessment?.emailId, candidateDraft.emailId, matchedCandidate?.email) || ""),
-      linkedin: String(pickDefined(assessment?.linkedinUrl, candidateDraft.linkedin, matchedCandidate?.linkedin) || ""),
-      location: String(pickDefined(assessment?.location, candidateDraft.location, matchedCandidate?.location) || ""),
-      gender: String(pickDefined(assessment?.gender, candidateDraft.gender, matchedCandidate?.gender) || ""),
-      currentCtc: String(pickDefined(assessment?.currentCtc, candidateDraft.currentCtc, matchedCandidate?.current_ctc) || ""),
-      expectedCtc: String(pickDefined(assessment?.expectedCtc, candidateDraft.expectedCtc, matchedCandidate?.expected_ctc) || ""),
-      noticePeriod: String(pickDefined(assessment?.noticePeriod, candidateDraft.noticePeriod, matchedCandidate?.notice_period, parsedRecruiterBase.notice_period) || ""),
-      offerInHand: String(pickDefined(assessment?.offerInHand, parsedRecruiterBase.offer_in_hand) || ""),
-      lwdOrDoj: sanitizeLwdOrDojValue(pickDefined(assessment?.lwdOrDoj, candidateDraft.lwdOrDoj, matchedCandidate?.lwd_or_doj, parsedRecruiterBase.lwd_or_doj) || ""),
-      // Keep these fields source-of-truth from assessment/draft only.
-      currentCompany: String(isSavedAssessment ? (assessment?.currentCompany || "") : (pickDefined(assessment?.currentCompany, candidateDraft.currentCompany, matchedCandidate?.company) || "")),
-      currentDesignation: String(isSavedAssessment ? (assessment?.currentDesignation || "") : (pickDefined(assessment?.currentDesignation, candidateDraft.currentDesignation, matchedCandidate?.role) || "")),
-      totalExperience: String(isSavedAssessment ? (assessment?.totalExperience || "") : (pickDefined(assessment?.totalExperience, candidateDraft.totalExperience, matchedCandidate?.experience) || "")),
-      relevantExperience: String(isSavedAssessment ? (assessment?.relevantExperience || "") : (pickDefined(assessment?.relevantExperience, candidateDraft.relevantExperience) || "")),
-      highestEducation: String(isSavedAssessment ? (assessment?.highestEducation || "") : (pickDefined(assessment?.highestEducation, candidateDraft.highestEducation) || "")),
-      currentOrgTenure: String(isSavedAssessment ? (assessment?.currentOrgTenure || "") : (pickDefined(assessment?.currentOrgTenure, candidateDraft.currentOrgTenure) || "")),
-      experienceTimeline: String(isSavedAssessment ? (assessment?.experienceTimeline || assessment?.experience_timeline || "") : (pickDefined(assessment?.experienceTimeline, assessment?.experience_timeline, candidateDraft.experienceTimeline) || "")),
-      reasonForChange: String(isSavedAssessment ? (assessment?.reasonForChange || "") : (pickDefined(assessment?.reasonForChange, candidateDraft.reasonForChange) || "")),
-      cautiousIndicators: String(isSavedAssessment ? (assessment?.cautiousIndicators || "") : (pickDefined(assessment?.cautiousIndicators, candidateDraft.cautiousIndicators) || "")),
-      clientName: String(isSavedAssessment ? (assessment?.clientName || "") : (pickDefined(assessment?.clientName, candidateDraft.clientName, matchedCandidate?.client_name) || "")),
-      jdTitle: String(isSavedAssessment ? (assessment?.jdTitle || "") : (pickDefined(assessment?.jdTitle, candidateDraft.jdTitle, matchedCandidate?.jd_title) || "")),
-      pipelineStage: String(pickDefined(assessment?.pipelineStage, "Under Interview Process") || "Under Interview Process"),
-      candidateStatus: normalizeAssessmentStatusLabel(assessment?.candidateStatus) || normalizeAssessmentStatusLabel(candidateDraft?.candidateStatus) || "Screening in progress",
+      candidateName: String(assessment?.candidateName || ""),
+      phoneNumber: String(assessment?.phoneNumber || ""),
+      emailId: String(assessment?.emailId || ""),
+      linkedin: String(assessment?.linkedinUrl || ""),
+      location: String(assessment?.location || ""),
+      gender: String(assessment?.gender || ""),
+      currentCtc: String(assessment?.currentCtc || ""),
+      expectedCtc: String(assessment?.expectedCtc || ""),
+      noticePeriod: String(assessment?.noticePeriod || ""),
+      offerInHand: String(assessment?.offerInHand || ""),
+      lwdOrDoj: sanitizeLwdOrDojValue(assessment?.lwdOrDoj || ""),
+      currentCompany: String(assessment?.currentCompany || ""),
+      currentDesignation: String(assessment?.currentDesignation || ""),
+      totalExperience: String(assessment?.totalExperience || ""),
+      relevantExperience: String(assessment?.relevantExperience || ""),
+      highestEducation: String(assessment?.highestEducation || ""),
+      currentOrgTenure: String(assessment?.currentOrgTenure || ""),
+      experienceTimeline: String(assessment?.experienceTimeline || assessment?.experience_timeline || ""),
+      reasonForChange: String(assessment?.reasonForChange || ""),
+      cautiousIndicators: String(assessment?.cautiousIndicators || ""),
+      clientName: String(assessment?.clientName || ""),
+      jdTitle: String(assessment?.jdTitle || ""),
+      pipelineStage: String(assessment?.pipelineStage || "Under Interview Process"),
+      candidateStatus: normalizeAssessmentStatusLabel(assessment?.candidateStatus) || "Screening in progress",
       followUpAt: toDateInputValue(assessment?.followUpAt),
       interviewAt: toDateInputValue(assessment?.interviewAt),
-      recruiterNotes: String(isSavedAssessment ? (assessment?.recruiterNotes || "") : (pickDefined(assessment?.recruiterNotes, candidateDraft.recruiterNotes, matchedCandidate?.recruiter_context_notes) || "")),
-      callbackNotes: String(isSavedAssessment ? (assessment?.callbackNotes || "") : (pickDefined(assessment?.callbackNotes, candidateDraft.callbackNotes, matchedCandidate?.notes) || "")),
-      otherPointers: String(isSavedAssessment ? (assessment?.otherPointers || "") : (pickDefined(assessment?.otherPointers, candidateDraft.otherPointers, matchedCandidate?.other_pointers) || "")),
-      tags: candidateDraft.tags || (Array.isArray(matchedCandidate?.skills) ? matchedCandidate.skills.join(", ") : ""),
-      jdScreeningAnswers: (isSavedAssessment ? (assessment?.jdScreeningAnswers || {}) : (pickDefined(assessment?.jdScreeningAnswers, candidateDraft.jdScreeningAnswers) || {})),
-      cvAnalysis: assessment?.cvAnalysis || candidateCvAnalysis || null,
+      recruiterNotes: String(assessment?.recruiterNotes || ""),
+      callbackNotes: String(assessment?.callbackNotes || ""),
+      otherPointers: String(assessment?.otherPointers || ""),
+      tags: "",
+      jdScreeningAnswers: assessment?.jdScreeningAnswers || {},
+      cvAnalysis: assessment?.cvAnalysis || null,
       cvAnalysisApplied: Boolean(assessment?.cvAnalysisApplied),
       statusHistory: Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : []
     });
     navigate("/interview");
     setStatus("interview", `Opened saved assessment for ${assessment?.candidateName || "candidate"}.`, "ok");
+
+    void (async () => {
+      const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+      const normalizePhone = (value) => {
+        const digits = String(value || "").replace(/[^\d]/g, "");
+        return digits.length > 10 ? digits.slice(-10) : digits;
+      };
+      const pickDefined = (...values) => values.find((value) => value !== undefined && value !== null);
+      const wantedCandidateId = String(assessment?.candidateId || assessment?.candidate_id || "").trim();
+      const wantedEmail = normalizeEmail(assessment?.emailId || assessment?.email || "");
+      const wantedPhone = normalizePhone(assessment?.phoneNumber || assessment?.phone || "");
+      const matchedCandidate = (state.candidates || []).find((item) => {
+        if (wantedCandidateId && String(item.id) === wantedCandidateId) return true;
+        const email = normalizeEmail(item?.email || item?.emailId || "");
+        const phone = normalizePhone(item?.phone || item?.phoneNumber || "");
+        return (wantedEmail && email && wantedEmail === email) || (wantedPhone && phone && wantedPhone === phone);
+      }) || null;
+      if (!matchedCandidate) return;
+      const candidateDraft = getCandidateDraftState(matchedCandidate || {});
+      const parsedRecruiterBase = normalizeRecruiterMergeBase(matchedCandidate || assessment || {});
+      const cvMeta = decodePortalApplicantMetadata(matchedCandidate || {});
+      const candidateCvAnalysis = cvMeta?.cvAnalysisCache?.result
+        ? buildInterviewCvAnalysis({
+            currentCompany: assessment?.currentCompany || candidateDraft.currentCompany || matchedCandidate?.company || "",
+            currentDesignation: assessment?.currentDesignation || candidateDraft.currentDesignation || matchedCandidate?.role || "",
+            totalExperience: assessment?.totalExperience || candidateDraft.totalExperience || matchedCandidate?.experience || "",
+            currentOrgTenure: assessment?.currentOrgTenure || candidateDraft.currentOrgTenure || matchedCandidate?.current_org_tenure || ""
+          }, cvMeta.cvAnalysisCache.result, cvMeta.cvAnalysisCache.storedFile || null)
+        : null;
+      setInterviewMeta((current) => ({
+        ...current,
+        candidateId: String(matchedCandidate?.id || assessment?.candidateId || current?.candidateId || "")
+      }));
+      setInterviewForm((current) => ({
+        ...current,
+        candidateName: String(pickDefined(current?.candidateName, assessment?.candidateName, candidateDraft.candidateName, matchedCandidate?.name) || ""),
+        phoneNumber: String(pickDefined(current?.phoneNumber, assessment?.phoneNumber, candidateDraft.phoneNumber, matchedCandidate?.phone) || ""),
+        emailId: String(pickDefined(current?.emailId, assessment?.emailId, candidateDraft.emailId, matchedCandidate?.email) || ""),
+        linkedin: String(pickDefined(current?.linkedin, assessment?.linkedinUrl, candidateDraft.linkedin, matchedCandidate?.linkedin) || ""),
+        location: String(pickDefined(current?.location, assessment?.location, candidateDraft.location, matchedCandidate?.location) || ""),
+        gender: String(pickDefined(current?.gender, assessment?.gender, candidateDraft.gender, matchedCandidate?.gender) || ""),
+        currentCtc: String(pickDefined(current?.currentCtc, assessment?.currentCtc, candidateDraft.currentCtc, matchedCandidate?.current_ctc) || ""),
+        expectedCtc: String(pickDefined(current?.expectedCtc, assessment?.expectedCtc, candidateDraft.expectedCtc, matchedCandidate?.expected_ctc) || ""),
+        noticePeriod: String(pickDefined(current?.noticePeriod, assessment?.noticePeriod, candidateDraft.noticePeriod, matchedCandidate?.notice_period, parsedRecruiterBase.notice_period) || ""),
+        offerInHand: String(pickDefined(current?.offerInHand, assessment?.offerInHand, candidateDraft.offerInHand, parsedRecruiterBase.offer_in_hand) || ""),
+        lwdOrDoj: sanitizeLwdOrDojValue(pickDefined(current?.lwdOrDoj, assessment?.lwdOrDoj, candidateDraft.lwdOrDoj, matchedCandidate?.lwd_or_doj, parsedRecruiterBase.lwd_or_doj) || ""),
+        highestEducation: String(pickDefined(current?.highestEducation, assessment?.highestEducation, candidateDraft.highestEducation, matchedCandidate?.highest_education, matchedCandidate?.highestEducation) || ""),
+        recruiterNotes: String(pickDefined(current?.recruiterNotes, assessment?.recruiterNotes, candidateDraft.recruiterNotes, matchedCandidate?.recruiter_context_notes) || ""),
+        callbackNotes: String(pickDefined(current?.callbackNotes, assessment?.callbackNotes, candidateDraft.callbackNotes, matchedCandidate?.notes) || ""),
+        otherPointers: String(pickDefined(current?.otherPointers, assessment?.otherPointers, candidateDraft.otherPointers, matchedCandidate?.other_pointers) || ""),
+        tags: current?.tags || candidateDraft.tags || (Array.isArray(matchedCandidate?.skills) ? matchedCandidate.skills.join(", ") : ""),
+        jdScreeningAnswers: current?.jdScreeningAnswers && Object.keys(current.jdScreeningAnswers || {}).length
+          ? current.jdScreeningAnswers
+          : (assessment?.jdScreeningAnswers || candidateDraft.jdScreeningAnswers || {}),
+        cvAnalysis: current?.cvAnalysis || assessment?.cvAnalysis || candidateCvAnalysis || null,
+        cvAnalysisApplied: current?.cvAnalysisApplied === true ? true : (Boolean(assessment?.cvAnalysisApplied) || candidateDraft.cvAnalysisApplied === true),
+        statusHistory: Array.isArray(current?.statusHistory) && current.statusHistory.length
+          ? current.statusHistory
+          : (Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : Array.isArray(candidateDraft?.statusHistory) ? candidateDraft.statusHistory : [])
+      }));
+    })();
 
     if (requestedId && token) {
       void (async () => {
