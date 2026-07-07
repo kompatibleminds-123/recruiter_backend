@@ -11163,6 +11163,7 @@ function PortalApp({ token, onLogout }) {
   const attemptsCandidate = (state.candidates || []).find((item) => String(item.id) === String(attemptsCandidateId)) || null;
   const assessmentStatusItem = assessmentStatusItemSnapshot
     || (Array.isArray(assessmentListItems) ? assessmentListItems.find((item) => String(item.id) === String(assessmentStatusId)) : null)
+    || (Array.isArray(state.assessments) ? state.assessments.find((item) => String(item.id) === String(assessmentStatusId)) : null)
     || null;
   const quickUpdateCandidate = (state.candidates || []).find((item) => String(item.id) === String(quickUpdateCandidateId)) || null;
   const quickUpdateLinkedAssessment = useMemo(() => {
@@ -18590,7 +18591,7 @@ function PortalApp({ token, onLogout }) {
     });
     navigate("/interview");
     setStatus("interview", `Opening saved assessment for ${assessment?.candidateName || "candidate"}...`, "ok");
-    setTimeout(() => {
+    const hydrateSavedAssessment = () => {
     const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
     const normalizePhone = (value) => {
       const digits = String(value || "").replace(/[^\d]/g, "");
@@ -18657,7 +18658,14 @@ function PortalApp({ token, onLogout }) {
     });
     setInterviewLatestLoading(false);
     setStatus("interview", `Opened saved assessment for ${assessment?.candidateName || "candidate"}.`, "ok");
-    }, 0);
+    };
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(hydrateSavedAssessment);
+      });
+    } else {
+      setTimeout(hydrateSavedAssessment, 0);
+    }
 
     if (requestedId && token) {
       void (async () => {
@@ -24639,6 +24647,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
   async function saveAssessmentStatusUpdate(assessment, payload, options = {}) {
     const statusTarget = options.statusTarget || "assessments";
+    const useInlineRequestedStatus = String(statusTarget || "").trim() === "assessments";
+    const pushRequestedAssessmentStatus = (message, kind = "") => {
+      if (useInlineRequestedStatus) {
+        setAssessmentInlineStatus(assessment?.id || assessment?.candidateId, message, kind);
+      } else {
+        setStatus(statusTarget, message, kind);
+      }
+    };
+    pushRequestedAssessmentStatus("Saving status update...", "ok");
     const freshAssessment = await resolveFreshAssessmentForStatus(assessment, token, assessmentListItems, state.assessments).catch(() => null);
     const activeAssessment = freshAssessment && typeof freshAssessment === "object" ? freshAssessment : assessment;
     if (!activeAssessment?.id) {
