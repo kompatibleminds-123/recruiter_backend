@@ -24564,6 +24564,39 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   async function saveAssessmentStatusUpdate(assessment, payload, options = {}) {
     const statusTarget = options.statusTarget || "assessments";
     const shouldAwaitPersist = options.awaitPersist === true;
+    const shouldResolveLatestAssessment = shouldAwaitPersist && options.skipFreshResolve !== true;
+    if (shouldResolveLatestAssessment) {
+      const incomingAssessmentId = String(assessment?.id || "").trim();
+      const incomingCandidateId = String(assessment?.candidateId || assessment?.candidate_id || "").trim();
+      let freshestAssessment = null;
+      if (incomingAssessmentId) {
+        try {
+          const byId = await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(incomingAssessmentId)}`, token).catch(() => null);
+          if (byId && typeof byId === "object" && String(byId?.id || "").trim()) {
+            freshestAssessment = byId;
+          }
+        } catch {}
+      }
+      if ((!freshestAssessment || !String(freshestAssessment?.id || "").trim()) && incomingCandidateId) {
+        try {
+          const searchResult = await api(`/company/assessments/search?q=${encodeURIComponent(incomingCandidateId)}&limit=10`, token).catch(() => null);
+          const matched = Array.isArray(searchResult?.assessments)
+            ? searchResult.assessments.find((item) => String(item?.candidateId || item?.candidate_id || "").trim() === incomingCandidateId)
+            : null;
+          if (matched && typeof matched === "object" && String(matched?.id || "").trim()) {
+            freshestAssessment = matched;
+          }
+        } catch {}
+      }
+      if (freshestAssessment && String(freshestAssessment?.id || "").trim()) {
+        const freshestId = String(freshestAssessment.id || "").trim();
+        if (freshestId && freshestId !== String(assessment?.id || "").trim()) {
+          setAssessmentStatusItemSnapshot(freshestAssessment);
+          setAssessmentStatusId(freshestId);
+        }
+        return saveAssessmentStatusUpdate(freshestAssessment, payload, { ...options, skipFreshResolve: true });
+      }
+    }
     const lockKey = String(assessment?.id || assessment?.candidateId || "").trim();
     const useInlineAssessmentStatus = String(statusTarget || "").trim() === "assessments";
     const pushAssessmentStatus = (message, kind = "") => {
