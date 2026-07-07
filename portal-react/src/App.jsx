@@ -8111,6 +8111,52 @@ function patchDashboardAgendaSnapshotForAssessment(snapshot, assessment) {
   return nextSnapshot;
 }
 
+function normalizeCandidateSmartChipRowsSnapshot(snapshot = {}) {
+  if (!snapshot || typeof snapshot !== "object") return {};
+  const normalizeRow = (row = {}) => {
+    if (!row || typeof row !== "object") return row;
+    const item = row?.item && typeof row.item === "object" ? row.item : null;
+    if (!item) return row;
+    const rawAssessment = item?.raw?.assessment && typeof item.raw.assessment === "object" ? item.raw.assessment : null;
+    const directAssessment = item?.assessment && typeof item.assessment === "object" ? item.assessment : null;
+    const resolvedAssessment = rawAssessment || directAssessment || null;
+    const resolvedAssessmentId = String(
+      item?.assessment_id
+      || item?.assessmentId
+      || rawAssessment?.id
+      || directAssessment?.id
+      || ""
+    ).trim();
+    const resolvedCandidateId = String(
+      item?.candidate_id
+      || item?.candidateId
+      || item?.raw?.candidate?.id
+      || item?.id
+      || ""
+    ).trim();
+    return {
+      ...row,
+      item: {
+        ...item,
+        candidate_id: resolvedCandidateId || item?.candidate_id || item?.candidateId || "",
+        candidateId: resolvedCandidateId || item?.candidateId || item?.candidate_id || "",
+        assessment_id: resolvedAssessmentId || item?.assessment_id || item?.assessmentId || "",
+        assessmentId: resolvedAssessmentId || item?.assessmentId || item?.assessment_id || "",
+        assessment: resolvedAssessment || item?.assessment || null,
+        raw: item?.raw && typeof item.raw === "object"
+          ? {
+              ...item.raw,
+              assessment: resolvedAssessment || item.raw.assessment || null
+            }
+          : item?.raw
+      }
+    };
+  };
+  return Object.fromEntries(
+    Object.entries(snapshot).map(([key, rows]) => [key, Array.isArray(rows) ? rows.map((row) => normalizeRow(row)) : []])
+  );
+}
+
 function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs = true, currentUser = null, users = [] }) {
   const location = useLocation();
   const forcedCampaignIdFromUrl = useMemo(() => {
@@ -11180,8 +11226,9 @@ function PortalApp({ token, onLogout }) {
         joined_candidates: Array.isArray(parsed.joined_candidates) ? parsed.joined_candidates : [],
         cv_shared: Array.isArray(parsed.cv_shared) ? parsed.cv_shared : []
       };
-      if (isEmptySmartChipSnapshot(normalized)) return;
-      candidateSmartChipRowsStableRef.current = normalized;
+      const normalizedRows = normalizeCandidateSmartChipRowsSnapshot(normalized);
+      if (isEmptySmartChipSnapshot(normalizedRows)) return;
+      candidateSmartChipRowsStableRef.current = normalizedRows;
     } catch {
       // Ignore cache parse issues and rebuild from live data.
     }
@@ -15757,7 +15804,7 @@ function PortalApp({ token, onLogout }) {
       });
       if (candidateSmartChipSummaryRequestRef.current !== requestId) return;
       const payload = result?.result && typeof result.result === "object" ? result.result : result;
-      const rows = payload?.rows && typeof payload.rows === "object" ? payload.rows : {};
+      const rows = normalizeCandidateSmartChipRowsSnapshot(payload?.rows && typeof payload.rows === "object" ? payload.rows : {});
       const summary = payload?.summary && typeof payload.summary === "object" ? payload.summary : null;
       candidateSmartChipRowsStableRef.current = rows;
       setCandidateSmartChipRowsRemote(rows);
