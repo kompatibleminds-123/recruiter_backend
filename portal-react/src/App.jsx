@@ -17821,7 +17821,14 @@ function PortalApp({ token, onLogout }) {
         setStatus("quickUpdate", "Date of joining is required for Joined.", "error");
         return;
       }
-      await saveAssessmentStatusUpdate(quickUpdateLinkedAssessment, {
+      const quickAssessmentId = String(quickUpdateLinkedAssessment?.id || "").trim();
+      const freshQuickAssessment = quickAssessmentId
+        ? await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(quickAssessmentId)}`, token).catch(() => null)
+        : null;
+      const assessmentForSave = freshQuickAssessment && typeof freshQuickAssessment === "object"
+        ? freshQuickAssessment
+        : quickUpdateLinkedAssessment;
+      await saveAssessmentStatusUpdate(assessmentForSave, {
         candidateStatus,
         atValue: quickUpdateStatusAt || "",
         notes: "",
