@@ -8072,6 +8072,57 @@ function isTransientAssessmentId(value) {
   return /^(quick-note|assessment)-/i.test(String(value || "").trim());
 }
 
+async function resolveFreshAssessmentForStatus(input, token, assessmentListItems = [], stateAssessments = []) {
+  const assessmentId = String(
+    input?.id
+    || input?.assessment_id
+    || input?.assessmentId
+    || input?.raw?.assessment?.id
+    || input?.assessment?.id
+    || ""
+  ).trim();
+  const candidateId = String(
+    input?.candidateId
+    || input?.candidate_id
+    || input?.raw?.assessment?.candidateId
+    || input?.raw?.assessment?.candidate_id
+    || input?.raw?.candidate?.id
+    || input?.id
+    || ""
+  ).trim();
+  if (assessmentId && !isTransientAssessmentId(assessmentId) && token) {
+    const byId = await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(assessmentId)}`, token).catch(() => null);
+    if (byId && typeof byId === "object" && String(byId?.id || "").trim() === assessmentId) {
+      return byId;
+    }
+  }
+  const localCandidates = [
+    ...(Array.isArray(assessmentListItems) ? assessmentListItems : []),
+    ...(Array.isArray(stateAssessments) ? stateAssessments : [])
+  ];
+  if (candidateId) {
+    const localMatch = localCandidates
+      .filter((assessment) => String(assessment?.candidateId || assessment?.candidate_id || "").trim() === candidateId)
+      .sort((a, b) => parseDateLike(String(b?.updatedAt || b?.updated_at || b?.generatedAt || 0)) - parseDateLike(String(a?.updatedAt || a?.updated_at || a?.generatedAt || 0)))[0] || null;
+    if (localMatch?.id && !isTransientAssessmentId(localMatch.id)) {
+      const refreshedLocal = token
+        ? await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(String(localMatch.id))}`, token).catch(() => null)
+        : null;
+      return refreshedLocal && typeof refreshedLocal === "object" ? refreshedLocal : localMatch;
+    }
+    if (token) {
+      const searched = await api(`/company/assessments/search?q=${encodeURIComponent(candidateId)}&limit=10`, token).catch(() => null);
+      const searchedMatch = Array.isArray(searched?.assessments)
+        ? searched.assessments
+          .filter((assessment) => String(assessment?.candidateId || assessment?.candidate_id || "").trim() === candidateId)
+          .sort((a, b) => parseDateLike(String(b?.updatedAt || b?.updated_at || b?.generatedAt || 0)) - parseDateLike(String(a?.updatedAt || a?.updated_at || a?.generatedAt || 0)))[0]
+        : null;
+      if (searchedMatch?.id) return searchedMatch;
+    }
+  }
+  return null;
+}
+
 function patchDashboardAgendaSnapshotForAssessment(snapshot, assessment) {
   if (!snapshot || typeof snapshot !== "object" || !assessment || typeof assessment !== "object") return snapshot;
   const assessmentId = String(assessment?.id || assessment?.assessmentId || "").trim();
@@ -16760,33 +16811,12 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function openAssessmentStatusFromSearch(item) {
-    const assessmentId = String(item?.assessment_id || item?.assessmentId || item?.raw?.assessment?.id || item?.assessment?.id || "").trim();
-    if (assessmentId && !isTransientAssessmentId(assessmentId)) {
-      setAssessmentStatusId(assessmentId);
+    const freshAssessment = await resolveFreshAssessmentForStatus(item, token, assessmentListItems, state.assessments).catch(() => null);
+    if (freshAssessment?.id) {
+      setAssessmentStatusItemSnapshot(freshAssessment);
+      setAssessmentStatusId(String(freshAssessment.id));
       return;
     }
-    const candidateId = String(item?.id || item?.candidate_id || item?.candidateId || "").trim();
-    if (!candidateId) {
-      setStatus("workspace", "Assessment status update is not available for this row.", "error");
-      return;
-    }
-    const matchedAssessment = (Array.isArray(assessmentListItems) ? assessmentListItems : []).find((assessment) => {
-      const linkedCandidateId = String(assessment?.candidateId || "").trim();
-      return linkedCandidateId && linkedCandidateId === candidateId;
-    });
-    if (matchedAssessment?.id && !isTransientAssessmentId(matchedAssessment.id)) {
-      setAssessmentStatusId(String(matchedAssessment.id));
-      return;
-    }
-    try {
-      const fresh = await api(`/company/assessments/search?q=${encodeURIComponent(candidateId)}&limit=10`, token);
-      const freshAssessment = Array.isArray(fresh?.assessments) ? fresh.assessments.find((assessment) => String(assessment?.candidateId || assessment?.candidate_id || "").trim() === candidateId) : null;
-      if (freshAssessment?.id) {
-        setAssessmentStatusItemSnapshot(freshAssessment);
-        setAssessmentStatusId(String(freshAssessment.id));
-        return;
-      }
-    } catch {}
     setStatus("workspace", "No linked assessment found for this candidate yet.", "error");
   }
 
@@ -18507,7 +18537,15 @@ function PortalApp({ token, onLogout }) {
 
   async function openSavedAssessment(assessmentInput) {
     const requestedId = String(assessmentInput?.id || "").trim();
-    const assessment = assessmentInput && typeof assessmentInput === "object" ? assessmentInput : {};
+    let assessment = assessmentInput && typeof assessmentInput === "object" ? assessmentInput : {};
+    if (requestedId && token) {
+      try {
+        const freshAssessment = await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(requestedId)}`, token).catch(() => null);
+        if (freshAssessment && typeof freshAssessment === "object" && String(freshAssessment?.id || "").trim() === requestedId) {
+          assessment = freshAssessment;
+        }
+      } catch {}
+    }
     setInterviewLatestLoading(false);
     const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
     const normalizePhone = (value) => {
@@ -24560,11 +24598,16 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
   async function saveAssessmentStatusUpdate(assessment, payload, options = {}) {
     const statusTarget = options.statusTarget || "assessments";
-    const lockKey = String(assessment?.id || assessment?.candidateId || "").trim();
+    const freshAssessment = await resolveFreshAssessmentForStatus(assessment, token, assessmentListItems, state.assessments).catch(() => null);
+    const activeAssessment = freshAssessment && typeof freshAssessment === "object" ? freshAssessment : assessment;
+    if (!activeAssessment?.id) {
+      throw new Error("Latest assessment record could not be loaded. Please reopen and retry.");
+    }
+    const lockKey = String(activeAssessment?.id || activeAssessment?.candidateId || "").trim();
     const useInlineAssessmentStatus = String(statusTarget || "").trim() === "assessments";
     const pushAssessmentStatus = (message, kind = "") => {
       if (useInlineAssessmentStatus) {
-        setAssessmentInlineStatus(assessment?.id || assessment?.candidateId, message, kind);
+        setAssessmentInlineStatus(activeAssessment?.id || activeAssessment?.candidateId, message, kind);
       } else {
         setStatus(statusTarget, message, kind);
       }
@@ -24611,7 +24654,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       : "";
     const readableNotes = formatReadableUpdateText(combinedNotes);
     const confirmMessage = buildDetectedUpdateConfirmation({
-      candidateName: assessment?.candidateName || "",
+      candidateName: activeAssessment?.candidateName || "",
       status: nextStatus,
       interviewAt: isInterviewStatus ? atIso : "",
       followUpAt: !isInterviewStatus && (isOffered || isJoined) ? atIso : "",
@@ -24623,23 +24666,23 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     if (!window.confirm(confirmMessage)) return;
 
     const nextAssessment = {
-      ...assessment,
+      ...activeAssessment,
       candidateStatus: nextStatus,
-      pipelineStage: mapAssessmentStatusToPipelineStage(nextStatus) || assessment?.pipelineStage || "",
+      pipelineStage: mapAssessmentStatusToPipelineStage(nextStatus) || activeAssessment?.pipelineStage || "",
       callbackNotes: appendReadableUpdateNote(
-        assessment?.callbackNotes || "",
+        activeAssessment?.callbackNotes || "",
         [readableNotes, buildAssessmentStatusNoteLine(nextStatus, atIso, { offerAmount: payload?.offerAmount })].filter(Boolean).join("\n")
       ),
-      interviewAttempts: Array.isArray(assessment?.interviewAttempts) ? [...assessment.interviewAttempts] : [],
-      statusHistory: Array.isArray(assessment?.statusHistory) ? [...assessment.statusHistory] : [],
-      offerAmount: (isOffered || isJoined) ? String(payload?.offerAmount || inferred.offerAmount || assessment?.offerAmount || "").trim() : (assessment?.offerAmount || ""),
-      offerDoj: (isOffered || isJoined) ? atIso : (assessment?.offerDoj || assessment?.offer_doj || ""),
-      lwdOrDoj: (isOffered || isJoined) ? atIso : (assessment?.lwdOrDoj || assessment?.lwd_or_doj || assessment?.offerDoj || assessment?.offer_doj || ""),
-      expectedDoj: isOffered ? atIso : (assessment?.expectedDoj || ""),
-      dateOfJoining: isJoined ? atIso : (assessment?.dateOfJoining || ""),
+      interviewAttempts: Array.isArray(activeAssessment?.interviewAttempts) ? [...activeAssessment.interviewAttempts] : [],
+      statusHistory: Array.isArray(activeAssessment?.statusHistory) ? [...activeAssessment.statusHistory] : [],
+      offerAmount: (isOffered || isJoined) ? String(payload?.offerAmount || inferred.offerAmount || activeAssessment?.offerAmount || "").trim() : (activeAssessment?.offerAmount || ""),
+      offerDoj: (isOffered || isJoined) ? atIso : (activeAssessment?.offerDoj || activeAssessment?.offer_doj || ""),
+      lwdOrDoj: (isOffered || isJoined) ? atIso : (activeAssessment?.lwdOrDoj || activeAssessment?.lwd_or_doj || activeAssessment?.offerDoj || activeAssessment?.offer_doj || ""),
+      expectedDoj: isOffered ? atIso : (activeAssessment?.expectedDoj || ""),
+      dateOfJoining: isJoined ? atIso : (activeAssessment?.dateOfJoining || ""),
       updatedAt: new Date().toISOString()
     };
-    const expectedUpdatedAt = String(assessment?.updatedAt || assessment?.updated_at || "").trim();
+    const expectedUpdatedAt = String(activeAssessment?.updatedAt || activeAssessment?.updated_at || "").trim();
     const statusUpdatedAt = new Date().toISOString();
     nextAssessment.statusHistory.push({
       status: nextStatus,
@@ -24648,7 +24691,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       notes: readableNotes || "",
       inferText,
       manualRemarks,
-      offerAmount: (isOffered || isJoined) ? String(payload?.offerAmount || inferred.offerAmount || assessment?.offerAmount || "").trim() : "",
+      offerAmount: (isOffered || isJoined) ? String(payload?.offerAmount || inferred.offerAmount || activeAssessment?.offerAmount || "").trim() : "",
       atLabel: buildAssessmentStatusNoteLine(nextStatus, atIso, { offerAmount: payload?.offerAmount })
     });
 
@@ -24678,14 +24721,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       });
     }
 
-    nextAssessment.interviewAt = isInterviewStatus ? (atIso || assessment?.interviewAt || "") : "";
+    nextAssessment.interviewAt = isInterviewStatus ? (atIso || activeAssessment?.interviewAt || "") : "";
     nextAssessment.followUpAt = !isInterviewStatus && (isOffered || isJoined) ? atIso : "";
     if (options.clearAgendaSchedule) {
       nextAssessment.interviewAt = "";
       nextAssessment.followUpAt = "";
     }
 
-    const linkedCandidateId = String(assessment?.candidateId || "").trim();
+    const linkedCandidateId = String(activeAssessment?.candidateId || "").trim();
     const currentCandidate = linkedCandidateId
       ? ((state.candidates || []).find((item) => String(item.id || "") === linkedCandidateId) || {})
       : {};
@@ -24723,83 +24766,60 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       nextScreeningAnswers = currentDraft.jdScreeningAnswers || parsePortalObjectField(currentCandidate?.screening_answers || currentCandidate?.screeningAnswers);
     }
     if (lockKey) assessmentStatusSaveLockRef.current.add(lockKey);
+    pushAssessmentStatus("Saving status update...", "ok");
 
-    // Optimistic UI first: reflect status immediately everywhere.
-    applyAssessmentChange({
-      type: "STATUS_UPDATE",
-      scope: "all",
-      assessment: nextAssessment,
-      source: "LOCAL_PATCH"
-    });
-    applyOptimisticDashboardAgendaAssessmentPatch(nextAssessment);
-    patchCandidateSmartChipRowsForAssessment(nextAssessment);
-    if (candidatePatch && linkedCandidateId) {
-      const optimisticUpdatedAt = new Date().toISOString();
-      setState((current) => {
-        const applyPatch = (items) => Array.isArray(items)
-          ? items.map((item) => String(item?.id || "") === linkedCandidateId
-            ? { ...item, ...candidatePatch, draft_payload: nextDraftPayload, updated_at: optimisticUpdatedAt, updatedAt: optimisticUpdatedAt }
-            : item)
-          : items;
-        return {
-          ...current,
-          candidates: applyPatch(current.candidates),
-          databaseCandidates: applyPatch(current.databaseCandidates)
-        };
+    try {
+      const savedAssessment = await api("/company/assessments", token, "POST", {
+        assessment: {
+          ...nextAssessment,
+          expectedUpdatedAt,
+          generatedAt: activeAssessment?.generatedAt || new Date().toISOString()
+        }
       });
-    }
-    pushAssessmentStatus(`Updated status for ${assessment?.candidateName || "candidate"}.`, "ok");
-    if (options.closeModal !== false) setAssessmentStatusId("");
-
-    // Persist in background; if fails, surface error and refresh to resync.
-    void (async () => {
-      try {
-        const savedAssessment = await api("/company/assessments", token, "POST", {
-          assessment: {
-            ...nextAssessment,
-            expectedUpdatedAt,
-            generatedAt: assessment?.generatedAt || new Date().toISOString()
+      const syncedCandidate = linkedCandidateId && candidatePatch
+        ? {
+            ...currentCandidate,
+            ...candidatePatch,
+            draft_payload: nextDraftPayload,
+            screening_answers: nextScreeningAnswers
           }
-        });
-        const syncedCandidate = linkedCandidateId && candidatePatch
-          ? {
-              ...currentCandidate,
-              ...candidatePatch,
-              draft_payload: nextDraftPayload,
-              screening_answers: nextScreeningAnswers
-            }
-          : currentCandidate;
-        const persistedAssessment = hydrateAssessmentCvRefs(savedAssessment || nextAssessment, syncedCandidate);
-        applyAssessmentChange({
-          type: "STATUS_UPDATE",
-          scope: "all",
-          assessment: persistedAssessment,
-          source: "MUTATION_SUCCESS"
-        });
-        if (linkedCandidateId && candidatePatch) {
-          await api(`/company/candidates/${encodeURIComponent(linkedCandidateId)}`, token, "PATCH", {
-            patch: {
-              ...candidatePatch,
-              draft_payload: nextDraftPayload,
-              screening_answers: nextScreeningAnswers
-            }
-          });
-        }
-        if (candidateHasSmartChipSelection) {
-          void refreshCandidateSmartChipRows({ clearVisibleRows: false });
-        }
-        void syncPostAssessmentMutation({ candidateId: linkedCandidateId }).catch(() => {});
-        void refreshDashboardAfterAssessmentChange().catch(() => {});
-        // Skip immediate workspace refresh to keep viewport stable after status update.
-      } catch (error) {
-        pushAssessmentStatus(`Status sync failed: ${String(error?.message || error)}`, "error");
-        void refreshAssessmentFallback({ candidateId: linkedCandidateId }).catch(() => {});
-      } finally {
-        if (lockKey) {
-          assessmentStatusSaveLockRef.current.delete(lockKey);
-        }
+        : currentCandidate;
+      const persistedAssessment = hydrateAssessmentCvRefs(savedAssessment || nextAssessment, syncedCandidate);
+      applyAssessmentChange({
+        type: "STATUS_UPDATE",
+        scope: "all",
+        assessment: persistedAssessment,
+        source: "MUTATION_SUCCESS"
+      });
+      applyOptimisticDashboardAgendaAssessmentPatch(persistedAssessment);
+      patchCandidateSmartChipRowsForAssessment(persistedAssessment);
+      setAssessmentStatusItemSnapshot(persistedAssessment);
+      if (linkedCandidateId && candidatePatch) {
+        void patchCandidateQuiet(linkedCandidateId, {
+          ...candidatePatch,
+          draft_payload: nextDraftPayload,
+          screening_answers: nextScreeningAnswers
+        }, { backgroundPersist: true, statusTarget }).catch(() => {});
       }
-    })();
+      if (candidateHasSmartChipSelection) {
+        void refreshCandidateSmartChipRows({ clearVisibleRows: false });
+      }
+      void refreshDashboardAfterAssessmentChange().catch(() => {});
+      pushAssessmentStatus(`Updated status for ${activeAssessment?.candidateName || "candidate"}.`, "ok");
+      if (options.closeModal !== false) setAssessmentStatusId("");
+      return persistedAssessment;
+    } catch (error) {
+      const newestAssessment = await resolveFreshAssessmentForStatus(activeAssessment, token, assessmentListItems, state.assessments).catch(() => null);
+      if (newestAssessment?.id) {
+        setAssessmentStatusItemSnapshot(newestAssessment);
+      }
+      pushAssessmentStatus(`Status sync failed: ${String(error?.message || error)}`, "error");
+      throw error;
+    } finally {
+      if (lockKey) {
+        assessmentStatusSaveLockRef.current.delete(lockKey);
+      }
+    }
   }
 
   async function deleteAssessmentItem(assessment) {
