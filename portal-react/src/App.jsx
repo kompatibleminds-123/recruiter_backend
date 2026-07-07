@@ -16811,18 +16811,47 @@ function PortalApp({ token, onLogout }) {
   }
 
   async function openAssessmentStatusFromSearch(item) {
+    const immediateCandidateId = String(
+      item?.candidateId
+      || item?.candidate_id
+      || item?.raw?.candidateId
+      || item?.raw?.candidate_id
+      || item?.raw?.candidate?.id
+      || ""
+    ).trim();
     const immediateAssessmentId = String(
       item?.id
       || item?.assessment_id
       || item?.assessmentId
+      || item?.raw?.id
+      || item?.raw?.assessment_id
+      || item?.raw?.assessmentId
       || item?.raw?.assessment?.id
       || item?.assessment?.id
       || ""
     ).trim();
     if (immediateAssessmentId && !isTransientAssessmentId(immediateAssessmentId)) {
-      setAssessmentStatusItemSnapshot(item?.raw?.assessment || item?.assessment || item || null);
+      const localImmediateMatch = [
+        ...(Array.isArray(assessmentListItems) ? assessmentListItems : []),
+        ...(Array.isArray(state.assessments) ? state.assessments : [])
+      ].find((assessment) => String(assessment?.id || "").trim() === immediateAssessmentId) || null;
+      setAssessmentStatusItemSnapshot(localImmediateMatch || item?.raw?.assessment || item?.assessment || item || null);
       setAssessmentStatusId(immediateAssessmentId);
       return;
+    }
+    if (immediateCandidateId) {
+      const localCandidateMatch = [
+        ...(Array.isArray(assessmentListItems) ? assessmentListItems : []),
+        ...(Array.isArray(state.assessments) ? state.assessments : [])
+      ]
+        .filter((assessment) => String(assessment?.candidateId || assessment?.candidate_id || "").trim() === immediateCandidateId)
+        .sort((a, b) => parseDateLike(String(b?.updatedAt || b?.updated_at || b?.generatedAt || 0)) - parseDateLike(String(a?.updatedAt || a?.updated_at || a?.generatedAt || 0)))[0] || null;
+      const localCandidateAssessmentId = String(localCandidateMatch?.id || "").trim();
+      if (localCandidateMatch && localCandidateAssessmentId && !isTransientAssessmentId(localCandidateAssessmentId)) {
+        setAssessmentStatusItemSnapshot(localCandidateMatch);
+        setAssessmentStatusId(localCandidateAssessmentId);
+        return;
+      }
     }
     const freshAssessment = await resolveFreshAssessmentForStatus(item, token, assessmentListItems, state.assessments).catch(() => null);
     if (freshAssessment?.id) {
@@ -18551,14 +18580,6 @@ function PortalApp({ token, onLogout }) {
   async function openSavedAssessment(assessmentInput) {
     const requestedId = String(assessmentInput?.id || "").trim();
     let assessment = assessmentInput && typeof assessmentInput === "object" ? assessmentInput : {};
-    if (requestedId && token) {
-      try {
-        const freshAssessment = await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(requestedId)}`, token).catch(() => null);
-        if (freshAssessment && typeof freshAssessment === "object" && String(freshAssessment?.id || "").trim() === requestedId) {
-          assessment = freshAssessment;
-        }
-      } catch {}
-    }
     setInterviewLatestLoading(false);
     const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
     const normalizePhone = (value) => {
@@ -18633,7 +18654,7 @@ function PortalApp({ token, onLogout }) {
     navigate("/interview");
     setStatus("interview", `Opened saved assessment for ${assessment?.candidateName || "candidate"}.`, "ok");
 
-    if (requestedId) {
+    if (requestedId && token) {
       void (async () => {
         try {
           const fresh = await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(requestedId)}`, token);
@@ -24781,7 +24802,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       nextScreeningAnswers = currentDraft.jdScreeningAnswers || parsePortalObjectField(currentCandidate?.screening_answers || currentCandidate?.screeningAnswers);
     }
     if (lockKey) assessmentStatusSaveLockRef.current.add(lockKey);
-    pushAssessmentStatus("Saving status update...", "ok");
+    pushAssessmentStatus(`Updating status to ${nextStatus}...`, "ok");
 
     try {
       const savedAssessment = await api("/company/assessments", token, "POST", {
