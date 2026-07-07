@@ -24563,6 +24563,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
   async function saveAssessmentStatusUpdate(assessment, payload, options = {}) {
     const statusTarget = options.statusTarget || "assessments";
+    const shouldAwaitPersist = options.awaitPersist === true;
     const lockKey = String(assessment?.id || assessment?.candidateId || "").trim();
     const useInlineAssessmentStatus = String(statusTarget || "").trim() === "assessments";
     const pushAssessmentStatus = (message, kind = "") => {
@@ -24752,10 +24753,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       });
     }
     pushAssessmentStatus(`Updated status for ${assessment?.candidateName || "candidate"}.`, "ok");
-    if (options.closeModal !== false) setAssessmentStatusId("");
+    if (!shouldAwaitPersist && options.closeModal !== false) setAssessmentStatusId("");
 
-    // Persist in background; if fails, surface error and refresh to resync.
-    void (async () => {
+    const persistTask = (async () => {
       try {
         const savedAssessment = await api("/company/assessments", token, "POST", {
           assessment: {
@@ -24793,16 +24793,25 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         }
         void syncPostAssessmentMutation({ candidateId: linkedCandidateId }).catch(() => {});
         void refreshDashboardAfterAssessmentChange().catch(() => {});
+        if (shouldAwaitPersist && options.closeModal !== false) {
+          setAssessmentStatusId("");
+        }
         // Skip immediate workspace refresh to keep viewport stable after status update.
+        return persistedAssessment;
       } catch (error) {
         pushAssessmentStatus(`Status sync failed: ${String(error?.message || error)}`, "error");
         void refreshAssessmentFallback({ candidateId: linkedCandidateId }).catch(() => {});
+        throw error;
       } finally {
         if (lockKey) {
           assessmentStatusSaveLockRef.current.delete(lockKey);
         }
       }
     })();
+    if (shouldAwaitPersist) {
+      return await persistTask;
+    }
+    void persistTask;
   }
 
   async function deleteAssessmentItem(assessment) {
@@ -31740,7 +31749,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         </div>
       ) : null}
       <AttemptsModal open={Boolean(attemptsCandidateId)} candidate={attemptsCandidate} attempts={attempts} onClose={() => setAttemptsCandidateId("")} onRefresh={refreshAttempts} onSave={saveAttempt} />
-      <AssessmentStatusModal open={Boolean(assessmentStatusId)} assessment={assessmentStatusItem} onClose={() => setAssessmentStatusId("")} onSave={(payload) => saveAssessmentStatusUpdate(assessmentStatusItem, payload)} />
+      <AssessmentStatusModal
+        open={Boolean(assessmentStatusId)}
+        assessment={assessmentStatusItem}
+        onClose={() => setAssessmentStatusId("")}
+        onSave={(payload) => saveAssessmentStatusUpdate(assessmentStatusItem, payload, {
+          awaitPersist: String(location?.pathname || "").trim() === "/candidates",
+          statusTarget: String(location?.pathname || "").trim() === "/candidates" ? "workspace" : "assessments"
+        })}
+      />
       <DrilldownModal
         open={drilldownState.open && String(location?.pathname || "") !== "/dashboard"}
         loading={Boolean(drilldownState.loading)}
