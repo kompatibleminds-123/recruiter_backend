@@ -22414,6 +22414,7 @@ const server = http.createServer(async (req, res) => {
         patch.used_in_assessment = false;
         patch.assessment_id = null;
       }
+      const skipSearchDocRebuild = input.skipSearchDocRebuild === true || input.skip_search_doc_rebuild === true;
       Object.keys(patch).forEach((key) => patch[key] === undefined && delete patch[key]);
       const patchKeys = Object.keys(patch);
       const hideOnlyPatch = patchKeys.length === 1 && patchKeys[0] === "hidden_from_captured";
@@ -22434,65 +22435,69 @@ const server = http.createServer(async (req, res) => {
             patch.draft_payload || {}
           );
         }
-        const existingMeta = decodeApplicantMetadata(existing);
-        const incomingMeta = Object.prototype.hasOwnProperty.call(patch, "raw_note")
-          ? decodeApplicantMetadata({ raw_note: patch.raw_note })
-          : {};
-        const cvResult = existingMeta?.cvAnalysisCache?.result && typeof existingMeta.cvAnalysisCache.result === "object"
-          ? existingMeta.cvAnalysisCache.result
-          : null;
-        const inferredSearchTags = deriveInferredSearchTags({
-          cvResult,
-          recruiterNotes: patch.recruiter_context_notes ?? existing.recruiter_context_notes ?? "",
-          otherPointers: patch.other_pointers ?? existing.other_pointers ?? "",
-          tags: Array.isArray(input.skills) ? input.skills : (Array.isArray(existing.skills) ? existing.skills : [])
-        });
-        mergedMeta = {
-          ...(existingMeta || {}),
-          ...(incomingMeta || {}),
-          inferredSearchTags
-        };
-        const mergedCandidate = { ...(existing || {}), ...(patch || {}) };
-        const mergedDraft = patch.draft_payload && typeof patch.draft_payload === "object"
-          ? patch.draft_payload
-          : existing?.draft_payload && typeof existing.draft_payload === "object"
-            ? existing.draft_payload
+        if (!skipSearchDocRebuild) {
+          const existingMeta = decodeApplicantMetadata(existing);
+          const incomingMeta = Object.prototype.hasOwnProperty.call(patch, "raw_note")
+            ? decodeApplicantMetadata({ raw_note: patch.raw_note })
             : {};
-        const mergedScreening = patch.screening_answers && typeof patch.screening_answers === "object"
-          ? patch.screening_answers
-          : existing?.screening_answers && typeof existing.screening_answers === "object"
-            ? existing.screening_answers
-            : {};
-        mergedCvResult = mergedMeta?.cvAnalysisCache?.result && typeof mergedMeta.cvAnalysisCache.result === "object"
-          ? mergedMeta.cvAnalysisCache.result
-          : cvResult && typeof cvResult === "object"
-            ? cvResult
+          const cvResult = existingMeta?.cvAnalysisCache?.result && typeof existingMeta.cvAnalysisCache.result === "object"
+            ? existingMeta.cvAnalysisCache.result
             : null;
-        mergedMeta.searchDocV1 = deriveCandidateSearchDocV1FromParts({
-          candidate: mergedCandidate,
-          meta: mergedMeta,
-          draftPayload: mergedDraft,
-          screeningAnswers: mergedScreening,
-          cvResult: mergedCvResult,
-          inferredSearchTags
-        });
-        mergedMeta.searchDocUpdatedAt = new Date().toISOString();
-        patch.raw_note = encodeApplicantMetadata({
-          ...(mergedMeta || {})
-        });
+          const inferredSearchTags = deriveInferredSearchTags({
+            cvResult,
+            recruiterNotes: patch.recruiter_context_notes ?? existing.recruiter_context_notes ?? "",
+            otherPointers: patch.other_pointers ?? existing.other_pointers ?? "",
+            tags: Array.isArray(input.skills) ? input.skills : (Array.isArray(existing.skills) ? existing.skills : [])
+          });
+          mergedMeta = {
+            ...(existingMeta || {}),
+            ...(incomingMeta || {}),
+            inferredSearchTags
+          };
+          const mergedCandidate = { ...(existing || {}), ...(patch || {}) };
+          const mergedDraft = patch.draft_payload && typeof patch.draft_payload === "object"
+            ? patch.draft_payload
+            : existing?.draft_payload && typeof existing.draft_payload === "object"
+              ? existing.draft_payload
+              : {};
+          const mergedScreening = patch.screening_answers && typeof patch.screening_answers === "object"
+            ? patch.screening_answers
+            : existing?.screening_answers && typeof existing.screening_answers === "object"
+              ? existing.screening_answers
+              : {};
+          mergedCvResult = mergedMeta?.cvAnalysisCache?.result && typeof mergedMeta.cvAnalysisCache.result === "object"
+            ? mergedMeta.cvAnalysisCache.result
+            : cvResult && typeof cvResult === "object"
+              ? cvResult
+              : null;
+          mergedMeta.searchDocV1 = deriveCandidateSearchDocV1FromParts({
+            candidate: mergedCandidate,
+            meta: mergedMeta,
+            draftPayload: mergedDraft,
+            screeningAnswers: mergedScreening,
+            cvResult: mergedCvResult,
+            inferredSearchTags
+          });
+          mergedMeta.searchDocUpdatedAt = new Date().toISOString();
+          patch.raw_note = encodeApplicantMetadata({
+            ...(mergedMeta || {})
+          });
+        }
       }
       const result = await patchCandidate(candidateId, patch, { companyId: actor.companyId });
-      deferCandidateSearchDocUpsert({
-        companyId: actor.companyId,
-        candidateId: String(result?.id || candidateId || "").trim(),
-        docV1: String(mergedMeta?.searchDocV1 || "").trim(),
-        cvTextFull: deriveCandidateCvTerms({
-          rawText: "",
-          cvResult: mergedCvResult,
-          inferredSearchTags: Array.isArray(mergedMeta?.inferredSearchTags) ? mergedMeta.inferredSearchTags : [],
-          skills: Array.isArray(result?.skills) ? result.skills : Array.isArray(existing?.skills) ? existing.skills : []
-        })
-      });
+      if (!skipSearchDocRebuild) {
+        deferCandidateSearchDocUpsert({
+          companyId: actor.companyId,
+          candidateId: String(result?.id || candidateId || "").trim(),
+          docV1: String(mergedMeta?.searchDocV1 || "").trim(),
+          cvTextFull: deriveCandidateCvTerms({
+            rawText: "",
+            cvResult: mergedCvResult,
+            inferredSearchTags: Array.isArray(mergedMeta?.inferredSearchTags) ? mergedMeta.inferredSearchTags : [],
+            skills: Array.isArray(result?.skills) ? result.skills : Array.isArray(existing?.skills) ? existing.skills : []
+          })
+        });
+      }
       emitCapturedStreamEvent(actor.companyId, "candidate_changed", { candidateId, candidate: result });
       emitApplicantStreamEvent(actor.companyId, "candidate_changed", { candidateId, candidate: result });
       sendJson(res, 200, { ok: true, result });

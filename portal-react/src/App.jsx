@@ -19136,6 +19136,7 @@ function PortalApp({ token, onLogout }) {
               current_org_tenure: String(form.currentOrgTenure || "").trim(),
               jdScreeningAnswers: form.jdScreeningAnswers || {}
             },
+            skipSearchDocRebuild: true,
             raw_note: encodePortalApplicantMetadata({
               ...nextMeta,
               jdScreeningAnswers: form.jdScreeningAnswers || {}
@@ -19212,6 +19213,7 @@ function PortalApp({ token, onLogout }) {
 	          current_org_tenure: String(form.currentOrgTenure || "").trim(),
 	          jdScreeningAnswers: form.jdScreeningAnswers || {}
 	        },
+	        skipSearchDocRebuild: true,
 	        raw_note: encodePortalApplicantMetadata({
 	          ...nextMeta,
 	          jdScreeningAnswers: form.jdScreeningAnswers || {}
