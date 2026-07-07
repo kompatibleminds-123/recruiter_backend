@@ -24570,7 +24570,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       return;
     }
     if (lockKey) assessmentStatusSaveLockRef.current.add(lockKey);
-    try {
     const inferText = String(payload?.inferText || payload?.notes || "").trim();
     const manualRemarks = String(payload?.manualRemarks || "").trim();
     const combinedNotes = [inferText, manualRemarks ? `Remarks: ${manualRemarks}` : ""].filter(Boolean).join("\n");
@@ -24751,17 +24750,26 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     // Persist in background; if fails, surface error and refresh to resync.
     void (async () => {
       try {
-        await api("/company/assessments", token, "POST", {
+        const savedAssessment = await api("/company/assessments", token, "POST", {
           assessment: {
             ...nextAssessment,
             expectedUpdatedAt,
             generatedAt: assessment?.generatedAt || new Date().toISOString()
           }
         });
+        const syncedCandidate = linkedCandidateId && candidatePatch
+          ? {
+              ...currentCandidate,
+              ...candidatePatch,
+              draft_payload: nextDraftPayload,
+              screening_answers: nextScreeningAnswers
+            }
+          : currentCandidate;
+        const persistedAssessment = hydrateAssessmentCvRefs(savedAssessment || nextAssessment, syncedCandidate);
         applyAssessmentChange({
           type: "STATUS_UPDATE",
           scope: "all",
-          assessment: nextAssessment,
+          assessment: persistedAssessment,
           source: "MUTATION_SUCCESS"
         });
         if (linkedCandidateId && candidatePatch) {
@@ -24782,15 +24790,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       } catch (error) {
         pushAssessmentStatus(`Status sync failed: ${String(error?.message || error)}`, "error");
         void refreshAssessmentFallback({ candidateId: linkedCandidateId }).catch(() => {});
+      } finally {
+        if (lockKey) {
+          assessmentStatusSaveLockRef.current.delete(lockKey);
+        }
       }
     })();
-    } finally {
-      if (lockKey) {
-        window.setTimeout(() => {
-          assessmentStatusSaveLockRef.current.delete(lockKey);
-        }, 1500);
-      }
-    }
   }
 
   async function deleteAssessmentItem(assessment) {
