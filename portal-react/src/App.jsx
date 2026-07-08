@@ -18572,6 +18572,8 @@ function PortalApp({ token, onLogout }) {
   async function openSavedAssessment(assessmentInput) {
     const requestedId = String(assessmentInput?.id || "").trim();
     const assessment = assessmentInput && typeof assessmentInput === "object" ? assessmentInput : {};
+    setAssessmentStatusId("");
+    setAssessmentStatusItemSnapshot(null);
     resetInterviewCvParseTransientState();
     setInterviewMeta({
       candidateId: String(assessment?.candidateId || assessment?.candidate_id || ""),
