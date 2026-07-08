@@ -18619,6 +18619,20 @@ function PortalApp({ token, onLogout }) {
     navigate("/interview");
     setStatus("interview", `Opened saved assessment for ${assessment?.candidateName || "candidate"}.`, "ok");
 
+    const needsCandidateHydration = [
+      assessment?.candidateName,
+      assessment?.phoneNumber,
+      assessment?.emailId,
+      assessment?.currentCompany,
+      assessment?.currentDesignation,
+      assessment?.totalExperience,
+      assessment?.clientName,
+      assessment?.jdTitle,
+      assessment?.candidateStatus
+    ].some((value) => !String(value || "").trim()) || !assessment?.cvAnalysis;
+
+    if (!needsCandidateHydration) return;
+
     void (async () => {
       const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
       const normalizePhone = (value) => {
