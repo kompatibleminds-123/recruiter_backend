@@ -1892,6 +1892,56 @@ function getCandidateDraftState(candidate = {}) {
   };
 }
 
+function buildAssessmentStandardQaMap(assessmentRow = null) {
+  if (!assessmentRow || typeof assessmentRow !== "object") return null;
+  const rawQuestions =
+    assessmentRow?.standardQuestions
+    ?? assessmentRow?.standard_questions
+    ?? assessmentRow?.payload?.standardQuestions
+    ?? assessmentRow?.payload?.standard_questions
+    ?? [];
+  const rawAnswers =
+    assessmentRow?.standardAnswers
+    ?? assessmentRow?.standard_answers
+    ?? assessmentRow?.payload?.standardAnswers
+    ?? assessmentRow?.payload?.standard_answers
+    ?? [];
+  const questionList = Array.isArray(rawQuestions)
+    ? rawQuestions
+      .map((entry) => {
+        if (typeof entry === "string") return String(entry || "").trim();
+        if (entry && typeof entry === "object") return String(entry.question || entry.label || entry.title || "").trim();
+        return "";
+      })
+      .filter(Boolean)
+    : String(rawQuestions || "")
+      .split(/\r?\n|[,;]+/g)
+      .map((entry) => String(entry || "").trim())
+      .filter(Boolean);
+  const answerRows = Array.isArray(rawAnswers) ? rawAnswers : [];
+  if (!questionList.length && !answerRows.length) return null;
+  const map = {};
+  if (answerRows.length) {
+    answerRows.forEach((entry, index) => {
+      if (entry && typeof entry === "object") {
+        const question = String(entry.question || questionList[index] || "").trim();
+        const answer = String(entry.answer ?? "").trim();
+        if (question && answer) map[question] = answer;
+        return;
+      }
+      const question = String(questionList[index] || "").trim();
+      const answer = String(entry ?? "").trim();
+      if (question && answer) map[question] = answer;
+    });
+  }
+  if (!Object.keys(map).length && questionList.length) {
+    questionList.forEach((question) => {
+      if (question) map[question] = "";
+    });
+  }
+  return Object.keys(map).length ? map : null;
+}
+
 function resolveCandidateContext(input = {}) {
   // Canonical resolver so indicators/presets do not have to guess between:
   // - plain candidate rows
@@ -1901,55 +1951,6 @@ function resolveCandidateContext(input = {}) {
   const candidate = raw?.raw?.candidate || raw?.candidate || raw;
   const assessment = raw?.raw?.assessment || raw?.assessment || null;
   const draft = getCandidateDraftState(candidate);
-  const buildAssessmentStandardQaMap = (assessmentRow = null) => {
-    if (!assessmentRow || typeof assessmentRow !== "object") return null;
-    const rawQuestions =
-      assessmentRow?.standardQuestions
-      ?? assessmentRow?.standard_questions
-      ?? assessmentRow?.payload?.standardQuestions
-      ?? assessmentRow?.payload?.standard_questions
-      ?? [];
-    const rawAnswers =
-      assessmentRow?.standardAnswers
-      ?? assessmentRow?.standard_answers
-      ?? assessmentRow?.payload?.standardAnswers
-      ?? assessmentRow?.payload?.standard_answers
-      ?? [];
-    const questionList = Array.isArray(rawQuestions)
-      ? rawQuestions
-        .map((entry) => {
-          if (typeof entry === "string") return String(entry || "").trim();
-          if (entry && typeof entry === "object") return String(entry.question || entry.label || entry.title || "").trim();
-          return "";
-        })
-        .filter(Boolean)
-      : String(rawQuestions || "")
-        .split(/\r?\n|[,;]+/g)
-        .map((entry) => String(entry || "").trim())
-        .filter(Boolean);
-    const answerRows = Array.isArray(rawAnswers) ? rawAnswers : [];
-    if (!questionList.length && !answerRows.length) return null;
-    const map = {};
-    if (answerRows.length) {
-      answerRows.forEach((entry, index) => {
-        if (entry && typeof entry === "object") {
-          const question = String(entry.question || questionList[index] || "").trim();
-          const answer = String(entry.answer ?? "").trim();
-          if (question && answer) map[question] = answer;
-          return;
-        }
-        const question = String(questionList[index] || "").trim();
-        const answer = String(entry ?? "").trim();
-        if (question && answer) map[question] = answer;
-      });
-    }
-    if (!Object.keys(map).length && questionList.length) {
-      questionList.forEach((question) => {
-        if (question) map[question] = "";
-      });
-    }
-    return Object.keys(map).length ? map : null;
-  };
   const assessmentStandardQaMap = buildAssessmentStandardQaMap(assessment);
 
   const screeningMap =
@@ -10893,6 +10894,7 @@ function PortalApp({ token, onLogout }) {
   const [interviewCvParseBusy, setInterviewCvParseBusy] = useState(false);
   const [interviewCvParsePreview, setInterviewCvParsePreview] = useState(null);
   const [interviewLatestLoading, setInterviewLatestLoading] = useState(false);
+  const [interviewDeferredSectionsReady, setInterviewDeferredSectionsReady] = useState(false);
   const interviewCvParseSessionRef = useRef({ requestId: 0, candidateId: "" });
   const [interviewForm, setInterviewForm] = useState({
     candidateName: "",
@@ -10933,6 +10935,27 @@ function PortalApp({ token, onLogout }) {
   useEffect(() => {
     interviewFormRef.current = interviewForm;
   }, [interviewForm]);
+
+  useEffect(() => {
+    if (String(location?.pathname || "").trim() !== "/interview") {
+      setInterviewDeferredSectionsReady(false);
+      return;
+    }
+    const hasInterviewTarget = Boolean(String(interviewMeta?.assessmentId || interviewMeta?.candidateId || "").trim());
+    if (!hasInterviewTarget) {
+      setInterviewDeferredSectionsReady(false);
+      return;
+    }
+    let cancelled = false;
+    setInterviewDeferredSectionsReady(false);
+    const timer = window.setTimeout(() => {
+      if (!cancelled) setInterviewDeferredSectionsReady(true);
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [location?.pathname, interviewMeta?.assessmentId, interviewMeta?.candidateId]);
 
   function resetInterviewCvParseTransientState() {
     interviewCvParseSessionRef.current = { requestId: 0, candidateId: "" };
@@ -18507,6 +18530,7 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     resetInterviewCvParseTransientState();
+    setInterviewDeferredSectionsReady(false);
     const candidateDraft = getCandidateDraftState(candidate);
     const matched = resolveCapturedAssessment(candidate);
     setInterviewLatestLoading(false);
@@ -18572,9 +18596,14 @@ function PortalApp({ token, onLogout }) {
   async function openSavedAssessment(assessmentInput) {
     const requestedId = String(assessmentInput?.id || "").trim();
     const assessment = assessmentInput && typeof assessmentInput === "object" ? assessmentInput : {};
-    setAssessmentStatusId("");
-    setAssessmentStatusItemSnapshot(null);
+    const assessmentScreeningMap = buildAssessmentStandardQaMap(assessment)
+      || (assessment?.jdScreeningAnswers && typeof assessment.jdScreeningAnswers === "object" ? assessment.jdScreeningAnswers : null)
+      || (assessment?.screening_answers && typeof assessment.screening_answers === "object" ? assessment.screening_answers : null)
+      || (assessment?.screeningAnswers && typeof assessment.screeningAnswers === "object" ? assessment.screeningAnswers : null)
+      || {};
     resetInterviewCvParseTransientState();
+    setInterviewDeferredSectionsReady(false);
+    setInterviewLatestLoading(false);
     setInterviewMeta({
       candidateId: String(assessment?.candidateId || assessment?.candidate_id || ""),
       assessmentId: String(assessment?.id || ""),
@@ -18611,7 +18640,7 @@ function PortalApp({ token, onLogout }) {
       callbackNotes: String(assessment?.callbackNotes || ""),
       otherPointers: String(assessment?.otherPointers || ""),
       tags: "",
-      jdScreeningAnswers: assessment?.jdScreeningAnswers || {},
+      jdScreeningAnswers: assessmentScreeningMap,
       cvAnalysis: assessment?.cvAnalysis || null,
       cvAnalysisApplied: Boolean(assessment?.cvAnalysisApplied),
       statusHistory: Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : []
@@ -18685,7 +18714,7 @@ function PortalApp({ token, onLogout }) {
         tags: current?.tags || candidateDraft.tags || (Array.isArray(matchedCandidate?.skills) ? matchedCandidate.skills.join(", ") : ""),
         jdScreeningAnswers: current?.jdScreeningAnswers && Object.keys(current.jdScreeningAnswers || {}).length
           ? current.jdScreeningAnswers
-          : (assessment?.jdScreeningAnswers || candidateDraft.jdScreeningAnswers || {}),
+          : (assessmentScreeningMap || candidateDraft.jdScreeningAnswers || {}),
         cvAnalysis: current?.cvAnalysis || assessment?.cvAnalysis || candidateCvAnalysis || null,
         cvAnalysisApplied: current?.cvAnalysisApplied === true ? true : (Boolean(assessment?.cvAnalysisApplied) || candidateDraft.cvAnalysisApplied === true),
         statusHistory: Array.isArray(current?.statusHistory) && current.statusHistory.length
@@ -26068,7 +26097,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   const jdShortcutEntries = Object.entries(parseShortcutMap(jobDraft.jdShortcuts));
   const jdScreeningQuestions = parseQuestionList(jobDraft.standardQuestions);
   const interviewSelectedJob = (state.jobs || []).find((job) => String(job.title || "").trim() === String(interviewForm.jdTitle || "").trim()) || null;
-  const interviewScreeningQuestions = parseQuestionList(interviewSelectedJob?.standardQuestions || "");
+  const interviewSavedScreeningQuestions = Object.keys(
+    interviewForm?.jdScreeningAnswers && typeof interviewForm.jdScreeningAnswers === "object"
+      ? interviewForm.jdScreeningAnswers
+      : {}
+  ).map((question) => String(question || "").trim()).filter(Boolean);
+  const interviewScreeningQuestions = Array.from(new Set([
+    ...parseQuestionList(interviewSelectedJob?.standardQuestions || ""),
+    ...interviewSavedScreeningQuestions
+  ]));
   const dashboardSummary = (state.dashboard?.summary && Object.keys(state.dashboard.summary).length
     ? state.dashboard.summary
     : (dashboardSummaryData && Object.keys(dashboardSummaryData).length
@@ -28936,6 +28973,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 </form>
               </Section>
 
+              {interviewDeferredSectionsReady ? (
               <Section kicker="Runbook" title="Interview Runbook">
                 <div className="runbook-layout">
                   <div className="runbook-block">
@@ -28981,8 +29019,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
                 </div>
               </Section>
+              ) : (
+                <div className="muted" style={{ marginBottom: 10 }}>Loading runbook and CV sections...</div>
+              )}
               </fieldset>
 
+              {interviewDeferredSectionsReady ? (
               <Section kicker="CV Upload" title="Candidate CV Storage">
                 <div className="cv-analysis-box">
                   {copySettings.interviewAiParsingEnabled !== false
@@ -29040,7 +29082,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   )}
                 </div>
               </Section>
+              ) : null}
 
+	              {interviewDeferredSectionsReady ? (
 	              <Section kicker="Step 5" title="Final Excel Output">
 	                <p className="muted">Save the assessment and export recruiter-sheet format.</p>
 	                {statuses.interview ? <div className={`status ${statuses.interviewKind || ""}`}>{statuses.interview}</div> : null}
@@ -29059,6 +29103,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 	                    <button className="ghost-btn" onClick={() => { setEditCautiousIndicators(false); setInterviewLatestLoading(false); setInterviewMeta({ candidateId: "", assessmentId: "" }); setInterviewForm({ candidateName: "", phoneNumber: "", emailId: "", linkedin: "", location: "", gender: "", currentCtc: "", expectedCtc: "", noticePeriod: "", offerInHand: "", lwdOrDoj: "", currentCompany: "", currentDesignation: "", totalExperience: "", relevantExperience: "", currentOrgTenure: "", experienceTimeline: "", reasonForChange: "", cautiousIndicators: "", clientName: "", jdTitle: "", pipelineStage: "Under Interview Process", candidateStatus: "Screening in progress", followUpAt: "", interviewAt: "", recruiterNotes: "", callbackNotes: "", otherPointers: "", tags: "", jdScreeningAnswers: {}, cvAnalysis: null, cvAnalysisApplied: false, statusHistory: [] }); setStatus("interview", ""); }}>Clear draft</button>
 	                </div>
 	              </Section>
+                ) : null}
             </div>
           } />
 
