@@ -7456,14 +7456,20 @@ function resolveAssessmentDateOfJoiningRaw(assessment = {}, candidate = {}) {
   return String(
     assessment?.dateOfJoining
     || assessment?.date_of_joining
+    || assessment?.expectedDoj
+    || assessment?.expected_doj
     || assessment?.payload?.dateOfJoining
     || assessment?.payload?.date_of_joining
+    || assessment?.payload?.expectedDoj
+    || assessment?.payload?.expected_doj
     || assessment?.offerDoj
     || assessment?.offer_doj
     || assessment?.lwdOrDoj
     || assessment?.lwd_or_doj
     || candidate?.dateOfJoining
     || candidate?.date_of_joining
+    || candidate?.expectedDoj
+    || candidate?.expected_doj
     || candidate?.offerDoj
     || candidate?.offer_doj
     || candidate?.lwdOrDoj
