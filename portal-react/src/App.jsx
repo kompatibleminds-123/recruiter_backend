@@ -26353,7 +26353,18 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   const upcomingJoinings = (state.assessments || []).filter((item) => {
     const status = String(item?.candidateStatus || "").trim().toLowerCase();
     if (status !== "offered") return false;
-    const value = item?.followUpAt ? new Date(item.followUpAt) : item?.interviewAt ? new Date(item.interviewAt) : null;
+    const joiningRaw = String(
+      item?.expectedDoj
+      || item?.expected_doj
+      || item?.dateOfJoining
+      || item?.date_of_joining
+      || item?.offerDoj
+      || item?.offer_doj
+      || item?.lwdOrDoj
+      || item?.lwd_or_doj
+      || ""
+    ).trim();
+    const value = joiningRaw ? new Date(joiningRaw) : null;
     return value && value >= agendaWindowStart && value < nextWeekEnd;
   });
   // Pending applicants = Active applicants in Applied Candidates (not converted, not hidden),
