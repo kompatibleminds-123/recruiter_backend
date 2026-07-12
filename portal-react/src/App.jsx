@@ -13728,6 +13728,7 @@ function PortalApp({ token, onLogout }) {
           assessment: hydratedAssessment,
           source: "SSE"
         });
+        void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
         scheduleDashboardLiveRefresh("assessment_saved");
       }
       if (eventType === "assessment_deleted" || eventType === "assessment_restored") {
@@ -13785,6 +13786,7 @@ function PortalApp({ token, onLogout }) {
           assessment: hydratedAssessment,
           source: "SSE"
         });
+        void reloadAssessmentStats(assessmentFiltersApplied).catch(() => {});
         scheduleDashboardLiveRefresh("assessment_saved");
         return;
       }
