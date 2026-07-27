@@ -20589,7 +20589,7 @@ const server = http.createServer(async (req, res) => {
       const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
       const meta = candidate ? decodeApplicantMetadata(candidate) : {};
       const fallbackFileRef = inferStoredFileRefFromUrl(actor, requestUrl);
-      const fileRef = getCurrentCandidateCvFileRef(meta, fallbackFileRef);
+      const fileRef = fallbackFileRef || getCurrentCandidateCvFileRef(meta);
       if (!fileRef || (!fileRef.key && !fileRef.url)) {
         if (!candidate) throw new Error("Candidate not found in this company.");
         throw new Error("CV file not available for this candidate.");
