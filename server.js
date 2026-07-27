@@ -20639,26 +20639,28 @@ const server = http.createServer(async (req, res) => {
       if (!payload) throw new Error("Invalid or expired CV share link.");
       const wantBranded = ["1", "true", "yes", "branded"].includes(String(requestUrl.searchParams.get("mode") || "").trim().toLowerCase())
         || payload?.branded === true;
-      const sharedFileRef = {
+      const scopedCompanyId = String(payload.companyId || "").trim();
+      const payloadCandidateId = String(payload.candidateId || "").trim();
+      let candidate = null;
+      if (payloadCandidateId && scopedCompanyId) {
+        candidate = (await listCandidates({
+          id: payloadCandidateId,
+          companyId: scopedCompanyId,
+          limit: 1
+        }).catch(() => []))[0] || null;
+      }
+      const tokenFileRef = {
         provider: payload.fileProvider,
         key: payload.fileKey,
         url: payload.fileUrl,
         filename: payload.filename,
         mimeType: payload.mimeType
       };
+      const candidateMeta = candidate ? decodeApplicantMetadata(candidate) : {};
+      const sharedFileRef = getCurrentCandidateCvFileRef(candidateMeta, tokenFileRef) || tokenFileRef;
       const sharedIsPdf = String(sharedFileRef.mimeType || payload.mimeType || "").toLowerCase().includes("pdf")
         || /\.pdf$/i.test(String(sharedFileRef.filename || payload.filename || ""));
       if (wantBranded && sharedIsPdf) {
-        const scopedCompanyId = String(payload.companyId || "").trim();
-        let candidate = null;
-        const payloadCandidateId = String(payload.candidateId || "").trim();
-        if (payloadCandidateId && scopedCompanyId) {
-          candidate = (await listCandidates({
-            id: payloadCandidateId,
-            companyId: scopedCompanyId,
-            limit: 1
-          }).catch(() => []))[0] || null;
-        }
         const branded = await resolveBrandedCvResponse({
           companyId: scopedCompanyId,
           companyName: String(payload.companyName || "Your Company").trim() || "Your Company",
