@@ -2068,10 +2068,11 @@ function getCandidateProfileCvMeta(item = {}) {
   const storedFile = candidate.cvAnalysis?.storedFile || candidate.cv_analysis?.storedFile || meta?.cvAnalysisCache?.storedFile || {};
   return {
     candidateId: candidate.candidate_id || candidate.candidateId || candidate.id || "",
-    url: candidate.cv_url || candidate.cvUrl || meta?.fileUrl || storedFile?.url || "",
-    filename: candidate.cv_filename || candidate.cvFilename || meta?.filename || storedFile?.filename || "",
-    key: candidate.cv_key || candidate.cvKey || meta?.fileKey || storedFile?.key || "",
-    provider: candidate.cv_provider || candidate.cvProvider || meta?.fileProvider || storedFile?.provider || ""
+    url: storedFile?.url || candidate.cv_url || candidate.cvUrl || meta?.fileUrl || "",
+    filename: storedFile?.filename || candidate.cv_filename || candidate.cvFilename || meta?.filename || "",
+    key: storedFile?.key || candidate.cv_key || candidate.cvKey || meta?.fileKey || "",
+    provider: storedFile?.provider || candidate.cv_provider || candidate.cvProvider || meta?.fileProvider || "",
+    mimeType: storedFile?.mimeType || candidate.cv_mime_type || candidate.cvMimeType || meta?.mimeType || ""
   };
 }
 
@@ -16891,6 +16892,10 @@ function PortalApp({ token, onLogout }) {
     const params = new URLSearchParams({ access_token: token });
     if (storedFile.url) params.set("cv_url", String(storedFile.url));
     if (storedFile.filename) params.set("cv_filename", String(storedFile.filename));
+    if (storedFile.key) params.set("cv_key", String(storedFile.key));
+    if (storedFile.provider) params.set("cv_provider", String(storedFile.provider));
+    if (storedFile.mimeType) params.set("cv_mime_type", String(storedFile.mimeType));
+    params.set("_cv", String(Date.now()));
     window.open(`/company/candidates/${encodeURIComponent(interviewMeta.candidateId)}/cv?${params.toString()}`, "_blank", "noopener,noreferrer");
     setStatus("interview", "Opening uploaded CV...", "ok");
   }

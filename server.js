@@ -3344,6 +3344,7 @@ function inferStoredFileRefFromUrl(actor, requestUrl) {
   const fileKey = String(requestUrl?.searchParams?.get("cv_key") || "").trim();
   const fileUrl = String(requestUrl?.searchParams?.get("cv_url") || "").trim();
   const filename = String(requestUrl?.searchParams?.get("cv_filename") || "").trim();
+  const mimeType = String(requestUrl?.searchParams?.get("cv_mime_type") || "").trim();
   if (fileProvider && fileKey) {
     if (!fileKey.includes(String(actor.companyId || "").trim())) return null;
     return {
@@ -3351,7 +3352,7 @@ function inferStoredFileRefFromUrl(actor, requestUrl) {
       key: fileKey,
       url: fileUrl,
       filename,
-      mimeType: "application/octet-stream"
+      mimeType: mimeType || "application/octet-stream"
     };
   }
   if (!fileUrl) {
