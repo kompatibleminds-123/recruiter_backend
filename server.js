@@ -2255,6 +2255,32 @@ function buildStoredFileFingerprint(fileRef = {}) {
   }));
 }
 
+function getCurrentCandidateCvFileRef(meta = {}, fallbackFileRef = null) {
+  const safeMeta = meta && typeof meta === "object" ? meta : {};
+  const cachedStoredFile = safeMeta?.cvAnalysisCache?.storedFile && typeof safeMeta.cvAnalysisCache.storedFile === "object"
+    ? safeMeta.cvAnalysisCache.storedFile
+    : null;
+  const preferred = cachedStoredFile && (cachedStoredFile.key || cachedStoredFile.url || cachedStoredFile.provider)
+    ? cachedStoredFile
+    : (safeMeta.fileProvider || safeMeta.fileKey || safeMeta.fileUrl)
+      ? {
+          provider: safeMeta.fileProvider,
+          key: safeMeta.fileKey,
+          url: safeMeta.fileUrl,
+          filename: safeMeta.filename,
+          mimeType: safeMeta.mimeType
+        }
+      : fallbackFileRef;
+  if (!preferred) return null;
+  return {
+    provider: String(preferred.provider || "").trim(),
+    key: String(preferred.key || "").trim(),
+    url: String(preferred.url || "").trim(),
+    filename: String(preferred.filename || safeMeta.filename || "resume.pdf").trim(),
+    mimeType: String(preferred.mimeType || safeMeta.mimeType || "application/octet-stream").trim()
+  };
+}
+
 function buildBrandedCvArtifactFingerprint({
   candidateId = "",
   assessmentId = "",
@@ -4307,6 +4333,7 @@ function sanitizeApplicantCandidate(candidate = {}) {
     || candidate?.currentOrgTenure
     || ""
   ).trim();
+  const currentCvFileRef = getCurrentCandidateCvFileRef(meta);
   return {
     id: String(candidate?.id || "").trim(),
     candidateName: String(candidate?.name || "").trim(),
@@ -4356,8 +4383,8 @@ function sanitizeApplicantCandidate(candidate = {}) {
     other_pointers: String(candidate?.other_pointers || candidate?.otherPointers || "").trim(),
     candidateStatus: String(candidate?.candidate_status || candidate?.candidateStatus || "").trim(),
     candidate_status: String(candidate?.candidate_status || candidate?.candidateStatus || "").trim(),
-    cvUrl: String(meta.fileUrl || "").trim(),
-    cvFilename: String(meta.filename || "").trim(),
+    cvUrl: String(currentCvFileRef?.url || "").trim(),
+    cvFilename: String(currentCvFileRef?.filename || "").trim(),
     sourcePlatform: String(meta.sourcePlatform || "").trim(),
     sourceLabel: String(meta.sourceLabel || "").trim(),
     jobPageUrl: String(meta.jobPageUrl || "").trim(),
@@ -15345,14 +15372,12 @@ const server = http.createServer(async (req, res) => {
 
       // If CV exists, generate a short-lived download link via existing CV share token mechanism.
       const meta = candidate ? decodeApplicantMetadata(candidate) : {};
-      const cachedStoredFile = meta?.cvAnalysisCache?.storedFile && typeof meta.cvAnalysisCache.storedFile === "object"
-        ? meta.cvAnalysisCache.storedFile
-        : null;
-      const fileProvider = meta.fileProvider || cachedStoredFile?.provider || "";
-      const fileKey = meta.fileKey || cachedStoredFile?.key || "";
-      const fileUrl = meta.fileUrl || cachedStoredFile?.url || "";
-      const filename = meta.filename || cachedStoredFile?.filename || "resume.pdf";
-      const mimeType = meta.mimeType || cachedStoredFile?.mimeType || "application/octet-stream";
+      const fileRef = getCurrentCandidateCvFileRef(meta) || {};
+      const fileProvider = fileRef.provider || "";
+      const fileKey = fileRef.key || "";
+      const fileUrl = fileRef.url || "";
+      const filename = fileRef.filename || "resume.pdf";
+      const mimeType = fileRef.mimeType || "application/octet-stream";
       let cvShareUrl = "";
       if (fileProvider || fileKey || fileUrl) {
         const sharedSettings = await getCompanySharedExportPresets(companyId).catch(() => ({}));
@@ -20562,27 +20587,8 @@ const server = http.createServer(async (req, res) => {
       const requestedHeaderLine = String(requestUrl.searchParams.get("header_line") || "").trim();
       const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
       const meta = candidate ? decodeApplicantMetadata(candidate) : {};
-      const cachedStoredFile = meta?.cvAnalysisCache?.storedFile && typeof meta.cvAnalysisCache.storedFile === "object"
-        ? meta.cvAnalysisCache.storedFile
-        : null;
       const fallbackFileRef = inferStoredFileRefFromUrl(actor, requestUrl);
-      const fileRef = (meta.fileProvider || meta.fileKey || meta.fileUrl)
-        ? {
-            provider: meta.fileProvider,
-            key: meta.fileKey,
-            url: meta.fileUrl,
-            filename: meta.filename,
-            mimeType: meta.mimeType
-          }
-        : (cachedStoredFile && (cachedStoredFile.key || cachedStoredFile.url))
-          ? {
-              provider: cachedStoredFile.provider,
-              key: cachedStoredFile.key,
-              url: cachedStoredFile.url,
-              filename: cachedStoredFile.filename,
-              mimeType: cachedStoredFile.mimeType
-            }
-        : fallbackFileRef;
+      const fileRef = getCurrentCandidateCvFileRef(meta, fallbackFileRef);
       if (!fileRef || (!fileRef.key && !fileRef.url)) {
         if (!candidate) throw new Error("Candidate not found in this company.");
         throw new Error("CV file not available for this candidate.");
@@ -20811,15 +20817,13 @@ const server = http.createServer(async (req, res) => {
       const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/share-cv-link$/, "")).trim();
       const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
       const meta = candidate ? decodeApplicantMetadata(candidate) : {};
-      const cachedStoredFile = meta?.cvAnalysisCache?.storedFile && typeof meta.cvAnalysisCache.storedFile === "object"
-        ? meta.cvAnalysisCache.storedFile
-        : null;
       const fallbackFileRef = inferStoredFileRefFromUrl(actor, requestUrl);
-      const fileProvider = meta.fileProvider || cachedStoredFile?.provider || fallbackFileRef?.provider || "";
-      const fileKey = meta.fileKey || cachedStoredFile?.key || fallbackFileRef?.key || "";
-      const fileUrl = meta.fileUrl || cachedStoredFile?.url || fallbackFileRef?.url || "";
-      const filename = meta.filename || cachedStoredFile?.filename || fallbackFileRef?.filename || "resume.pdf";
-      const mimeType = meta.mimeType || cachedStoredFile?.mimeType || fallbackFileRef?.mimeType || "application/octet-stream";
+      const fileRef = getCurrentCandidateCvFileRef(meta, fallbackFileRef) || {};
+      const fileProvider = fileRef.provider || "";
+      const fileKey = fileRef.key || "";
+      const fileUrl = fileRef.url || "";
+      const filename = fileRef.filename || "resume.pdf";
+      const mimeType = fileRef.mimeType || "application/octet-stream";
       if (!fileProvider && !fileKey && !fileUrl) {
         throw new Error("CV file not available for this candidate.");
       }
@@ -20896,35 +20900,16 @@ const server = http.createServer(async (req, res) => {
         });
       }
       const matchedMeta = decodeApplicantMetadata(matchedCandidate || {});
-      const matchedStoredFile = matchedMeta?.cvAnalysisCache?.storedFile && typeof matchedMeta.cvAnalysisCache.storedFile === "object"
-        ? matchedMeta.cvAnalysisCache.storedFile
-        : null;
-      const shouldPreferCurrentCandidateFile = Boolean(matchedCandidate || matchedMeta.fileKey || matchedMeta.fileUrl || matchedStoredFile?.key || matchedStoredFile?.url);
-      const fileProvider = String(
-        shouldPreferCurrentCandidateFile
-          ? (matchedMeta.fileProvider || matchedStoredFile?.provider || fallbackFileRef?.provider || requestUrl.searchParams.get("cv_provider") || "")
-          : (requestUrl.searchParams.get("cv_provider") || matchedMeta.fileProvider || matchedStoredFile?.provider || fallbackFileRef?.provider || "")
-      ).trim();
-      const fileKey = String(
-        shouldPreferCurrentCandidateFile
-          ? (matchedMeta.fileKey || matchedStoredFile?.key || fallbackFileRef?.key || requestUrl.searchParams.get("cv_key") || "")
-          : (requestUrl.searchParams.get("cv_key") || matchedMeta.fileKey || matchedStoredFile?.key || fallbackFileRef?.key || "")
-      ).trim();
-      const fileUrl = String(
-        shouldPreferCurrentCandidateFile
-          ? (matchedMeta.fileUrl || matchedStoredFile?.url || fallbackFileRef?.url || requestUrl.searchParams.get("cv_url") || "")
-          : (requestUrl.searchParams.get("cv_url") || matchedMeta.fileUrl || matchedStoredFile?.url || fallbackFileRef?.url || "")
-      ).trim();
-      const filename = String(
-        shouldPreferCurrentCandidateFile
-          ? (matchedMeta.filename || matchedStoredFile?.filename || fallbackFileRef?.filename || requestUrl.searchParams.get("cv_filename") || "resume.pdf")
-          : (requestUrl.searchParams.get("cv_filename") || matchedMeta.filename || matchedStoredFile?.filename || fallbackFileRef?.filename || "resume.pdf")
-      ).trim();
-      const mimeType = String(
-        shouldPreferCurrentCandidateFile
-          ? (matchedMeta.mimeType || matchedStoredFile?.mimeType || fallbackFileRef?.mimeType || requestUrl.searchParams.get("cv_mime_type") || "application/octet-stream")
-          : (requestUrl.searchParams.get("cv_mime_type") || matchedMeta.mimeType || matchedStoredFile?.mimeType || fallbackFileRef?.mimeType || "application/octet-stream")
-      ).trim();
+      const matchedFileRef = getCurrentCandidateCvFileRef(matchedMeta, null);
+      const shouldPreferCurrentCandidateFile = Boolean(matchedCandidate || matchedFileRef?.key || matchedFileRef?.url || matchedFileRef?.provider);
+      const fileRef = shouldPreferCurrentCandidateFile
+        ? (matchedFileRef || fallbackFileRef || inferStoredFileRefFromUrl(actor, requestUrl) || {})
+        : (fallbackFileRef || matchedFileRef || {});
+      const fileProvider = String(fileRef.provider || requestUrl.searchParams.get("cv_provider") || "").trim();
+      const fileKey = String(fileRef.key || requestUrl.searchParams.get("cv_key") || "").trim();
+      const fileUrl = String(fileRef.url || requestUrl.searchParams.get("cv_url") || "").trim();
+      const filename = String(fileRef.filename || requestUrl.searchParams.get("cv_filename") || "resume.pdf").trim();
+      const mimeType = String(fileRef.mimeType || requestUrl.searchParams.get("cv_mime_type") || "application/octet-stream").trim();
       if (!fileProvider && !fileKey && !fileUrl) {
         throw new Error("CV file not available for sharing.");
       }
@@ -21670,14 +21655,7 @@ const server = http.createServer(async (req, res) => {
         jdTitle: assessment.jdTitle
       });
       const meta = decodeApplicantMetadata(matchedCandidate || {});
-      const storedFile = meta?.cvAnalysisCache?.storedFile && typeof meta.cvAnalysisCache.storedFile === "object" ? meta.cvAnalysisCache.storedFile : null;
-      const fileRef = {
-        provider: meta.fileProvider || storedFile?.provider || "",
-        key: meta.fileKey || storedFile?.key || "",
-        url: meta.fileUrl || storedFile?.url || "",
-        filename: meta.filename || storedFile?.filename || "resume.pdf",
-        mimeType: meta.mimeType || storedFile?.mimeType || "application/octet-stream"
-      };
+      const fileRef = getCurrentCandidateCvFileRef(meta) || {};
       if (!fileRef.provider && !fileRef.key && !fileRef.url) {
         throw new Error("CV file not available for this candidate.");
       }
