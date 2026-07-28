@@ -27457,7 +27457,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 </div>
               </div>
               <div className="stack-list captured-notes-list" style={{ position: "relative", minHeight: 220 }}>
-                {applicantListLoading ? (
+                {applicantListLoading && !visibleApplicants.length ? (
                   <div
                     aria-hidden="true"
                     style={{
@@ -27490,7 +27490,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </div>
                   </div>
                 ) : null}
-                <div style={{ opacity: applicantListLoading ? 0.35 : 1, filter: applicantListLoading ? "blur(1px)" : "none", transition: "opacity 150ms ease, filter 150ms ease" }}>
+                <div>
                 {workspaceDataReady ? (
                   (!visibleApplicants.length && !applicantListLoading)
                     ? <div className="empty-state">No applied candidates right now.</div>
@@ -27893,7 +27893,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 </div>
               ) : null}
               <div className="stack-list captured-notes-list" style={{ position: "relative", minHeight: 220 }}>
-                {capturedListLoading ? (
+                {capturedListLoading && !capturedCandidates.length ? (
                   <div
                     aria-hidden="true"
                     style={{
@@ -27926,7 +27926,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </div>
                   </div>
                 ) : null}
-                <div style={{ opacity: capturedListLoading ? 0.35 : 1, filter: capturedListLoading ? "blur(1px)" : "none", transition: "opacity 150ms ease, filter 150ms ease" }}>
+                <div>
                 {workspaceDataReady ? (!capturedCandidates.length ? <div className="empty-state">No captured notes or recruiter-owned candidates yet.</div> : pagedCapturedCandidates.map((item) => {
                   const matchedAssessment = resolveCapturedAssessment(item);
                   const statusState = normalizedAssessmentState(matchedAssessment, item);

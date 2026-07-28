@@ -4202,6 +4202,9 @@ button:focus-visible {
 .captured-note-card {
   border-radius: 18px;
   position: relative;
+  contain: paint;
+  backface-visibility: hidden;
+  transform: translateZ(0);
 }
 
 .captured-note-card--inactive {
