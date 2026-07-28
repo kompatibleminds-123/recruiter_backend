@@ -9905,6 +9905,7 @@ function PortalApp({ token, onLogout }) {
   const dashboardLiveRefreshTimerRef = useRef(null);
   const dashboardLiveRefreshInFlightRef = useRef(false);
   const dashboardLiveRefreshQueuedRef = useRef(false);
+  const dashboardLiveRefreshHandlerRef = useRef(null);
   const scheduleDashboardLiveRefresh = useCallback((reason = "sse") => {
     if (String(location?.pathname || "").trim() !== "/dashboard") return;
     if (dashboardLiveRefreshTimerRef.current) {
@@ -9917,7 +9918,8 @@ function PortalApp({ token, onLogout }) {
         return;
       }
       dashboardLiveRefreshInFlightRef.current = true;
-      void refreshDashboardAfterAssessmentChange()
+      const refreshDashboard = dashboardLiveRefreshHandlerRef.current;
+      void Promise.resolve(typeof refreshDashboard === "function" ? refreshDashboard() : null)
         .catch(() => {})
         .finally(() => {
           dashboardLiveRefreshInFlightRef.current = false;
@@ -9927,7 +9929,7 @@ function PortalApp({ token, onLogout }) {
           }
         });
     }, 350);
-  }, [location?.pathname, refreshDashboardAfterAssessmentChange]);
+  }, [location?.pathname]);
   const databaseCandidatesHydratedRef = useRef(false);
   const databaseUniverseHydrationInFlightRef = useRef(false);
   const [candidateFilterPanelOpen, setCandidateFilterPanelOpen] = useState(true);
@@ -25683,6 +25685,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       await openDashboardDrilldown(drilldownState.request);
     }
   }
+  dashboardLiveRefreshHandlerRef.current = refreshDashboardAfterAssessmentChange;
 
   function applyOptimisticDashboardAgendaAssessmentPatch(assessment) {
     if (!assessment || typeof assessment !== "object") return;
