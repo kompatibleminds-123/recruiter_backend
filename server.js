@@ -4831,63 +4831,24 @@ function normalizeAttemptOutcomeLabel(outcome) {
   return map[key] || value;
 }
 
-function getCapturedOutcomeFilterVariants(outcomes = []) {
-  const values = new Set();
-  let includesEmpty = false;
-  const add = (value) => {
-    const text = String(value || "").trim();
-    if (text) values.add(text);
-  };
-  const addSnake = (value) => {
-    const text = String(value || "").trim();
-    if (!text) return;
-    values.add(text.toLowerCase().replace(/\s+/g, "_"));
-  };
-  (Array.isArray(outcomes) ? outcomes : []).forEach((outcome) => {
-    const label = normalizeAttemptOutcomeLabel(outcome);
-    if (label === "No outcome") includesEmpty = true;
-    add(outcome);
-    add(label);
-    add(label.toLowerCase());
-    addSnake(label);
-    if (label === "Not responding") add("no_answer");
-    if (label === "Switch Off") add("switch_off");
-    if (label === "Disconnected") add("disconnecting");
-    if (label === "Call later") add("call_back_later");
-    if (label === "Hold by recruiter") add("hold_by_recruiter");
-    if (label === "Not interested") add("not_interested_current_role");
-    if (label === "Screening reject") add("not_suitable_current_role");
-  });
-  return { values: Array.from(values), includesEmpty };
-}
-
-function buildCapturedOutcomeFilterQueryClause(outcomes = [], contactAttemptCandidateIds = []) {
-  const { values, includesEmpty } = getCapturedOutcomeFilterVariants(outcomes);
-  const encodedValues = values.map((item) => encodeURIComponent(item)).filter(Boolean);
+function buildCapturedAttemptCandidateIdFilterClause(contactAttemptCandidateIds = []) {
   const encodedCandidateIds = (Array.isArray(contactAttemptCandidateIds) ? contactAttemptCandidateIds : [])
     .map((item) => String(item || "").trim())
     .filter(Boolean)
     .map((item) => encodeURIComponent(item));
-  const idOrClause = encodedCandidateIds.length ? `id.in.(${encodedCandidateIds.join(",")})` : "";
   const idFilterClause = encodedCandidateIds.length ? `id=in.(${encodedCandidateIds.join(",")})` : "";
-  if (includesEmpty) {
-    const clauses = ["last_contact_outcome.is.null", "last_contact_outcome.eq."];
-    if (idOrClause) clauses.unshift(idOrClause);
-    if (encodedValues.length) clauses.unshift(`last_contact_outcome.in.(${encodedValues.join(",")})`);
-    return `or=(${clauses.join(",")})`;
-  }
-  if (encodedValues.length && idOrClause) return `or=(last_contact_outcome.in.(${encodedValues.join(",")}),${idOrClause})`;
-  if (idFilterClause) return idFilterClause;
-  if (encodedValues.length) return `last_contact_outcome=in.(${encodedValues.join(",")})`;
-  return "";
+  return idFilterClause || "id=eq.__no_contact_attempt_outcome_match__";
 }
 
 async function resolveLatestContactAttemptCandidateIdsByOutcome(companyId, outcomes = []) {
   const scopedCompanyId = String(companyId || "").trim();
-  const selectedOutcomes = (Array.isArray(outcomes) ? outcomes : [])
+  const selectedExactOutcomes = (Array.isArray(outcomes) ? outcomes : [])
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  const selectedNormalizedOutcomes = selectedExactOutcomes
     .map((item) => normalizeAttemptOutcomeLabel(item).toLowerCase())
     .filter(Boolean);
-  if (!scopedCompanyId || !selectedOutcomes.length) return [];
+  if (!scopedCompanyId || !selectedExactOutcomes.length) return [];
   const { on, url, key } = getSupabaseServiceConfig();
   if (!(on && url && key)) return [];
   const response = await fetch(
@@ -4902,8 +4863,11 @@ async function resolveLatestContactAttemptCandidateIdsByOutcome(companyId, outco
     const candidateId = String(row?.candidate_id || row?.candidateId || "").trim();
     if (!candidateId || seenCandidateIds.has(candidateId)) return;
     seenCandidateIds.add(candidateId);
-    const latestOutcome = normalizeAttemptOutcomeLabel(row?.outcome || "No outcome").toLowerCase();
-    if (selectedOutcomes.includes(latestOutcome)) matchedCandidateIds.push(candidateId);
+    const latestExactOutcome = String(row?.outcome || "").trim();
+    const latestNormalizedOutcome = normalizeAttemptOutcomeLabel(latestExactOutcome || "No outcome").toLowerCase();
+    if (selectedExactOutcomes.includes(latestExactOutcome) || selectedNormalizedOutcomes.includes(latestNormalizedOutcome)) {
+      matchedCandidateIds.push(candidateId);
+    }
   });
   return matchedCandidateIds;
 }
@@ -5050,8 +5014,7 @@ async function listCapturedForUser(user, options = {}) {
     if (filters.capturedBy.length) baseFilterParts.push(`recruiter_name=in.(${filters.capturedBy.map((item) => encodeURIComponent(item)).join(",")})`);
     if (filters.sources.length) baseFilterParts.push(`source=in.(${filters.sources.map((item) => encodeURIComponent(item)).join(",")})`);
     if (filters.outcomes.length) {
-      const outcomeClause = buildCapturedOutcomeFilterQueryClause(filters.outcomes, contactAttemptOutcomeCandidateIds);
-      if (outcomeClause) baseFilterParts.push(outcomeClause);
+      baseFilterParts.push(buildCapturedAttemptCandidateIdFilterClause(contactAttemptOutcomeCandidateIds));
     }
     if (filters.activeStates.length === 1) {
       const only = String(filters.activeStates[0] || "").trim();
