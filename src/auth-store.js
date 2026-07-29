@@ -3452,7 +3452,7 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
 
     writeStore(store);
     if (String(next.clientName || "").trim()) {
-      await createCompanyClient({
+      void createCompanyClient({
         actorUserId,
         companyId,
         name: next.clientName,
@@ -3505,7 +3505,7 @@ async function saveCompanyJob({ actorUserId, companyId, job }) {
   );
 
   if (String(job.clientName || "").trim()) {
-    await createCompanyClient({
+    void createCompanyClient({
       actorUserId,
       companyId,
       name: String(job.clientName || "").trim(),

@@ -948,6 +948,8 @@ function normalizeAttemptOutcomeLabel(outcome) {
     "not responding": "Not responding",
     "nr": "Not responding",
     "no response": "Not responding",
+    "no answer": "Not responding",
+    "not received": "Not responding",
     "busy": "Busy",
     "duplicate": "Duplicate",
     "jd shared": "JD shared",
@@ -955,7 +957,9 @@ function normalizeAttemptOutcomeLabel(outcome) {
     "switch off": "Switch Off",
     "switched off": "Switch Off",
     "disconnected": "Disconnected",
+    "disconnecting": "Disconnected",
     "not reachable": "Not reachable",
+    "unreachable": "Not reachable",
     "call back later": "Call later",
     "callback later": "Call later",
     "call later": "Call later",
@@ -963,7 +967,11 @@ function normalizeAttemptOutcomeLabel(outcome) {
     "hold": "Hold by recruiter",
     "hold by recruiter": "Hold by recruiter",
     "not interested": "Not interested",
+    "not interested current role": "Not interested",
     "screening reject": "Screening reject",
+    "not suitable current role": "Screening reject",
+    "interview reject": "Screening reject",
+    "revisit": "Revisit for other role",
     "revisit for other role": "Revisit for other role"
   };
   return map[key] || value;
@@ -19646,7 +19654,7 @@ function PortalApp({ token, onLogout }) {
         setSelectedJobId(nextId);
         setJobDraft((current) => ({ ...current, id: nextId }));
       }
-      await reloadJobsWorkspace().catch(() => {});
+      void reloadJobsWorkspace().catch(() => {});
       setStatus("jobs", "JD saved.", "ok");
     } catch (error) {
       setStatus("jobs", `JD save failed: ${String(error?.message || error)}`, "error");
@@ -19727,7 +19735,7 @@ function PortalApp({ token, onLogout }) {
         resetJobDraftBlank();
       }
       setStatus("jobs", "Saved as a new JD.", "ok");
-      await reloadJobsWorkspace().catch(() => {});
+      void reloadJobsWorkspace().catch(() => {});
     } catch (error) {
       setStatus("jobs", `Save as new failed: ${String(error?.message || error)}`, "error");
     } finally {

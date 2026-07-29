@@ -4792,6 +4792,122 @@ function normalizeCapturedFilterOptions(raw = {}) {
   };
 }
 
+function normalizeAttemptOutcomeLabel(outcome) {
+  const value = String(outcome || "").trim();
+  const key = value.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+  const map = {
+    "": "No outcome",
+    "no outcome": "No outcome",
+    "not responding": "Not responding",
+    "nr": "Not responding",
+    "no response": "Not responding",
+    "no answer": "Not responding",
+    "no received": "Not responding",
+    "not received": "Not responding",
+    "busy": "Busy",
+    "duplicate": "Duplicate",
+    "jd shared": "JD shared",
+    "shared jd": "JD shared",
+    "switch off": "Switch Off",
+    "switched off": "Switch Off",
+    "disconnected": "Disconnected",
+    "disconnecting": "Disconnected",
+    "not reachable": "Not reachable",
+    "unreachable": "Not reachable",
+    "call back later": "Call later",
+    "callback later": "Call later",
+    "call later": "Call later",
+    "interested": "Interested",
+    "hold": "Hold by recruiter",
+    "hold by recruiter": "Hold by recruiter",
+    "not interested": "Not interested",
+    "not interested current role": "Not interested",
+    "screening reject": "Screening reject",
+    "not suitable current role": "Screening reject",
+    "interview reject": "Screening reject",
+    "revisit for other role": "Revisit for other role",
+    "revisit": "Revisit for other role"
+  };
+  return map[key] || value;
+}
+
+function getCapturedOutcomeFilterVariants(outcomes = []) {
+  const values = new Set();
+  let includesEmpty = false;
+  const add = (value) => {
+    const text = String(value || "").trim();
+    if (text) values.add(text);
+  };
+  const addSnake = (value) => {
+    const text = String(value || "").trim();
+    if (!text) return;
+    values.add(text.toLowerCase().replace(/\s+/g, "_"));
+  };
+  (Array.isArray(outcomes) ? outcomes : []).forEach((outcome) => {
+    const label = normalizeAttemptOutcomeLabel(outcome);
+    if (label === "No outcome") includesEmpty = true;
+    add(outcome);
+    add(label);
+    add(label.toLowerCase());
+    addSnake(label);
+    if (label === "Not responding") add("no_answer");
+    if (label === "Switch Off") add("switch_off");
+    if (label === "Disconnected") add("disconnecting");
+    if (label === "Call later") add("call_back_later");
+    if (label === "Hold by recruiter") add("hold_by_recruiter");
+    if (label === "Not interested") add("not_interested_current_role");
+    if (label === "Screening reject") add("not_suitable_current_role");
+  });
+  return { values: Array.from(values), includesEmpty };
+}
+
+function buildCapturedOutcomeFilterQueryClause(outcomes = [], contactAttemptCandidateIds = []) {
+  const { values, includesEmpty } = getCapturedOutcomeFilterVariants(outcomes);
+  const encodedValues = values.map((item) => encodeURIComponent(item)).filter(Boolean);
+  const encodedCandidateIds = (Array.isArray(contactAttemptCandidateIds) ? contactAttemptCandidateIds : [])
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .map((item) => encodeURIComponent(item));
+  const idOrClause = encodedCandidateIds.length ? `id.in.(${encodedCandidateIds.join(",")})` : "";
+  const idFilterClause = encodedCandidateIds.length ? `id=in.(${encodedCandidateIds.join(",")})` : "";
+  if (includesEmpty) {
+    const clauses = ["last_contact_outcome.is.null", "last_contact_outcome.eq."];
+    if (idOrClause) clauses.unshift(idOrClause);
+    if (encodedValues.length) clauses.unshift(`last_contact_outcome.in.(${encodedValues.join(",")})`);
+    return `or=(${clauses.join(",")})`;
+  }
+  if (encodedValues.length && idOrClause) return `or=(last_contact_outcome.in.(${encodedValues.join(",")}),${idOrClause})`;
+  if (idFilterClause) return idFilterClause;
+  if (encodedValues.length) return `last_contact_outcome=in.(${encodedValues.join(",")})`;
+  return "";
+}
+
+async function resolveLatestContactAttemptCandidateIdsByOutcome(companyId, outcomes = []) {
+  const scopedCompanyId = String(companyId || "").trim();
+  const selectedOutcomes = (Array.isArray(outcomes) ? outcomes : [])
+    .map((item) => normalizeAttemptOutcomeLabel(item).toLowerCase())
+    .filter(Boolean);
+  if (!scopedCompanyId || !selectedOutcomes.length) return [];
+  const { on, url, key } = getSupabaseServiceConfig();
+  if (!(on && url && key)) return [];
+  const response = await fetch(
+    `${url}/rest/v1/contact_attempts?company_id=eq.${encodeURIComponent(scopedCompanyId)}&select=candidate_id,outcome,created_at&order=created_at.desc&limit=10000`,
+    { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+  );
+  if (!response.ok) return [];
+  const rows = await response.json().catch(() => []);
+  const seenCandidateIds = new Set();
+  const matchedCandidateIds = [];
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const candidateId = String(row?.candidate_id || row?.candidateId || "").trim();
+    if (!candidateId || seenCandidateIds.has(candidateId)) return;
+    seenCandidateIds.add(candidateId);
+    const latestOutcome = normalizeAttemptOutcomeLabel(row?.outcome || "No outcome").toLowerCase();
+    if (selectedOutcomes.includes(latestOutcome)) matchedCandidateIds.push(candidateId);
+  });
+  return matchedCandidateIds;
+}
+
 function isCapturedCandidateRow(row = {}) {
   const source = String(row?.source || "").trim().toLowerCase();
   return !isInboundApplicantSourceValue(source);
@@ -4843,8 +4959,9 @@ function applyCapturedFiltersLocal(row = {}, filters = {}, user = null) {
     if (!filters.sources.includes(value)) return false;
   }
   if (filters?.outcomes?.length) {
-    const value = String(row?.last_contact_outcome || "").trim() || "No outcome";
-    if (!filters.outcomes.includes(value)) return false;
+    const selectedOutcomes = filters.outcomes.map((item) => normalizeAttemptOutcomeLabel(item).toLowerCase());
+    const value = normalizeAttemptOutcomeLabel(row?.last_contact_outcome || "No outcome").toLowerCase();
+    if (!selectedOutcomes.includes(value)) return false;
   }
   if (filters?.q) {
     const q = String(filters.q || "").toLowerCase();
@@ -4904,6 +5021,9 @@ async function listCapturedForUser(user, options = {}) {
   const actorIsAdmin = String(user?.role || "").toLowerCase() === "admin";
 
   if (on && companyId) {
+    const contactAttemptOutcomeCandidateIds = filters.outcomes.length
+      ? await resolveLatestContactAttemptCandidateIdsByOutcome(companyId, filters.outcomes)
+      : [];
     const baseFilterParts = [
       "select=*",
       `company_id=eq.${encodeURIComponent(companyId)}`,
@@ -4929,6 +5049,10 @@ async function listCapturedForUser(user, options = {}) {
     if (filters.assignedTo.length) baseFilterParts.push(`assigned_to_name=in.(${filters.assignedTo.map((item) => encodeURIComponent(item)).join(",")})`);
     if (filters.capturedBy.length) baseFilterParts.push(`recruiter_name=in.(${filters.capturedBy.map((item) => encodeURIComponent(item)).join(",")})`);
     if (filters.sources.length) baseFilterParts.push(`source=in.(${filters.sources.map((item) => encodeURIComponent(item)).join(",")})`);
+    if (filters.outcomes.length) {
+      const outcomeClause = buildCapturedOutcomeFilterQueryClause(filters.outcomes, contactAttemptOutcomeCandidateIds);
+      if (outcomeClause) baseFilterParts.push(outcomeClause);
+    }
     if (filters.activeStates.length === 1) {
       const only = String(filters.activeStates[0] || "").trim();
       if (only === "Active") {
