@@ -1795,6 +1795,21 @@ async function buildResumeFormattingSampleDocxBuffer({ companyName = "Your Compa
   return Packer.toBuffer(doc);
 }
 
+function sanitizePdfOverlayText(value = "") {
+  return String(value || "")
+    .replace(/\u20b9/g, "Rs")
+    .replace(/[₹]/g, "Rs")
+    .replace(/[–—]/g, "-")
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[•·]/g, "-")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 async function buildBrandedPdfBuffer({
   pdfBase64 = "",
   companyName = "Your Company",
@@ -1832,12 +1847,16 @@ async function buildBrandedPdfBuffer({
   const headerEnabled = rf.headerEnabled !== false;
   const footerEnabled = rf.footerEnabled !== false;
   const watermarkEnabled = rf.watermarkEnabled === true;
-  const watermarkText = String(rf.watermarkText || "CONFIDENTIAL").trim() || "CONFIDENTIAL";
-  const footerText = String(rf.footerText || "Confidential candidate profile shared by {{company_name}}")
-    .replace(/\{\{\s*company_name\s*\}\}/gi, String(companyName || "Your Company").trim());
-  const sideRibbonText = String(rf.sideRibbonText || "Shared by {{company_name}}")
-    .replace(/\{\{\s*company_name\s*\}\}/gi, String(companyName || "Your Company").trim())
-    .trim();
+  const safeCompanyName = sanitizePdfOverlayText(companyName || "Your Company") || "Your Company";
+  const watermarkText = sanitizePdfOverlayText(rf.watermarkText || "CONFIDENTIAL") || "CONFIDENTIAL";
+  const footerText = sanitizePdfOverlayText(
+    String(rf.footerText || "Confidential candidate profile shared by {{company_name}}")
+      .replace(/\{\{\s*company_name\s*\}\}/gi, safeCompanyName)
+  );
+  const sideRibbonText = sanitizePdfOverlayText(
+    String(rf.sideRibbonText || "Shared by {{company_name}}")
+      .replace(/\{\{\s*company_name\s*\}\}/gi, safeCompanyName)
+  );
   const templateStyle = String(rf.templateStyle || "minimal_corporate").trim() || "minimal_corporate";
   const headerLayout = String(rf.headerLayout || "executive").trim().toLowerCase() === "compact" ? "compact" : "executive";
   // Keep header slimmer (~15%) and elegant.
@@ -1846,8 +1865,8 @@ async function buildBrandedPdfBuffer({
   const footerHeight = Math.max(34, Math.min(70, Number(rf.footerMaxHeightPx || 50) || 50));
   const wmOpacity = Math.max(0.05, Math.min(0.15, Number(rf.watermarkOpacity || 0.12) || 0.12));
   const primaryColor = String(rf.primaryColor || "#243B6B").trim() || "#243B6B";
-  const displayName = String(candidateName || "Candidate Name").trim() || "Candidate Name";
-  const displayLine = String(headerLine || "").trim();
+  const displayName = sanitizePdfOverlayText(candidateName || "Candidate Name") || "Candidate Name";
+  const displayLine = sanitizePdfOverlayText(headerLine || "");
   const fontRegular = await outDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await outDoc.embedFont(StandardFonts.HelveticaBold);
   const navy = hexToRgb01(primaryColor) || { r: 0.14, g: 0.23, b: 0.42 };
@@ -1858,7 +1877,7 @@ async function buildBrandedPdfBuffer({
   const softPanel = { r: 0.96, g: 0.97, b: 0.99 };
   const footerCaps = footerText.toUpperCase();
   const headerFieldOrder = Array.isArray(rf.headerShowFields) ? rf.headerShowFields.map((v) => String(v || "").trim()) : [];
-  const sharedByText = String(sideRibbonText || `Shared by ${String(companyName || "Your Company").trim() || "Your Company"}`).trim();
+  const sharedByText = sanitizePdfOverlayText(sideRibbonText || `Shared by ${safeCompanyName}`) || `Shared by ${safeCompanyName}`;
   const safeMarginX = 10;
 
   let logoImage = null;
