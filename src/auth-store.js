@@ -2718,7 +2718,7 @@ async function createUser({ actorUserId, companyId, name, email, phone, password
         throw new Error(getWorkspaceUserLimitMessage(workspaceUserLimit));
       }
     }
-    const user = { id: crypto.randomUUID(), companyId, companyName: company.name, name: String(name).trim(), email: e, phone: String(phone || "").trim(), role: r, passwordHash: hashPassword(password), createdAt: new Date().toISOString() };
+    const user = { id: crypto.randomUUID(), companyId, companyName: company.name, name: String(name).trim(), email: e, phone: String(phone || "").trim(), role: r, emailVerified: true, email_verified: true, passwordHash: hashPassword(password), createdAt: new Date().toISOString() };
     if (r === "payroll_owner" || r === "payroll_manager") {
       store.payrollUsers = Array.isArray(store.payrollUsers) ? store.payrollUsers : [];
       store.payrollUsers.push(user);
@@ -2756,6 +2756,7 @@ async function createUser({ actorUserId, companyId, name, email, phone, password
     email: e,
     role: r,
     phone_number: String(phone || "").trim(),
+    email_verified: true,
     password_hash: hashPassword(password),
     created_at: new Date().toISOString()
   };
@@ -2765,16 +2766,19 @@ async function createUser({ actorUserId, companyId, name, email, phone, password
   } catch (error) {
     const message = String(error?.message || error);
     if (/phone_number|column/i.test(message)) {
-      const fallbackRows = await sbIns("users", [{
+      const fallbackUser = {
         id: userRow.id,
         company_id: userRow.company_id,
         company_name: userRow.company_name,
         name: userRow.name,
         email: userRow.email,
         role: userRow.role,
+        email_verified: userRow.email_verified,
         password_hash: userRow.password_hash,
         created_at: userRow.created_at
-      }], { conflict: "id", upsert: true });
+      };
+      if (/email_verified/i.test(message)) delete fallbackUser.email_verified;
+      const fallbackRows = await sbIns("users", [fallbackUser], { conflict: "id", upsert: true });
       return sanitizeUser({ ...(fallbackRows[0] || {}), phone_number: String(phone || "").trim() });
     }
     throw error;
@@ -2950,13 +2954,50 @@ async function updateUserProfile({ actorUserId, companyId, userId, role, phone }
   }
   return sanitizeUser(updatedRows?.[0] || target);
 }
+
+async function markWorkspaceUserEmailVerified(user) {
+  const userId = String(user?.id || "").trim();
+  const companyId = String(user?.companyId || user?.company_id || "").trim();
+  if (!userId || !companyId) return null;
+  if (!cfg().on) {
+    const store = readStore();
+    const row = (store.users || []).find(
+      (item) =>
+        String(item?.id || "").trim() === userId &&
+        String(item?.companyId || item?.company_id || "").trim() === companyId
+    );
+    if (!row) return null;
+    row.emailVerified = true;
+    row.email_verified = true;
+    writeStore(store);
+    return sanitizeUser(row);
+  }
+  try {
+    const rows = await sbPatch("users", `id=eq.${enc(userId)}&company_id=eq.${enc(companyId)}`, { email_verified: true });
+    return sanitizeUser(rows?.[0] || user);
+  } catch (error) {
+    const message = String(error?.message || error);
+    if (/email_verified/i.test(message)) return sanitizeUser(user);
+    throw error;
+  }
+}
+
 async function login({ email, password }) {
   const e = normalizeEmail(email); const user = await getUserByEmail(e);
   if (!user || !verifyPassword(password, user.passwordHash || user.password_hash)) throw new Error("Invalid email or password.");
   // Backward compatibility: legacy users may not have email_verified stored.
   // Only block login when value is explicitly false.
   const rawEmailVerified = user.emailVerified ?? user.email_verified;
-  const emailVerified = rawEmailVerified === false ? false : true;
+  let emailVerified = rawEmailVerified === false ? false : true;
+  const role = String(user.role || "").trim().toLowerCase();
+  if (!emailVerified && role && role !== "admin") {
+    const verifiedUser = await markWorkspaceUserEmailVerified(user);
+    if (verifiedUser) {
+      user.emailVerified = true;
+      user.email_verified = true;
+      emailVerified = true;
+    }
+  }
   if (!emailVerified) throw new Error("Please verify your email before logging in.");
   const sessionUser = sanitizeUser(user); const token = crypto.randomBytes(32).toString("hex");
   // Keep authentication separate from plan enforcement.
