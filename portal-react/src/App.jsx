@@ -2019,15 +2019,19 @@ function buildCandidateDraftPayloadPatch(candidate = {}, patch = {}) {
   if (Object.prototype.hasOwnProperty.call(patch, "email") || Object.prototype.hasOwnProperty.call(patch, "emailId")) next.emailId = patch.emailId ?? patch.email ?? next.emailId ?? "";
   if (Object.prototype.hasOwnProperty.call(patch, "linkedin") || Object.prototype.hasOwnProperty.call(patch, "linkedinUrl")) next.linkedin = patch.linkedin ?? patch.linkedinUrl ?? next.linkedin ?? "";
   if (Object.prototype.hasOwnProperty.call(patch, "location")) next.location = patch.location ?? next.location ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "gender")) next.gender = patch.gender ?? next.gender ?? "";
   if (Object.prototype.hasOwnProperty.call(patch, "company") || Object.prototype.hasOwnProperty.call(patch, "currentCompany")) next.currentCompany = patch.currentCompany ?? patch.company ?? next.currentCompany ?? "";
   if (Object.prototype.hasOwnProperty.call(patch, "role") || Object.prototype.hasOwnProperty.call(patch, "currentDesignation")) next.currentDesignation = patch.currentDesignation ?? patch.role ?? next.currentDesignation ?? "";
   if (Object.prototype.hasOwnProperty.call(patch, "experience") || Object.prototype.hasOwnProperty.call(patch, "totalExperience")) next.totalExperience = patch.totalExperience ?? patch.experience ?? next.totalExperience ?? "";
   if (Object.prototype.hasOwnProperty.call(patch, "relevantExperience") || Object.prototype.hasOwnProperty.call(patch, "relevant_experience")) next.relevantExperience = patch.relevantExperience ?? patch.relevant_experience ?? next.relevantExperience ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "current_org_tenure") || Object.prototype.hasOwnProperty.call(patch, "currentOrgTenure")) next.currentOrgTenure = patch.currentOrgTenure ?? patch.current_org_tenure ?? next.currentOrgTenure ?? "";
   if (Object.prototype.hasOwnProperty.call(patch, "highest_education") || Object.prototype.hasOwnProperty.call(patch, "highestEducation")) next.highestEducation = patch.highestEducation ?? patch.highest_education ?? next.highestEducation ?? "";
   if (Object.prototype.hasOwnProperty.call(patch, "current_ctc") || Object.prototype.hasOwnProperty.call(patch, "currentCtc")) next.currentCtc = patch.currentCtc ?? patch.current_ctc ?? next.currentCtc ?? "";
   if (Object.prototype.hasOwnProperty.call(patch, "expected_ctc") || Object.prototype.hasOwnProperty.call(patch, "expectedCtc")) next.expectedCtc = patch.expectedCtc ?? patch.expected_ctc ?? next.expectedCtc ?? "";
   if (Object.prototype.hasOwnProperty.call(patch, "notice_period") || Object.prototype.hasOwnProperty.call(patch, "noticePeriod")) next.noticePeriod = patch.noticePeriod ?? patch.notice_period ?? next.noticePeriod ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "offer_in_hand") || Object.prototype.hasOwnProperty.call(patch, "offerInHand")) next.offerInHand = patch.offerInHand ?? patch.offer_in_hand ?? next.offerInHand ?? "";
   if (Object.prototype.hasOwnProperty.call(patch, "lwd_or_doj") || Object.prototype.hasOwnProperty.call(patch, "lwdOrDoj")) next.lwdOrDoj = patch.lwdOrDoj ?? patch.lwd_or_doj ?? next.lwdOrDoj ?? "";
+  if (Object.prototype.hasOwnProperty.call(patch, "reason_of_change") || Object.prototype.hasOwnProperty.call(patch, "reasonForChange")) next.reasonForChange = patch.reasonForChange ?? patch.reason_of_change ?? next.reasonForChange ?? "";
   if (Object.prototype.hasOwnProperty.call(patch, "recruiter_context_notes") || Object.prototype.hasOwnProperty.call(patch, "recruiterNotes")) next.recruiterNotes = patch.recruiterNotes ?? patch.recruiter_context_notes ?? next.recruiterNotes ?? "";
   if (Object.prototype.hasOwnProperty.call(patch, "notes") || Object.prototype.hasOwnProperty.call(patch, "callbackNotes")) next.callbackNotes = patch.callbackNotes ?? patch.notes ?? next.callbackNotes ?? "";
   if (Object.prototype.hasOwnProperty.call(patch, "other_pointers") || Object.prototype.hasOwnProperty.call(patch, "otherPointers")) next.otherPointers = patch.otherPointers ?? patch.other_pointers ?? next.otherPointers ?? "";
@@ -18595,7 +18599,7 @@ function PortalApp({ token, onLogout }) {
       currentCtc: candidateDraft.currentCtc || matched?.currentCtc || candidate?.current_ctc || "",
       expectedCtc: candidateDraft.expectedCtc || matched?.expectedCtc || candidate?.expected_ctc || "",
       noticePeriod: candidateDraft.noticePeriod || matched?.noticePeriod || candidate?.notice_period || parsedRecruiterBase.notice_period || "",
-      offerInHand: candidateDraft.offerInHand || matched?.offerInHand || parsedRecruiterBase.offer_in_hand || "",
+      offerInHand: candidateDraft.offerInHand || matched?.offerInHand || matched?.offerAmount || matched?.offer_amount || candidate?.offer_in_hand || candidate?.offerInHand || parsedRecruiterBase.offer_in_hand || "",
       lwdOrDoj: sanitizeLwdOrDojValue(candidateDraft.lwdOrDoj || matched?.lwdOrDoj || candidate?.lwd_or_doj || parsedRecruiterBase.lwd_or_doj || ""),
       currentCompany: candidateDraft.currentCompany || matched?.currentCompany || candidate?.company || candidateCvAnalysis?.currentCompany || "",
       currentDesignation: candidateDraft.currentDesignation || matched?.currentDesignation || candidate?.role || candidateCvAnalysis?.currentDesignation || "",
@@ -18659,8 +18663,8 @@ function PortalApp({ token, onLogout }) {
       currentCtc: String(assessment?.currentCtc || ""),
       expectedCtc: String(assessment?.expectedCtc || ""),
       noticePeriod: String(assessment?.noticePeriod || ""),
-      offerInHand: String(assessment?.offerInHand || ""),
-      lwdOrDoj: sanitizeLwdOrDojValue(assessment?.lwdOrDoj || ""),
+      offerInHand: String(assessment?.offerInHand || assessment?.offerAmount || assessment?.offer_amount || assessment?.payload?.offerInHand || assessment?.payload?.offer_in_hand || ""),
+      lwdOrDoj: sanitizeLwdOrDojValue(assessment?.lwdOrDoj || assessment?.offerDoj || assessment?.offer_doj || assessment?.payload?.lwdOrDoj || assessment?.payload?.lwd_or_doj || ""),
       currentCompany: String(assessment?.currentCompany || ""),
       currentDesignation: String(assessment?.currentDesignation || ""),
       totalExperience: String(assessment?.totalExperience || ""),
@@ -19228,6 +19232,7 @@ function PortalApp({ token, onLogout }) {
             email: form.emailId,
             linkedin: form.linkedin,
             location: form.location,
+            gender: form.gender,
             company: form.currentCompany,
             role: form.currentDesignation,
             experience: form.totalExperience,
@@ -19236,6 +19241,9 @@ function PortalApp({ token, onLogout }) {
             current_ctc: form.currentCtc,
             expected_ctc: form.expectedCtc,
             notice_period: form.noticePeriod,
+            offer_in_hand: form.offerInHand,
+            current_org_tenure: String(form.currentOrgTenure || "").trim(),
+            reason_of_change: form.reasonForChange,
             recruiter_context_notes: form.recruiterNotes,
             other_pointers: form.otherPointers,
             skills: parseTagInputValue(form.tags),
@@ -19312,6 +19320,7 @@ function PortalApp({ token, onLogout }) {
 	        email: form.emailId,
 	        linkedin: form.linkedin,
 	        location: form.location,
+	        gender: form.gender,
 	        company: form.currentCompany,
 	        role: form.currentDesignation,
 	        experience: form.totalExperience,
@@ -19320,6 +19329,9 @@ function PortalApp({ token, onLogout }) {
 	        current_ctc: form.currentCtc,
 	        expected_ctc: form.expectedCtc,
 	        notice_period: form.noticePeriod,
+	        offer_in_hand: form.offerInHand,
+	        current_org_tenure: String(form.currentOrgTenure || "").trim(),
+	        reason_of_change: form.reasonForChange,
 	        recruiter_context_notes: form.recruiterNotes,
 	        notes: form.callbackNotes,
 	        other_pointers: form.otherPointers,
