@@ -21597,6 +21597,7 @@ const server = http.createServer(async (req, res) => {
         recruiterLabel: String(requestUrl.searchParams.get("recruiterLabel") || "").trim(),
         positionLabel: String(requestUrl.searchParams.get("positionLabel") || "").trim()
       };
+      const strictJobPairs = ["1", "true", "yes"].includes(String(requestUrl.searchParams.get("strictJobPairs") || "").trim().toLowerCase());
       const companyId = String(
         user?.companyId
         || user?.company_id
@@ -21604,11 +21605,11 @@ const server = http.createServer(async (req, res) => {
         || ""
       ).trim();
       if (!companyId) throw new Error("Dashboard drilldown missing company context.");
-      const [candidates, assessments, assessmentEvents] = await Promise.all([
+      const [candidates, assessments, assessmentEvents, jobs] = await Promise.all([
         supabaseTableFetchAll(
           "candidates",
           `?${[
-            "select=id,company_id,source,name,jd_title,role,client_name,recruiter_id,recruiter_name,assigned_to_name,assigned_to_user_id,assessment_id,used_in_assessment,hidden_from_captured,created_at,company,location,current_ctc,expected_ctc,notice_period",
+            "select=id,company_id,source,name,jd_title,role,client_name,assigned_jd_id,assigned_jd_title,recruiter_id,recruiter_name,assigned_to_name,assigned_to_user_id,assessment_id,used_in_assessment,hidden_from_captured,created_at,company,location,current_ctc,expected_ctc,notice_period",
             `company_id=eq.${encodeURIComponent(companyId)}`,
             "order=created_at.desc"
           ].join("&")}`,
@@ -21619,8 +21620,43 @@ const server = http.createServer(async (req, res) => {
           "assessment_events",
           `?select=assessment_id,event_type,status,payload,created_at&company_id=eq.${encodeURIComponent(user.companyId)}`,
           { pageSize: 1000, maxPages: 50 }
-        ).catch(() => [])
+        ).catch(() => []),
+        strictJobPairs
+          ? listCompanyJobs(companyId, String(user?.id || "").trim(), {
+              includeArchived: true,
+              viewerRole: user.role,
+              includeJobShortcuts: false
+            }).catch(() => [])
+          : Promise.resolve([])
       ]);
+      const jobById = buildJobIndexById(jobs);
+      const jobByClientTitle = buildJobIndexByClientTitle(jobs);
+      const hasJobPairReference = jobById.size > 0 || jobByClientTitle.size > 0;
+      const getStrictDrilldownScope = (candidate = {}, assessment = {}) => {
+        const base = getDashboardDrilldownScope(candidate || {}, assessment || {});
+        if (!strictJobPairs || !hasJobPairReference) return { ...base, positionPairValid: true };
+        const payload = assessment?.payload && typeof assessment.payload === "object" ? assessment.payload : {};
+        const jobId = String(
+          candidate?.assigned_jd_id
+          || candidate?.assignedJdId
+          || candidate?.jd_id
+          || candidate?.job_id
+          || assessment?.jobId
+          || assessment?.job_id
+          || payload?.jobId
+          || payload?.job_id
+          || ""
+        ).trim();
+        const linkedJob = jobId ? (jobById.get(jobId) || null) : null;
+        if (linkedJob?.clientName && linkedJob?.title) {
+          return { ...base, clientLabel: linkedJob.clientName, positionLabel: linkedJob.title, positionPairValid: true };
+        }
+        const exactPair = jobByClientTitle.get(normalizeJobClientTitleKey(base.clientLabel, base.positionLabel)) || null;
+        if (exactPair?.clientName && exactPair?.title) {
+          return { ...base, clientLabel: exactPair.clientName, positionLabel: exactPair.title, positionPairValid: true };
+        }
+        return { ...base, positionPairValid: false };
+      };
       const funnelContext = buildDashboardFunnelPayload({
         user,
         candidates: Array.isArray(candidates) ? candidates : [],
@@ -21630,7 +21666,9 @@ const server = http.createServer(async (req, res) => {
         dateFrom,
         dateTo,
         clientFilter,
-        recruiterFilter
+        recruiterFilter,
+        jobs: Array.isArray(jobs) ? jobs : [],
+        strictJobPairs
       });
       const assessmentById = new Map(
         (Array.isArray(assessments) ? assessments : []).map((row) => [String(row?.id || "").trim(), row]).filter(([id]) => Boolean(id))
@@ -21676,7 +21714,7 @@ const server = http.createServer(async (req, res) => {
             return {
               candidate,
               linkedAssessment,
-              scope: getDashboardDrilldownScope(candidate || {}, linkedAssessment || {})
+              scope: getStrictDrilldownScope(candidate || {}, linkedAssessment || {})
             };
           })
           .filter((entry) => {
@@ -21684,6 +21722,7 @@ const server = http.createServer(async (req, res) => {
             return isDateWithinRange(createdAt, dateFrom, dateTo);
           })
           .filter((entry) => matchesScope(entry.scope))
+          .filter((entry) => !strictJobPairs || entry.scope.positionPairValid !== false)
           .map((entry) => {
             return createDashboardDrilldownCandidateItem(entry.candidate, entry.linkedAssessment);
           });
@@ -21701,12 +21740,13 @@ const server = http.createServer(async (req, res) => {
             const candidate = candidateId ? (candidateById.get(candidateId) || null) : null;
             const historicalRank = getAssessmentHistoricalRank(assessment, eventsByAssessmentId);
             const exactInterviewContext = getAssessmentExactInterviewContext(assessment, eventsByAssessmentId);
-            const scope = getDashboardDrilldownScope(candidate || {}, assessment || {});
+            const scope = getStrictDrilldownScope(candidate || {}, assessment || {});
             const convertedAt = String(getCandidateConvertedAt(candidate || {}, assessment || {}) || assessment?.created_at || assessment?.createdAt || "").trim();
             return { assessment, candidate, historicalRank, exactInterviewContext, scope, convertedAt };
           })
           .filter((entry) => isDateWithinRange(entry.convertedAt, dateFrom, dateTo))
           .filter((entry) => matchesScope(entry.scope))
+          .filter((entry) => !strictJobPairs || entry.scope.positionPairValid !== false)
           .filter((entry) => {
             const rank = entry.historicalRank;
             if (metric === "sharedProfiles" || metric === "converted") return true;

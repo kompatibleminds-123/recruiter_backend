@@ -4488,6 +4488,49 @@ function resolveDashboardDateOfJoiningValue(item = {}, linkedAssessment = null, 
   ).trim();
 }
 
+function resolveDashboardExpectedDojValue(item = {}, linkedAssessment = null, linkedCandidate = null) {
+  const statusHistory = Array.isArray(linkedAssessment?.statusHistory)
+    ? linkedAssessment.statusHistory
+    : (Array.isArray(item?.statusHistory) ? item.statusHistory : []);
+  for (let index = statusHistory.length - 1; index >= 0; index -= 1) {
+    const entry = statusHistory[index];
+    if (!entry || typeof entry !== "object") continue;
+    const status = normalizeAssessmentStatusLabel(String(entry?.status || "")).toLowerCase();
+    if (status !== "offered") continue;
+    const expectedAt = String(
+      entry?.statusAt
+      || entry?.status_at
+      || entry?.atValue
+      || entry?.at_value
+      || ""
+    ).trim();
+    if (expectedAt) return expectedAt;
+  }
+  return String(
+    item?.expectedDoj
+    || item?.expected_doj
+    || linkedAssessment?.expectedDoj
+    || linkedAssessment?.expected_doj
+    || linkedAssessment?.payload?.expectedDoj
+    || linkedAssessment?.payload?.expected_doj
+    || item?.offerDoj
+    || item?.offer_doj
+    || item?.payload?.expectedDoj
+    || item?.payload?.expected_doj
+    || item?.payload?.offerDoj
+    || item?.payload?.offer_doj
+    || linkedCandidate?.expectedDoj
+    || linkedCandidate?.expected_doj
+    || linkedCandidate?.offerDoj
+    || linkedCandidate?.offer_doj
+    || linkedAssessment?.offerDoj
+    || linkedAssessment?.offer_doj
+    || linkedAssessment?.payload?.offerDoj
+    || linkedAssessment?.payload?.offer_doj
+    || ""
+  ).trim();
+}
+
 function buildCombinedAssessmentInsightsForExportV2(item = {}) {
   const ctx = resolveCandidateContext(item);
   const qaLines = [];
@@ -7303,11 +7346,12 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
   const visibleItems = (Array.isArray(items) ? items : []).slice(pageStart, pageStart + safePageSize);
   const allowStatusUpdate = DASHBOARD_DRILLDOWN_STATUS_ACTION_METRICS.has(String(drilldownMetric || "").trim());
   const isJoinedMetric = String(drilldownMetric || "").trim() === "joined";
+  const isOfferedMetric = String(drilldownMetric || "").trim() === "offered";
   function downloadDrilldownExcel() {
     const rows = Array.isArray(items) ? items : [];
     if (!rows.length) return;
-    const headers = isJoinedMetric
-      ? ["Candidate", "Current status", "Previous assessment status", "Client", "Role", "Date of Joining", "Offer Amount"]
+    const headers = isJoinedMetric || isOfferedMetric
+      ? ["Candidate", "Current status", "Previous assessment status", "Client", "Role", "Offer CTC", isJoinedMetric ? "Date of Joining" : "Expected DOJ"]
       : ["Candidate", "Current status", "Previous assessment status", "Client", "Role", "Current CTC", "Expected CTC", "Notice"];
     const bodyRows = rows.map((item, index) => {
       const assessmentContext = getDrilldownAssessmentContext(item);
@@ -7318,15 +7362,16 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
       const noticePeriod = String(linkedAssessment?.noticePeriod || linkedAssessment?.notice_period || item.noticePeriod || item.notice_period || linkedCandidate?.notice_period || linkedCandidate?.noticePeriod || "").trim();
       const offerAmount = String(linkedAssessment?.offerAmount || linkedAssessment?.offer_amount || linkedAssessment?.offerInHand || linkedAssessment?.offer_in_hand || item.offerAmount || item.offer_amount || item.offerInHand || item.offer_in_hand || linkedCandidate?.offer_in_hand || linkedCandidate?.offerInHand || "").trim();
       const dateOfJoining = resolveDashboardDateOfJoiningValue(item, linkedAssessment, linkedCandidate);
-      const cells = isJoinedMetric
+      const expectedDoj = resolveDashboardExpectedDojValue(item, linkedAssessment, linkedCandidate);
+      const cells = isJoinedMetric || isOfferedMetric
         ? [
             item.name || item.candidateName || `Candidate ${index + 1}`,
             assessmentContext.currentStatus || item.candidateStatus || "",
             assessmentContext.previousStatus || "",
             item.clientName || "",
             item.position || item.jdTitle || item.role || "",
-            dateOfJoining ? formatDateOrRaw(dateOfJoining) : "",
-            offerAmount || ""
+            offerAmount || "",
+            (isJoinedMetric ? dateOfJoining : expectedDoj) ? formatDateOrRaw(isJoinedMetric ? dateOfJoining : expectedDoj) : ""
           ]
         : [
             item.name || item.candidateName || `Candidate ${index + 1}`,
@@ -7371,10 +7416,10 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
                       <th>Current status</th>
                       <th>Client</th>
                       <th>Role</th>
-                      {isJoinedMetric ? (
+                      {isJoinedMetric || isOfferedMetric ? (
                         <>
-                          <th>Date of Joining</th>
-                          <th>Offer Amount</th>
+                          <th>Offer CTC</th>
+                          <th>{isJoinedMetric ? "Date of joining" : "Expected DOJ"}</th>
                         </>
                       ) : (
                         <>
@@ -7440,6 +7485,7 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
                         || ""
                       ).trim();
                       const dateOfJoining = resolveDashboardDateOfJoiningValue(item, linkedAssessment, linkedCandidate);
+                      const expectedDoj = resolveDashboardExpectedDojValue(item, linkedAssessment, linkedCandidate);
                       return (
                         <tr key={stableItemKey}>
                           <td>
@@ -7451,10 +7497,10 @@ function DrilldownModal({ open, title, items, onClose, onOpenCvOriginal, onOpenC
                           </td>
                           <td>{item.clientName || "-"}</td>
                           <td>{item.position || item.jdTitle || item.role || "-"}</td>
-                          {isJoinedMetric ? (
+                          {isJoinedMetric || isOfferedMetric ? (
                             <>
-                              <td>{dateOfJoining ? formatDateOrRaw(dateOfJoining) : "-"}</td>
                               <td>{offerAmount || "-"}</td>
+                              <td>{(isJoinedMetric ? dateOfJoining : expectedDoj) ? formatDateOrRaw(isJoinedMetric ? dateOfJoining : expectedDoj) : "-"}</td>
                             </>
                           ) : (
                             <>
@@ -26515,7 +26561,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         title: "Client wise report",
         subtitle: filterSubtitle,
         headers: ["Client", ...commonMetricHeaders],
-        rows: reportsFilteredClientGroups.map((group) => [group.label, ...appendReportMetricCells(getReportMetrics(group))])
+        rows: reportsFilteredClientGroups.map((group) => [group.label, ...appendReportMetricCells(getReportMetrics(group))]),
+        rowContexts: reportsFilteredClientGroups.map((group) => ({ groupType: "client", clientLabel: group.label }))
       };
     }
     if (reportType === "role") {
@@ -26528,7 +26575,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             const metrics = getReportMetrics(row);
             return metrics.sourced || metrics.shared || metrics.interviews || metrics.shortlisted || metrics.offers || metrics.joined;
           })
-          .map((row) => [row.clientLabel || "Unassigned", row.positionLabel || "Unassigned", ...appendReportMetricCells(getReportMetrics(row))])
+          .map((row) => [row.clientLabel || "Unassigned", row.positionLabel || "Unassigned", ...appendReportMetricCells(getReportMetrics(row))]),
+        rowContexts: reportsFilteredClientPositionRows
+          .filter((row) => {
+            const metrics = getReportMetrics(row);
+            return metrics.sourced || metrics.shared || metrics.interviews || metrics.shortlisted || metrics.offers || metrics.joined;
+          })
+          .map((row) => ({ groupType: "position", clientLabel: row.clientLabel || "Unassigned", positionLabel: row.positionLabel || "Unassigned" }))
       };
     }
     if (reportType === "joinings") {
@@ -26545,7 +26598,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           .map((row) => {
             const metrics = getReportMetrics(row);
             return [row.clientLabel || "Unassigned", row.positionLabel || "Unassigned", metrics.offers, metrics.joined, `${safePct(metrics.joined, metrics.offers)}%`];
+          }),
+        rowContexts: [...reportsFilteredClientPositionRows]
+          .filter((row) => {
+            const metrics = getReportMetrics(row);
+            return metrics.offers || metrics.joined;
           })
+          .sort((a, b) => getReportMetrics(b).joined - getReportMetrics(a).joined)
+          .map((row) => ({ groupType: "position", clientLabel: row.clientLabel || "Unassigned", positionLabel: row.positionLabel || "Unassigned" }))
       };
     }
     if (reportType === "interviews") {
@@ -26562,14 +26622,22 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           .map((row) => {
             const metrics = getReportMetrics(row);
             return [row.clientLabel || "Unassigned", row.positionLabel || "Unassigned", metrics.shared, metrics.interviews, `${safePct(metrics.interviews, metrics.shared)}%`, metrics.shortlisted, `${safePct(metrics.shortlisted, metrics.interviews)}%`];
+          }),
+        rowContexts: [...reportsFilteredClientPositionRows]
+          .filter((row) => {
+            const metrics = getReportMetrics(row);
+            return metrics.interviews || metrics.shortlisted;
           })
+          .sort((a, b) => getReportMetrics(b).interviews - getReportMetrics(a).interviews)
+          .map((row) => ({ groupType: "position", clientLabel: row.clientLabel || "Unassigned", positionLabel: row.positionLabel || "Unassigned" }))
       };
     }
     return {
       title: "Recruiter Report",
       subtitle: filterSubtitle,
       headers: ["Recruiter", ...commonMetricHeaders],
-      rows: reportsFilteredRecruiterGroups.map((group) => [group.label, ...appendReportMetricCells(getReportMetrics(group))])
+      rows: reportsFilteredRecruiterGroups.map((group) => [group.label, ...appendReportMetricCells(getReportMetrics(group))]),
+      rowContexts: reportsFilteredRecruiterGroups.map((group) => ({ groupType: "recruiter", recruiterLabel: group.label }))
     };
   }
   async function loadReportsSummary(filters = reportsFilters) {
@@ -26613,6 +26681,59 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const config = buildReportsTableConfig(reportsPageTab);
     const safeName = String(config.title || "report").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "report";
     downloadSimplePdfFile(`${safeName}-${new Date().toISOString().slice(0, 10)}.pdf`, config);
+  }
+  function getReportClickableMetric(header = "") {
+    const label = String(header || "").trim().toLowerCase();
+    if (label === "shortlisted") return "shortlisted";
+    if (label === "offers") return "offered";
+    if (label === "joined") return "joined";
+    return "";
+  }
+  async function openReportsDrilldown(rowContext = {}, metric = "", title = "") {
+    const safeMetric = String(metric || "").trim();
+    if (!safeMetric) return;
+    const groupType = String(rowContext?.groupType || "all").trim() || "all";
+    const effectiveClientFilter = reportsFilters.client || "";
+    const effectiveRecruiterFilter = reportsFilters.recruiter || "";
+    const query = new URLSearchParams({
+      metric: safeMetric,
+      groupType,
+      dateFrom: reportsFilters.dateFrom || "",
+      dateTo: reportsFilters.dateTo || "",
+      clientFilter: effectiveClientFilter,
+      recruiterFilter: effectiveRecruiterFilter,
+      clientLabel: rowContext.clientLabel || "",
+      recruiterLabel: rowContext.recruiterLabel || "",
+      positionLabel: rowContext.positionLabel || "",
+      strictJobPairs: "1"
+    });
+    const drillTitle = title || `${activeReportsTable.title} | ${safeMetric}`;
+    setDrilldownState({
+      open: true,
+      title: drillTitle,
+      items: [],
+      loading: true,
+      request: { mode: "reports", title: drillTitle, metric: safeMetric, groupType, params: rowContext }
+    });
+    try {
+      const result = await api(`/company/dashboard/drilldown?${query.toString()}`, token);
+      setDrilldownState({
+        open: true,
+        title: drillTitle,
+        items: result.items || [],
+        loading: false,
+        request: { mode: "reports", title: drillTitle, metric: safeMetric, groupType, params: rowContext }
+      });
+    } catch (error) {
+      setDrilldownState({
+        open: true,
+        title: drillTitle,
+        items: [],
+        loading: false,
+        request: { mode: "reports", title: drillTitle, metric: safeMetric, groupType, params: rowContext }
+      });
+      setStatus("workspace", String(error?.message || error || "Unable to load report details"), "error");
+    }
   }
   const activeReportsTable = buildReportsTableConfig(reportsPageTab);
   const clientPortalSummary = state.clientPortal?.summary || { overall: {}, byClient: [], byClientPosition: [] };
@@ -26935,7 +27056,26 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <tbody>
                       {activeReportsTable.rows.length ? activeReportsTable.rows.map((row, rowIndex) => (
                         <tr key={`${reportsPageTab}-${rowIndex}`}>
-                          {row.map((cell, cellIndex) => <td key={`${rowIndex}-${cellIndex}`}>{cell}</td>)}
+                          {row.map((cell, cellIndex) => {
+                            const header = activeReportsTable.headers[cellIndex] || "";
+                            const metric = getReportClickableMetric(header);
+                            const value = Number(cell || 0);
+                            const rowContext = activeReportsTable.rowContexts?.[rowIndex] || {};
+                            const canOpen = Boolean(metric && value > 0);
+                            return (
+                              <td key={`${rowIndex}-${cellIndex}`}>
+                                {canOpen ? (
+                                  <button
+                                    type="button"
+                                    className="table-metric-btn"
+                                    onClick={() => void openReportsDrilldown(rowContext, metric, `${activeReportsTable.title} | ${header}`)}
+                                  >
+                                    {cell}
+                                  </button>
+                                ) : cell}
+                              </td>
+                            );
+                          })}
                         </tr>
                       )) : (
                         <tr><td colSpan={Math.max(1, activeReportsTable.headers.length)}>No report data for selected filters.</td></tr>
@@ -26943,6 +27083,24 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </tbody>
                   </table>
                 </div>
+                {drilldownState.open && drilldownState.request?.mode === "reports" ? (
+                  <DrilldownModal
+                    open={drilldownState.open}
+                    loading={Boolean(drilldownState.loading)}
+                    inline
+                    hideRoleClient
+                    readOnly
+                    renderAsTable
+                    pageSize={25}
+                    drilldownMetric={String(drilldownState.request?.metric || "")}
+                    title={drilldownState.title}
+                    items={drilldownState.items}
+                    onClose={() => setDrilldownState({ open: false, title: "", items: [], request: null, loading: false })}
+                    onOpenCvOriginal={(item) => openDatabaseCandidateCv(item?.raw?.candidate || item)}
+                    onOpenCvBranded={(item) => void openBrandedCandidateCv(item?.raw?.candidate || item)}
+                    onOpenNotes={(candidateId) => void openRecruiterNotes(candidateId)}
+                  />
+                ) : null}
               </Section>
             </div>
           } />
