@@ -26436,6 +26436,27 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   const reportsRecruiterGroupsDisplay = (Array.isArray(reportsSummarySource?.byRecruiter) ? reportsSummarySource.byRecruiter : []).map(normalizeDashboardFunnelGroup);
   const reportsClientPositionRows = Array.isArray(reportsSummarySource?.byClientPosition) ? reportsSummarySource.byClientPosition : [];
   const reportsRecruiterPositionRows = Array.isArray(reportsSummarySource?.byRecruiterPosition) ? reportsSummarySource.byRecruiterPosition : [];
+  const reportClientGroupMatchesFilters = (row = {}) => {
+    const clientLabel = String(row?.clientLabel || row?.label || "").trim();
+    return !reportsFilters.client || !clientLabel || clientLabel === reportsFilters.client;
+  };
+  const reportRecruiterGroupMatchesFilters = (row = {}) => {
+    const recruiterLabel = String(row?.recruiterLabel || row?.label || "").trim();
+    return !reportsFilters.recruiter || !recruiterLabel || recruiterLabel === reportsFilters.recruiter;
+  };
+  const reportPositionRowMatchesFilters = (row = {}) => {
+    const clientLabel = String(row?.clientLabel || "").trim();
+    const recruiterLabel = String(row?.recruiterLabel || "").trim();
+    const positionLabel = String(row?.positionLabel || "").trim();
+    if (reportsFilters.client && clientLabel && clientLabel !== reportsFilters.client) return false;
+    if (reportsFilters.recruiter && recruiterLabel && recruiterLabel !== reportsFilters.recruiter) return false;
+    if (reportsFilters.job && positionLabel && positionLabel !== reportsFilters.job) return false;
+    return true;
+  };
+  const reportsFilteredClientGroups = reportsClientGroupsDisplay.filter(reportClientGroupMatchesFilters);
+  const reportsFilteredRecruiterGroups = reportsRecruiterGroupsDisplay.filter(reportRecruiterGroupMatchesFilters);
+  const reportsFilteredClientPositionRows = reportsClientPositionRows.filter(reportPositionRowMatchesFilters);
+  const reportsFilteredRecruiterPositionRows = reportsRecruiterPositionRows.filter(reportPositionRowMatchesFilters);
   const reportsClientOptions = Array.from(new Set([
     ...(Array.isArray(state.dashboard?.availableClients) ? state.dashboard.availableClients : []),
     ...(Array.isArray(reportsSummarySource?.availableClients) ? reportsSummarySource.availableClients : []),
@@ -26447,9 +26468,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     ...reportsRecruiterPositionRows.map((row) => row.recruiterLabel)
   ].map((item) => String(item || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   const reportsRoleOptions = Array.from(new Set([
-    ...reportsClientPositionRows.map((row) => row.positionLabel),
-    ...reportsRecruiterPositionRows.map((row) => row.positionLabel),
-    ...(Array.isArray(state.jobs) ? state.jobs.map((job) => job?.title || job?.jdTitle || job?.position || "") : [])
+    ...reportsFilteredClientPositionRows.map((row) => row.positionLabel),
+    ...reportsFilteredRecruiterPositionRows.map((row) => row.positionLabel)
   ].map((item) => String(item || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   const reportTabs = [
     { id: "recruiter", label: "Recruiter Report" },
@@ -26495,7 +26515,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         title: "Client wise report",
         subtitle: filterSubtitle,
         headers: ["Client", ...commonMetricHeaders],
-        rows: reportsClientGroupsDisplay.map((group) => [group.label, ...appendReportMetricCells(getReportMetrics(group))])
+        rows: reportsFilteredClientGroups.map((group) => [group.label, ...appendReportMetricCells(getReportMetrics(group))])
       };
     }
     if (reportType === "role") {
@@ -26503,7 +26523,12 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         title: "Role / JD wise report",
         subtitle: filterSubtitle,
         headers: ["Client", "Role / JD", ...commonMetricHeaders],
-        rows: reportsClientPositionRows.map((row) => [row.clientLabel || "Unassigned", row.positionLabel || "Unassigned", ...appendReportMetricCells(getReportMetrics(row))])
+        rows: reportsFilteredClientPositionRows
+          .filter((row) => {
+            const metrics = getReportMetrics(row);
+            return metrics.sourced || metrics.shared || metrics.interviews || metrics.shortlisted || metrics.offers || metrics.joined;
+          })
+          .map((row) => [row.clientLabel || "Unassigned", row.positionLabel || "Unassigned", ...appendReportMetricCells(getReportMetrics(row))])
       };
     }
     if (reportType === "joinings") {
@@ -26511,7 +26536,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         title: "Joinings report",
         subtitle: filterSubtitle,
         headers: ["Client", "Role / JD", "Offers", "Joined", "Joining %"],
-        rows: [...reportsClientPositionRows]
+        rows: [...reportsFilteredClientPositionRows]
+          .filter((row) => {
+            const metrics = getReportMetrics(row);
+            return metrics.offers || metrics.joined;
+          })
           .sort((a, b) => getReportMetrics(b).joined - getReportMetrics(a).joined)
           .map((row) => {
             const metrics = getReportMetrics(row);
@@ -26524,7 +26553,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         title: "Interviews report",
         subtitle: filterSubtitle,
         headers: ["Client", "Role / JD", "Shared", "Interviews", "Interview %", "Shortlisted", "Shortlist %"],
-        rows: [...reportsClientPositionRows]
+        rows: [...reportsFilteredClientPositionRows]
+          .filter((row) => {
+            const metrics = getReportMetrics(row);
+            return metrics.interviews || metrics.shortlisted;
+          })
           .sort((a, b) => getReportMetrics(b).interviews - getReportMetrics(a).interviews)
           .map((row) => {
             const metrics = getReportMetrics(row);
@@ -26536,7 +26569,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       title: "Recruiter Report",
       subtitle: filterSubtitle,
       headers: ["Recruiter", ...commonMetricHeaders],
-      rows: reportsRecruiterGroupsDisplay.map((group) => [group.label, ...appendReportMetricCells(getReportMetrics(group))])
+      rows: reportsFilteredRecruiterGroups.map((group) => [group.label, ...appendReportMetricCells(getReportMetrics(group))])
     };
   }
   async function loadReportsSummary(filters = reportsFilters) {
@@ -26548,6 +26581,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       if (filters.client) params.set("clientLabel", filters.client);
       if (filters.recruiter) params.set("recruiterLabel", filters.recruiter);
       if (filters.job) params.set("positionLabel", filters.job);
+      params.set("strictJobPairs", "1");
       const result = await api(`/company/dashboard/funnel${params.toString() ? `?${params.toString()}` : ""}`, token);
       const payload = result?.result?.funnel || result?.funnel || result?.result || result || {};
       setReportsSummary(payload && typeof payload === "object" ? payload : {});

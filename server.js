@@ -7404,6 +7404,28 @@ function buildJobIndexByTitle(jobs = []) {
   return map;
 }
 
+function normalizeJobClientTitleKey(clientName = "", title = "") {
+  return [
+    String(clientName || "").trim().toLowerCase(),
+    String(title || "").trim().toLowerCase()
+  ].join("|||");
+}
+
+function buildJobIndexByClientTitle(jobs = []) {
+  const map = new Map();
+  (Array.isArray(jobs) ? jobs : []).forEach((job) => {
+    const title = String(job?.title || job?.jdTitle || job?.jd_title || "").trim();
+    const clientName = String(job?.clientName || job?.client_name || "").trim();
+    if (!title || !clientName) return;
+    map.set(normalizeJobClientTitleKey(clientName, title), {
+      id: String(job?.id || "").trim(),
+      title,
+      clientName
+    });
+  });
+  return map;
+}
+
 function resolveJobForDashboard(candidate = {}, assessment = {}, jobById = null, jobByTitle = null) {
   if (!(jobById instanceof Map)) return null;
   const candidateJobId = String(candidate?.assigned_jd_id || candidate?.assignedJdId || "").trim();
@@ -9657,11 +9679,13 @@ function buildDashboardFunnelPayload({
   assessments = [],
   events = [],
   users = [],
+  jobs = [],
   dateFrom = "",
   dateTo = "",
   clientFilter = "",
   recruiterFilter = "",
-  positionFilter = ""
+  positionFilter = "",
+  strictJobPairs = false
 } = {}) {
   const actorIsAdmin = String(user?.role || "").trim().toLowerCase() === "admin";
   const actorName = String(user?.name || "").trim();
@@ -9675,6 +9699,9 @@ function buildDashboardFunnelPayload({
   const byRecruiterPosition = new Map();
   const availableClients = new Set();
   const availableRecruiters = new Set();
+  const jobById = buildJobIndexById(jobs);
+  const jobByClientTitle = buildJobIndexByClientTitle(jobs);
+  const hasJobPairReference = jobById.size > 0 || jobByClientTitle.size > 0;
   const visibleDateCheck = (value) => {
     if (!dateFrom && !dateTo) return true;
     return isDateWithinRange(value, dateFrom, dateTo);
@@ -9732,13 +9759,39 @@ function buildDashboardFunnelPayload({
     return byRecruiterPosition.get(key);
   };
 
+  const getReportSafeScope = (candidate = {}, assessment = {}) => {
+    const base = getDashboardDrilldownScope(candidate || {}, assessment || {});
+    if (!strictJobPairs || !hasJobPairReference) return { ...base, positionPairValid: true };
+    const payload = assessment?.payload && typeof assessment.payload === "object" ? assessment.payload : {};
+    const jobId = String(
+      candidate?.assigned_jd_id
+      || candidate?.assignedJdId
+      || candidate?.jd_id
+      || candidate?.job_id
+      || assessment?.jobId
+      || assessment?.job_id
+      || payload?.jobId
+      || payload?.job_id
+      || ""
+    ).trim();
+    const linkedJob = jobId ? (jobById.get(jobId) || null) : null;
+    if (linkedJob?.clientName && linkedJob?.title) {
+      return { ...base, clientLabel: linkedJob.clientName, positionLabel: linkedJob.title, positionPairValid: true };
+    }
+    const exactPair = jobByClientTitle.get(normalizeJobClientTitleKey(base.clientLabel, base.positionLabel)) || null;
+    if (exactPair?.clientName && exactPair?.title) {
+      return { ...base, clientLabel: exactPair.clientName, positionLabel: exactPair.title, positionPairValid: true };
+    }
+    return { ...base, positionPairValid: false };
+  };
+
   const candidateScopeRows = allCandidateRows
     .filter((row) => isDashboardRowInActorScope(row, user, "candidate"))
     .filter((row) => !isDashboardAppliedOnlySource(row?.source))
     .map((candidate) => {
       const assessmentId = String(candidate?.assessment_id || candidate?.assessmentId || "").trim();
       const assessment = assessmentId ? (assessmentById.get(assessmentId) || null) : null;
-      const scope = getDashboardDrilldownScope(candidate || {}, assessment || {});
+      const scope = getReportSafeScope(candidate || {}, assessment || {});
       return {
         candidate,
         assessment,
@@ -9764,7 +9817,7 @@ function buildDashboardFunnelPayload({
         || ""
       ).trim();
       const candidate = candidateId ? (candidateById.get(candidateId) || null) : null;
-      const scope = getDashboardDrilldownScope(candidate || {}, assessment || {});
+      const scope = getReportSafeScope(candidate || {}, assessment || {});
       const rank = getAssessmentHistoricalRank(assessment, eventsByAssessmentId);
       const convertedAt = String(getCandidateConvertedAt(candidate || {}, assessment || {}) || assessment?.created_at || assessment?.createdAt || "").trim();
       return {
@@ -9790,8 +9843,10 @@ function buildDashboardFunnelPayload({
     overall.totalCandidates += 1;
     getBucket(byClient, clientLabel).totalCandidates += 1;
     getBucket(byRecruiter, recruiterLabel).totalCandidates += 1;
-    getClientPositionBucket(clientLabel, positionLabel).metrics.totalCandidates += 1;
-    getRecruiterPositionBucket(recruiterLabel, clientLabel, positionLabel).metrics.totalCandidates += 1;
+    if (!strictJobPairs || scope.positionPairValid !== false) {
+      getClientPositionBucket(clientLabel, positionLabel).metrics.totalCandidates += 1;
+      getRecruiterPositionBucket(recruiterLabel, clientLabel, positionLabel).metrics.totalCandidates += 1;
+    }
     availableClients.add(clientLabel);
     availableRecruiters.add(recruiterLabel);
   };
@@ -9825,18 +9880,20 @@ function buildDashboardFunnelPayload({
     if (rank >= 3) recruiterBucket.shortlisted += 1;
     if (rank >= 4) recruiterBucket.offers += 1;
     if (rank >= 5) recruiterBucket.joined += 1;
-    const clientPositionBucket = getClientPositionBucket(clientLabel, positionLabel).metrics;
-    clientPositionBucket.sharedProfiles += 1;
-    if (rank >= 2) clientPositionBucket.interviews += 1;
-    if (rank >= 3) clientPositionBucket.shortlisted += 1;
-    if (rank >= 4) clientPositionBucket.offers += 1;
-    if (rank >= 5) clientPositionBucket.joined += 1;
-    const recruiterPositionBucket = getRecruiterPositionBucket(recruiterLabel, clientLabel, positionLabel).metrics;
-    recruiterPositionBucket.sharedProfiles += 1;
-    if (rank >= 2) recruiterPositionBucket.interviews += 1;
-    if (rank >= 3) recruiterPositionBucket.shortlisted += 1;
-    if (rank >= 4) recruiterPositionBucket.offers += 1;
-    if (rank >= 5) recruiterPositionBucket.joined += 1;
+    if (!strictJobPairs || scope.positionPairValid !== false) {
+      const clientPositionBucket = getClientPositionBucket(clientLabel, positionLabel).metrics;
+      clientPositionBucket.sharedProfiles += 1;
+      if (rank >= 2) clientPositionBucket.interviews += 1;
+      if (rank >= 3) clientPositionBucket.shortlisted += 1;
+      if (rank >= 4) clientPositionBucket.offers += 1;
+      if (rank >= 5) clientPositionBucket.joined += 1;
+      const recruiterPositionBucket = getRecruiterPositionBucket(recruiterLabel, clientLabel, positionLabel).metrics;
+      recruiterPositionBucket.sharedProfiles += 1;
+      if (rank >= 2) recruiterPositionBucket.interviews += 1;
+      if (rank >= 3) recruiterPositionBucket.shortlisted += 1;
+      if (rank >= 4) recruiterPositionBucket.offers += 1;
+      if (rank >= 5) recruiterPositionBucket.joined += 1;
+    }
     availableClients.add(clientLabel);
     availableRecruiters.add(recruiterLabel);
   };
@@ -19828,11 +19885,12 @@ const server = http.createServer(async (req, res) => {
       const clientFilter = String(requestUrl.searchParams.get("clientLabel") || "").trim();
       const recruiterFilter = String(requestUrl.searchParams.get("recruiterLabel") || "").trim();
       const positionFilter = String(requestUrl.searchParams.get("positionLabel") || "").trim();
-      const [candidates, assessments, assessmentEvents, users] = await Promise.all([
+      const strictJobPairs = ["1", "true", "yes"].includes(String(requestUrl.searchParams.get("strictJobPairs") || "").trim().toLowerCase());
+      const [candidates, assessments, assessmentEvents, users, jobs] = await Promise.all([
         supabaseTableFetchAll(
           "candidates",
           `?${[
-            "select=id,company_id,source,name,jd_title,role,client_name,recruiter_id,recruiter_name,assigned_to_name,assigned_to_user_id,assessment_id,used_in_assessment,hidden_from_captured,created_at",
+            "select=id,company_id,source,name,jd_title,role,client_name,assigned_jd_id,assigned_jd_title,recruiter_id,recruiter_name,assigned_to_name,assigned_to_user_id,assessment_id,used_in_assessment,hidden_from_captured,created_at",
             `company_id=eq.${encodeURIComponent(companyId)}`,
             "order=created_at.desc"
           ].join("&")}`,
@@ -19860,7 +19918,14 @@ const server = http.createServer(async (req, res) => {
             "limit=10000"
           ].join("&")}`,
           { method: "GET" }
-        ).catch(() => [])
+        ).catch(() => []),
+        strictJobPairs
+          ? listCompanyJobs(companyId, String(user?.id || "").trim(), {
+              includeArchived: true,
+              viewerRole: user.role,
+              includeJobShortcuts: false
+            }).catch(() => [])
+          : Promise.resolve([])
       ]);
       const funnel = buildDashboardFunnelPayload({
         user,
@@ -19872,7 +19937,9 @@ const server = http.createServer(async (req, res) => {
         dateTo,
         clientFilter,
         recruiterFilter,
-        positionFilter
+        positionFilter,
+        jobs: Array.isArray(jobs) ? jobs : [],
+        strictJobPairs
       });
       sendJson(res, 200, {
         ok: true,
