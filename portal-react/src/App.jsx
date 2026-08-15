@@ -9974,6 +9974,7 @@ function PortalApp({ token, onLogout }) {
   const [reportsPageTab, setReportsPageTab] = useState("recruiter");
   const [reportsSummary, setReportsSummary] = useState(null);
   const [reportsLoading, setReportsLoading] = useState(false);
+  const reportsLoadKeyRef = useRef("");
   const [reportsFilters, setReportsFilters] = useState({
     dateFrom: "",
     dateTo: "",
@@ -22693,8 +22694,7 @@ function PortalApp({ token, onLogout }) {
       return {
         ...current,
         aboutCompany: String(defaults.aboutCompany || current.aboutCompany || "").trim(),
-        publicCompanyLine: String(defaults.publicCompanyLine || current.publicCompanyLine || "").trim(),
-        publicTitle: String(defaults.publicTitle || current.publicTitle || "").trim()
+        publicCompanyLine: String(defaults.publicCompanyLine || current.publicCompanyLine || "").trim()
       };
     });
   }
@@ -26431,7 +26431,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   const maxRecruiterShared = Math.max(1, ...recruiterLeaderboardRanked.map((row) => row.shared));
   const reportsSummarySource = reportsSummary && typeof reportsSummary === "object" && Object.keys(reportsSummary).length
     ? reportsSummary
-    : dashboardSummary;
+    : {};
   const reportsClientGroupsDisplay = (Array.isArray(reportsSummarySource?.byClient) ? reportsSummarySource.byClient : []).map(normalizeDashboardFunnelGroup);
   const reportsRecruiterGroupsDisplay = (Array.isArray(reportsSummarySource?.byRecruiter) ? reportsSummarySource.byRecruiter : []).map(normalizeDashboardFunnelGroup);
   const reportsClientPositionRows = Array.isArray(reportsSummarySource?.byClientPosition) ? reportsSummarySource.byClientPosition : [];
@@ -26573,6 +26573,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     };
   }
   async function loadReportsSummary(filters = reportsFilters) {
+    reportsLoadKeyRef.current = JSON.stringify({
+      dateFrom: String(filters?.dateFrom || ""),
+      dateTo: String(filters?.dateTo || ""),
+      client: String(filters?.client || ""),
+      recruiter: String(filters?.recruiter || ""),
+      job: String(filters?.job || "")
+    });
     setReportsLoading(true);
     try {
       const params = new URLSearchParams();
@@ -26592,6 +26599,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       setReportsLoading(false);
     }
   }
+  useEffect(() => {
+    if (String(location?.pathname || "").trim() !== "/reports") return;
+    if (reportsLoadKeyRef.current) return;
+    void loadReportsSummary(reportsFilters);
+  }, [location?.pathname]);
   function downloadActiveReportExcel() {
     const config = buildReportsTableConfig(reportsPageTab);
     const safeName = String(config.title || "report").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "report";
