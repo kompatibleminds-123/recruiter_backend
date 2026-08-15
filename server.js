@@ -12969,6 +12969,25 @@ function findCommercialShortlistedAt(assessment = {}) {
   return "";
 }
 
+function findCommercialOfferAmount(assessment = {}) {
+  const history = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const entry = history[index];
+    if (!entry || typeof entry !== "object") continue;
+    const status = normalizeCommercialStatus(entry?.status || "");
+    if (status !== "offered" && status !== "joined") continue;
+    const offerAmount = String(entry?.offerAmount || entry?.offer_amount || "").trim();
+    if (offerAmount) return offerAmount;
+  }
+  return String(
+    assessment?.offerAmount
+    || assessment?.offer_amount
+    || assessment?.payload?.offerAmount
+    || assessment?.payload?.offer_amount
+    || ""
+  ).trim();
+}
+
 function buildCommercialBillingReport({ user, candidates = [], assessments = [], jobs = [], billingRules = {}, dateFrom = "", dateTo = "", clientFilter = "", recruiterFilter = "", positionFilter = "" } = {}) {
   const candidateById = new Map((Array.isArray(candidates) ? candidates : []).map((candidate) => [String(candidate?.id || "").trim(), candidate]).filter(([id]) => Boolean(id)));
   const jobById = buildJobIndexById(jobs);
@@ -13004,7 +13023,7 @@ function buildCommercialBillingReport({ user, candidates = [], assessments = [],
     if (!month) continue;
     const rule = safeRules[clientName] && typeof safeRules[clientName] === "object" ? safeRules[clientName] : null;
     const expectedCtcText = String(assessment?.expectedCtc || assessment?.expected_ctc || candidate?.expected_ctc || candidate?.expectedCtc || "").trim();
-    const offerCtcText = String(assessment?.offerAmount || assessment?.offer_amount || assessment?.offerInHand || assessment?.offer_in_hand || candidate?.offer_in_hand || candidate?.offerInHand || "").trim();
+    const offerCtcText = findCommercialOfferAmount(assessment);
     const ctcText = latestStatus === "shortlisted" ? expectedCtcText : (offerCtcText || expectedCtcText);
     const ctcLakhs = parseCommercialCtcLakhs(ctcText);
     const ruleType = String(rule?.type || "").trim().toLowerCase() === "flat" ? "flat" : (rule ? "percentage" : "");
@@ -13028,11 +13047,10 @@ function buildCommercialBillingReport({ user, candidates = [], assessments = [],
       billingRule: ruleType ? { type: ruleType, value: ruleValue } : null,
       expectedBillingInr
     };
-    const key = `${month}|||${clientName}`;
+    const key = month;
     if (!rowsByKey.has(key)) {
       rowsByKey.set(key, {
         month,
-        clientName,
         activeCandidates: 0,
         shortlisted: 0,
         offered: 0,
@@ -13040,11 +13058,16 @@ function buildCommercialBillingReport({ user, candidates = [], assessments = [],
         ctcPending: 0,
         totalBillableCtcLakhs: 0,
         expectedBillingInr: 0,
-        billingRule: ruleType ? { type: ruleType, value: ruleValue } : null,
+        clientCount: 0,
+        clients: [],
         candidates: []
       });
     }
     const row = rowsByKey.get(key);
+    if (!row.clients.includes(clientName)) {
+      row.clients.push(clientName);
+      row.clientCount = row.clients.length;
+    }
     row.activeCandidates += 1;
     row[latestStatus] += 1;
     if (candidateRow.ctcPending) row.ctcPending += 1;
@@ -13052,7 +13075,9 @@ function buildCommercialBillingReport({ user, candidates = [], assessments = [],
     row.expectedBillingInr += expectedBillingInr;
     row.candidates.push(candidateRow);
   }
-  return Array.from(rowsByKey.values()).sort((a, b) => `${b.month} ${a.clientName}`.localeCompare(`${a.month} ${b.clientName}`));
+  return Array.from(rowsByKey.values())
+    .map((row) => ({ ...row, clients: row.clients.sort((a, b) => a.localeCompare(b)) }))
+    .sort((a, b) => String(b.month || "").localeCompare(String(a.month || "")));
 }
 
 function itemMatchesClientPortalMetric(item, metric, dateFrom = "", dateTo = "") {

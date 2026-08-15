@@ -26758,17 +26758,16 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       ? {
           title: "Commercial Billing Report",
           subtitle: "Admin only",
-          headers: ["Month", "Client", "Active", "Shortlisted", "Offered", "Joined", "CTC Pending", "Total Billable CTC", "Billing Rule", "Expected Billing"],
+          headers: ["Month", "Clients", "Active", "Shortlisted", "Offered", "Joined", "CTC Pending", "Total Billable CTC", "Expected Billing"],
           rows: commercialReportRows.map((row) => [
             row.month,
-            row.clientName,
+            Array.isArray(row.clients) ? row.clients.join(", ") : "",
             row.activeCandidates,
             row.shortlisted,
             row.offered,
             row.joined,
             row.ctcPending,
             formatCommercialLakhs(row.totalBillableCtcLakhs),
-            formatCommercialRule(row.billingRule),
             formatCommercialInr(row.expectedBillingInr)
           ])
         }
@@ -26781,8 +26780,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       ? {
           title: "Commercial Billing Report",
           subtitle: "Admin only",
-          headers: ["Month", "Client", "Active", "Shortlisted", "Offered", "Joined", "CTC Pending", "Total CTC", "Rule", "Billing"],
-          rows: commercialReportRows.map((row) => [row.month, row.clientName, row.activeCandidates, row.shortlisted, row.offered, row.joined, row.ctcPending, formatCommercialLakhs(row.totalBillableCtcLakhs), formatCommercialRule(row.billingRule), formatCommercialInr(row.expectedBillingInr)])
+          headers: ["Month", "Clients", "Active", "Shortlisted", "Offered", "Joined", "CTC Pending", "Total CTC", "Billing"],
+          rows: commercialReportRows.map((row) => [row.month, Array.isArray(row.clients) ? row.clients.join(", ") : "", row.activeCandidates, row.shortlisted, row.offered, row.joined, row.ctcPending, formatCommercialLakhs(row.totalBillableCtcLakhs), formatCommercialInr(row.expectedBillingInr)])
         }
       : buildReportsTableConfig(reportsPageTab);
     const safeName = String(config.title || "report").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "report";
@@ -27195,37 +27194,37 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <div className="table-wrap">
                       <table className="dashboard-table">
                         <thead>
-                          <tr><th>Month</th><th>Client</th><th>Active</th><th>Shortlisted</th><th>Offered</th><th>Joined</th><th>CTC pending</th><th>Total billable CTC</th><th>Billing rule</th><th>Expected billing</th><th>Details</th></tr>
+                          <tr><th>Month</th><th>Clients</th><th>Active</th><th>Shortlisted</th><th>Offered</th><th>Joined</th><th>CTC pending</th><th>Total billable CTC</th><th>Expected billing</th><th>Details</th></tr>
                         </thead>
                         <tbody>
                           {commercialReportRows.length ? commercialReportRows.map((row) => {
-                            const key = `${row.month}-${row.clientName}`;
+                            const key = String(row.month || "");
                             const expanded = commercialExpandedKey === key;
                             return (
                               <React.Fragment key={key}>
                                 <tr>
                                   <td>{row.month}</td>
-                                  <td>{row.clientName}</td>
+                                  <td>{Array.isArray(row.clients) && row.clients.length ? row.clients.join(", ") : "-"}</td>
                                   <td>{row.activeCandidates}</td>
                                   <td>{row.shortlisted}</td>
                                   <td>{row.offered}</td>
                                   <td>{row.joined}</td>
                                   <td>{row.ctcPending}</td>
                                   <td>{formatCommercialLakhs(row.totalBillableCtcLakhs)}</td>
-                                  <td>{formatCommercialRule(row.billingRule)}</td>
                                   <td>{formatCommercialInr(row.expectedBillingInr)}</td>
                                   <td><button className="table-metric-btn" onClick={() => setCommercialExpandedKey(expanded ? "" : key)}>{expanded ? "Hide" : "View"}</button></td>
                                 </tr>
                                 {expanded ? (
                                   <tr>
-                                    <td colSpan={11}>
+                                    <td colSpan={10}>
                                       <div className="table-wrap">
                                         <table className="dashboard-table">
-                                          <thead><tr><th>Name</th><th>Status</th><th>Shortlisted date</th><th>Position/JD</th><th>Expected CTC</th><th>Offer CTC</th><th>Billing rule</th><th>Expected billing</th></tr></thead>
+                                          <thead><tr><th>Name</th><th>Client</th><th>Status</th><th>Shortlisted date</th><th>Position/JD</th><th>Expected CTC</th><th>Offer CTC</th><th>Billing rule</th><th>Expected billing</th></tr></thead>
                                           <tbody>
                                             {(row.candidates || []).map((candidate) => (
                                               <tr key={candidate.assessmentId || `${candidate.name}-${candidate.position}`}>
                                                 <td>{candidate.name}</td>
+                                                <td>{candidate.clientName}</td>
                                                 <td>{candidate.currentStatus}</td>
                                                 <td>{formatDateOrRaw(candidate.shortlistedAt) || "-"}</td>
                                                 <td>{candidate.position}</td>
@@ -27244,7 +27243,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                               </React.Fragment>
                             );
                           }) : (
-                            <tr><td colSpan={11}>{commercialReportLoading ? "Loading commercial billing report..." : "No commercial billing data for selected filters."}</td></tr>
+                            <tr><td colSpan={10}>{commercialReportLoading ? "Loading commercial billing report..." : "No commercial billing data for selected filters."}</td></tr>
                           )}
                         </tbody>
                       </table>
