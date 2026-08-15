@@ -947,6 +947,10 @@ function sanitizeSharedExportPresetSettings(raw) {
     : Array.isArray(source.client_directory)
       ? source.client_directory
       : [];
+  const rawClientBillingRules =
+    source.clientBillingRules && typeof source.clientBillingRules === "object" && !Array.isArray(source.clientBillingRules)
+      ? source.clientBillingRules
+      : {};
   const rawSheetImportLearnedAliases =
     source.sheetImportLearnedAliases && typeof source.sheetImportLearnedAliases === "object"
       ? source.sheetImportLearnedAliases
@@ -1074,6 +1078,19 @@ function sanitizeSharedExportPresetSettings(raw) {
       .slice(0, 100);
     if (normalized.length) recruiterCampaignTemplatesByUser[safeUserId] = normalized;
   });
+  const clientBillingRules = {};
+  Object.entries(rawClientBillingRules).forEach(([clientName, rule]) => {
+    const safeClient = String(clientName || "").trim();
+    if (!safeClient || !rule || typeof rule !== "object" || Array.isArray(rule)) return;
+    const type = String(rule.type || "").trim().toLowerCase() === "flat" ? "flat" : "percentage";
+    const value = Math.max(0, Number(rule.value || 0) || 0);
+    if (!value) return;
+    clientBillingRules[safeClient] = {
+      type,
+      value,
+      notes: String(rule.notes || "").trim().slice(0, 200)
+    };
+  });
   const defaultHeaderFields = [
     "candidate_name",
     "target_role",
@@ -1175,6 +1192,7 @@ function sanitizeSharedExportPresetSettings(raw) {
     deletedSuggestedShortcuts,
     personalShortcutsByUser,
     clientDirectory: sanitizeClientDirectoryList(rawClientDirectory),
+    clientBillingRules,
     updatedAt: String(source.updatedAt || "").trim(),
     updatedBy: String(source.updatedBy || "").trim()
   };

@@ -12923,6 +12923,138 @@ function createDashboardDrilldownAssessmentItem(assessment = {}, candidate = nul
   };
 }
 
+function normalizeCommercialStatus(value = "") {
+  const text = normalizeAssessmentStatusLabel(String(value || "")).toLowerCase();
+  if (/\bjoined\b/.test(text)) return "joined";
+  if (/\boffer/.test(text)) return "offered";
+  if (/\bshortlist/.test(text)) return "shortlisted";
+  return text;
+}
+
+function parseCommercialCtcLakhs(value = "") {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw || raw.includes("%")) return 0;
+  const cleaned = raw
+    .replace(/,/g, "")
+    .replace(/₹|rs\.?|inr/g, " ")
+    .replace(/\s+/g, " ");
+  const match = cleaned.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return 0;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  if (/\b(cr|crore)\b/.test(cleaned)) return amount * 100;
+  if (/\b(l|lac|lakh|lpa)\b/.test(cleaned)) return amount;
+  if (amount >= 100000) return amount / 100000;
+  return amount;
+}
+
+function formatCommercialMonthKey(value = "") {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function findCommercialShortlistedAt(assessment = {}) {
+  const history = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
+  const shortlistedEntries = history
+    .filter((entry) => normalizeCommercialStatus(entry?.status || "") === "shortlisted")
+    .map((entry) => String(entry?.statusAt || entry?.status_at || entry?.at || entry?.updatedAt || entry?.createdAt || "").trim())
+    .filter(Boolean)
+    .sort((a, b) => new Date(a) - new Date(b));
+  if (shortlistedEntries[0]) return shortlistedEntries[0];
+  const currentStatus = normalizeCommercialStatus(assessment?.candidateStatus || assessment?.candidate_status || assessment?.status || "");
+  if (["shortlisted", "offered", "joined"].includes(currentStatus)) {
+    return String(assessment?.convertedAt || assessment?.generatedAt || assessment?.createdAt || assessment?.created_at || "").trim();
+  }
+  return "";
+}
+
+function buildCommercialBillingReport({ user, candidates = [], assessments = [], jobs = [], billingRules = {}, dateFrom = "", dateTo = "", clientFilter = "", recruiterFilter = "", positionFilter = "" } = {}) {
+  const candidateById = new Map((Array.isArray(candidates) ? candidates : []).map((candidate) => [String(candidate?.id || "").trim(), candidate]).filter(([id]) => Boolean(id)));
+  const jobById = buildJobIndexById(jobs);
+  const jobByClientTitle = buildJobIndexByClientTitle(jobs);
+  const rowsByKey = new Map();
+  const safeRules = billingRules && typeof billingRules === "object" && !Array.isArray(billingRules) ? billingRules : {};
+  const getStrictScope = (candidate = {}, assessment = {}) => {
+    const base = getDashboardDrilldownScope(candidate || {}, assessment || {});
+    const payload = assessment?.payload && typeof assessment.payload === "object" ? assessment.payload : {};
+    const jobId = String(candidate?.assigned_jd_id || candidate?.assignedJdId || assessment?.jobId || assessment?.job_id || payload?.jobId || payload?.job_id || "").trim();
+    const linkedJob = jobId ? (jobById.get(jobId) || null) : null;
+    if (linkedJob?.clientName && linkedJob?.title) return { ...base, clientLabel: linkedJob.clientName, positionLabel: linkedJob.title };
+    const exactPair = jobByClientTitle.get(normalizeJobClientTitleKey(base.clientLabel, base.positionLabel)) || null;
+    if (exactPair?.clientName && exactPair?.title) return { ...base, clientLabel: exactPair.clientName, positionLabel: exactPair.title };
+    return base;
+  };
+  for (const assessment of Array.isArray(assessments) ? assessments : []) {
+    if (!isDashboardRowInActorScope(assessment, user, "assessment")) continue;
+    const latestStatus = normalizeCommercialStatus(assessment?.candidateStatus || assessment?.candidate_status || assessment?.assessment_status || assessment?.status || "");
+    if (!["shortlisted", "offered", "joined"].includes(latestStatus)) continue;
+    const shortlistedAt = findCommercialShortlistedAt(assessment);
+    if (!shortlistedAt || !isDateWithinRange(shortlistedAt, dateFrom, dateTo)) continue;
+    const candidateId = String(assessment?.candidate_id || assessment?.candidateId || assessment?.payload?.candidateId || assessment?.payload?.candidate_id || "").trim();
+    const candidate = candidateId ? (candidateById.get(candidateId) || null) : null;
+    const scope = getStrictScope(candidate || {}, assessment || {});
+    const clientName = String(scope.clientLabel || "Unassigned").trim() || "Unassigned";
+    const positionLabel = String(scope.positionLabel || "Unassigned").trim() || "Unassigned";
+    const recruiterLabel = String(scope.recruiterLabel || "Unassigned").trim() || "Unassigned";
+    if (clientFilter && clientName !== clientFilter) continue;
+    if (recruiterFilter && recruiterLabel !== recruiterFilter) continue;
+    if (positionFilter && positionLabel !== positionFilter) continue;
+    const month = formatCommercialMonthKey(shortlistedAt);
+    if (!month) continue;
+    const rule = safeRules[clientName] && typeof safeRules[clientName] === "object" ? safeRules[clientName] : null;
+    const expectedCtcText = String(assessment?.expectedCtc || assessment?.expected_ctc || candidate?.expected_ctc || candidate?.expectedCtc || "").trim();
+    const offerCtcText = String(assessment?.offerAmount || assessment?.offer_amount || assessment?.offerInHand || assessment?.offer_in_hand || candidate?.offer_in_hand || candidate?.offerInHand || "").trim();
+    const ctcText = latestStatus === "shortlisted" ? expectedCtcText : (offerCtcText || expectedCtcText);
+    const ctcLakhs = parseCommercialCtcLakhs(ctcText);
+    const ruleType = String(rule?.type || "").trim().toLowerCase() === "flat" ? "flat" : (rule ? "percentage" : "");
+    const ruleValue = Number(rule?.value || 0) || 0;
+    const expectedBillingInr = ruleType === "flat"
+      ? ruleValue
+      : (ctcLakhs > 0 && ruleValue > 0 ? (ctcLakhs * 100000 * ruleValue / 100) : 0);
+    const candidateRow = {
+      assessmentId: String(assessment?.id || "").trim(),
+      candidateId,
+      name: String(assessment?.candidateName || assessment?.candidate_name || candidate?.name || "Candidate").trim(),
+      currentStatus: latestStatus,
+      shortlistedAt,
+      month,
+      clientName,
+      position: positionLabel,
+      expectedCtc: expectedCtcText,
+      offerCtc: offerCtcText,
+      ctcLakhs,
+      ctcPending: ctcLakhs <= 0 && ruleType !== "flat",
+      billingRule: ruleType ? { type: ruleType, value: ruleValue } : null,
+      expectedBillingInr
+    };
+    const key = `${month}|||${clientName}`;
+    if (!rowsByKey.has(key)) {
+      rowsByKey.set(key, {
+        month,
+        clientName,
+        activeCandidates: 0,
+        shortlisted: 0,
+        offered: 0,
+        joined: 0,
+        ctcPending: 0,
+        totalBillableCtcLakhs: 0,
+        expectedBillingInr: 0,
+        billingRule: ruleType ? { type: ruleType, value: ruleValue } : null,
+        candidates: []
+      });
+    }
+    const row = rowsByKey.get(key);
+    row.activeCandidates += 1;
+    row[latestStatus] += 1;
+    if (candidateRow.ctcPending) row.ctcPending += 1;
+    if (ctcLakhs > 0) row.totalBillableCtcLakhs += ctcLakhs;
+    row.expectedBillingInr += expectedBillingInr;
+    row.candidates.push(candidateRow);
+  }
+  return Array.from(rowsByKey.values()).sort((a, b) => `${b.month} ${a.clientName}`.localeCompare(`${a.month} ${b.clientName}`));
+}
+
 function itemMatchesClientPortalMetric(item, metric, dateFrom = "", dateTo = "") {
   const sharedAt = String(item?.sharedAt || "").trim();
   if (!sharedAt || item?.sourceType === "captured_note" || !isDateWithinRange(sharedAt, dateFrom, dateTo)) return false;
@@ -17737,6 +17869,74 @@ const server = http.createServer(async (req, res) => {
         settings
       });
       sendJson(res, 200, { ok: true, result: settings });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (requestUrl.pathname === "/company/reports/commercial-billing") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (String(actor?.role || "").trim().toLowerCase() !== "admin") {
+        throw new Error("Only admin can access commercial billing reports.");
+      }
+      if (req.method === "POST") {
+        const body = await readJsonBody(req);
+        const currentSettings = await getCompanySharedExportPresets(actor.companyId).catch(() => ({}));
+        const saved = await saveCompanySharedExportPresets({
+          actorUserId: actor.id,
+          companyId: actor.companyId,
+          settings: {
+            ...currentSettings,
+            clientBillingRules: body?.clientBillingRules && typeof body.clientBillingRules === "object" ? body.clientBillingRules : {}
+          }
+        });
+        sendJson(res, 200, { ok: true, result: { clientBillingRules: saved?.clientBillingRules || {} } });
+        return;
+      }
+      if (req.method !== "GET") {
+        sendJson(res, 405, { ok: false, error: "Method not allowed" });
+        return;
+      }
+      const dateFrom = String(requestUrl.searchParams.get("dateFrom") || "").trim();
+      const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
+      const clientFilter = String(requestUrl.searchParams.get("clientLabel") || "").trim();
+      const recruiterFilter = String(requestUrl.searchParams.get("recruiterLabel") || "").trim();
+      const positionFilter = String(requestUrl.searchParams.get("positionLabel") || "").trim();
+      const [settings, candidates, assessments, jobs] = await Promise.all([
+        getCompanySharedExportPresets(actor.companyId).catch(() => ({})),
+        supabaseTableFetchAll(
+          "candidates",
+          `?${[
+            "select=id,company_id,source,name,jd_title,role,client_name,assigned_jd_id,assigned_jd_title,recruiter_id,recruiter_name,assigned_to_name,assigned_to_user_id,assessment_id,created_at,company,current_ctc,expected_ctc,notice_period,offer_in_hand,lwd_or_doj",
+            `company_id=eq.${encodeURIComponent(actor.companyId)}`,
+            "order=created_at.desc"
+          ].join("&")}`,
+          { method: "GET", pageSize: 1000, maxPages: 50 }
+        ).catch(() => []),
+        listAssessments({ actorUserId: actor.id, companyId: actor.companyId }).catch(() => []),
+        listCompanyJobs(actor.companyId, actor.id, { includeArchived: true, viewerRole: actor.role, includeJobShortcuts: false }).catch(() => [])
+      ]);
+      const rows = buildCommercialBillingReport({
+        user: actor,
+        candidates: Array.isArray(candidates) ? candidates : [],
+        assessments: Array.isArray(assessments) ? assessments : [],
+        jobs: Array.isArray(jobs) ? jobs : [],
+        billingRules: settings?.clientBillingRules || {},
+        dateFrom,
+        dateTo,
+        clientFilter,
+        recruiterFilter,
+        positionFilter
+      });
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          rows,
+          clientBillingRules: settings?.clientBillingRules || {}
+        }
+      });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

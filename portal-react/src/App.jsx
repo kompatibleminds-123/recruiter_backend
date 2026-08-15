@@ -10021,6 +10021,12 @@ function PortalApp({ token, onLogout }) {
   const [reportsSummary, setReportsSummary] = useState(null);
   const [reportsLoading, setReportsLoading] = useState(false);
   const reportsLoadKeyRef = useRef("");
+  const [commercialReportRows, setCommercialReportRows] = useState([]);
+  const [commercialBillingRules, setCommercialBillingRules] = useState({});
+  const [commercialRulesDraft, setCommercialRulesDraft] = useState({});
+  const [commercialReportLoading, setCommercialReportLoading] = useState(false);
+  const [commercialRulesSaving, setCommercialRulesSaving] = useState(false);
+  const [commercialExpandedKey, setCommercialExpandedKey] = useState("");
   const [reportsFilters, setReportsFilters] = useState({
     dateFrom: "",
     dateTo: "",
@@ -26522,7 +26528,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     { id: "client", label: "Client wise report" },
     { id: "role", label: "Role / JD wise report" },
     { id: "joinings", label: "Joinings report" },
-    { id: "interviews", label: "Interviews report" }
+    { id: "interviews", label: "Interviews report" },
+    ...(isSettingsAdmin ? [{ id: "commercial", label: "Commercial Billing" }] : [])
   ];
   const getReportMetrics = (row = {}) => {
     const source = row?.metrics && typeof row.metrics === "object" ? row.metrics : row;
@@ -26672,13 +26679,112 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     if (reportsLoadKeyRef.current) return;
     void loadReportsSummary(reportsFilters);
   }, [location?.pathname]);
+  const formatCommercialLakhs = (value) => {
+    const num = Number(value || 0);
+    if (!Number.isFinite(num) || num <= 0) return "-";
+    return `${num.toLocaleString("en-IN", { maximumFractionDigits: 2 })} L`;
+  };
+  const formatCommercialInr = (value) => {
+    const num = Number(value || 0);
+    if (!Number.isFinite(num) || num <= 0) return "-";
+    return `₹${Math.round(num).toLocaleString("en-IN")}`;
+  };
+  const formatCommercialRule = (rule) => {
+    if (!rule || typeof rule !== "object") return "Not set";
+    return String(rule.type || "") === "flat"
+      ? `Flat ${formatCommercialInr(rule.value)}`
+      : `${Number(rule.value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}%`;
+  };
+  async function loadCommercialBillingReport(filters = reportsFilters) {
+    if (!isSettingsAdmin) return;
+    setCommercialReportLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
+      if (filters.dateTo) params.set("dateTo", filters.dateTo);
+      if (filters.client) params.set("clientLabel", filters.client);
+      if (filters.recruiter) params.set("recruiterLabel", filters.recruiter);
+      if (filters.job) params.set("positionLabel", filters.job);
+      const result = await api(`/company/reports/commercial-billing${params.toString() ? `?${params.toString()}` : ""}`, token);
+      const rows = Array.isArray(result?.rows) ? result.rows : (Array.isArray(result?.result?.rows) ? result.result.rows : []);
+      const rules = result?.clientBillingRules || result?.result?.clientBillingRules || {};
+      setCommercialReportRows(rows);
+      setCommercialBillingRules(rules && typeof rules === "object" ? rules : {});
+      setCommercialRulesDraft(rules && typeof rules === "object" ? rules : {});
+      setStatus("workspace", "Commercial billing report refreshed.", "ok");
+    } catch (error) {
+      setStatus("workspace", `Commercial report failed: ${String(error?.message || error)}`, "error");
+    } finally {
+      setCommercialReportLoading(false);
+    }
+  }
+  async function saveCommercialBillingRules() {
+    if (!isSettingsAdmin) return;
+    setCommercialRulesSaving(true);
+    try {
+      const result = await api("/company/reports/commercial-billing", token, "POST", { clientBillingRules: commercialRulesDraft });
+      const rules = result?.clientBillingRules || result?.result?.clientBillingRules || {};
+      setCommercialBillingRules(rules && typeof rules === "object" ? rules : {});
+      setCommercialRulesDraft(rules && typeof rules === "object" ? rules : {});
+      setStatus("workspace", "Client billing rules saved.", "ok");
+      void loadCommercialBillingReport(reportsFilters);
+    } catch (error) {
+      setStatus("workspace", `Billing rules save failed: ${String(error?.message || error)}`, "error");
+    } finally {
+      setCommercialRulesSaving(false);
+    }
+  }
+  function updateCommercialRule(clientName, patch = {}) {
+    const key = String(clientName || "").trim();
+    if (!key) return;
+    setCommercialRulesDraft((current) => ({
+      ...current,
+      [key]: {
+        type: "percentage",
+        value: 0,
+        ...(current?.[key] && typeof current[key] === "object" ? current[key] : {}),
+        ...patch
+      }
+    }));
+  }
+  useEffect(() => {
+    if (String(location?.pathname || "").trim() !== "/reports") return;
+    if (reportsPageTab !== "commercial") return;
+    if (!isSettingsAdmin) return;
+    void loadCommercialBillingReport(reportsFilters);
+  }, [location?.pathname, reportsPageTab]);
   function downloadActiveReportExcel() {
-    const config = buildReportsTableConfig(reportsPageTab);
+    const config = reportsPageTab === "commercial"
+      ? {
+          title: "Commercial Billing Report",
+          subtitle: "Admin only",
+          headers: ["Month", "Client", "Active", "Shortlisted", "Offered", "Joined", "CTC Pending", "Total Billable CTC", "Billing Rule", "Expected Billing"],
+          rows: commercialReportRows.map((row) => [
+            row.month,
+            row.clientName,
+            row.activeCandidates,
+            row.shortlisted,
+            row.offered,
+            row.joined,
+            row.ctcPending,
+            formatCommercialLakhs(row.totalBillableCtcLakhs),
+            formatCommercialRule(row.billingRule),
+            formatCommercialInr(row.expectedBillingInr)
+          ])
+        }
+      : buildReportsTableConfig(reportsPageTab);
     const safeName = String(config.title || "report").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "report";
     downloadTextFile(`${safeName}-${new Date().toISOString().slice(0, 10)}.xls`, buildExcelHtmlFromTable(config), "application/vnd.ms-excel;charset=utf-8");
   }
   function downloadActiveReportPdf() {
-    const config = buildReportsTableConfig(reportsPageTab);
+    const config = reportsPageTab === "commercial"
+      ? {
+          title: "Commercial Billing Report",
+          subtitle: "Admin only",
+          headers: ["Month", "Client", "Active", "Shortlisted", "Offered", "Joined", "CTC Pending", "Total CTC", "Rule", "Billing"],
+          rows: commercialReportRows.map((row) => [row.month, row.clientName, row.activeCandidates, row.shortlisted, row.offered, row.joined, row.ctcPending, formatCommercialLakhs(row.totalBillableCtcLakhs), formatCommercialRule(row.billingRule), formatCommercialInr(row.expectedBillingInr)])
+        }
+      : buildReportsTableConfig(reportsPageTab);
     const safeName = String(config.title || "report").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "report";
     downloadSimplePdfFile(`${safeName}-${new Date().toISOString().slice(0, 10)}.pdf`, config);
   }
@@ -27029,11 +27135,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <label><span>Client</span><select value={reportsFilters.client} onChange={(e) => setReportsFilters((current) => ({ ...current, client: e.target.value }))}><option value="">All clients</option>{reportsClientOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
                   <label><span>Role / JD</span><select value={reportsFilters.job} onChange={(e) => setReportsFilters((current) => ({ ...current, job: e.target.value }))}><option value="">All roles</option>{reportsRoleOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
                   <div className="button-row align-end">
-                    <button disabled={reportsLoading} onClick={() => void loadReportsSummary()}>{reportsLoading ? "Loading..." : "Apply filters"}</button>
+                    <button disabled={reportsLoading || commercialReportLoading} onClick={() => {
+                      if (reportsPageTab === "commercial") void loadCommercialBillingReport();
+                      else void loadReportsSummary();
+                    }}>{reportsPageTab === "commercial" ? (commercialReportLoading ? "Loading..." : "Apply filters") : (reportsLoading ? "Loading..." : "Apply filters")}</button>
                     <button className="ghost-btn" onClick={() => {
                       const cleared = { dateFrom: "", dateTo: "", recruiter: "", client: "", job: "" };
                       setReportsFilters(cleared);
-                      void loadReportsSummary(cleared);
+                      if (reportsPageTab === "commercial") void loadCommercialBillingReport(cleared);
+                      else void loadReportsSummary(cleared);
                     }}>Reset</button>
                   </div>
                 </div>
@@ -27048,6 +27158,99 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <button onClick={() => downloadActiveReportExcel()}>Download Excel</button>
                   <button className="ghost-btn" onClick={() => downloadActiveReportPdf()}>Download PDF</button>
                 </div>
+                {reportsPageTab === "commercial" && isSettingsAdmin ? (
+                  <div className="stack-list compact">
+                    <div className="item-card compact-card">
+                      <h3>Client billing rules</h3>
+                      <p className="muted">Admin-only. Percentage is applied on CTC; flat amount is applied per active commercial candidate.</p>
+                      <div className="table-wrap">
+                        <table className="dashboard-table">
+                          <thead><tr><th>Client</th><th>Rule type</th><th>Value</th><th>Notes</th></tr></thead>
+                          <tbody>
+                            {reportsClientOptions.length ? reportsClientOptions.map((clientName) => {
+                              const rule = commercialRulesDraft?.[clientName] || {};
+                              return (
+                                <tr key={`billing-rule-${clientName}`}>
+                                  <td>{clientName}</td>
+                                  <td>
+                                    <select value={rule.type || "percentage"} onChange={(e) => updateCommercialRule(clientName, { type: e.target.value })}>
+                                      <option value="percentage">Percentage</option>
+                                      <option value="flat">Flat amount</option>
+                                    </select>
+                                  </td>
+                                  <td><input value={rule.value || ""} onChange={(e) => updateCommercialRule(clientName, { value: e.target.value })} placeholder={rule.type === "flat" ? "50000" : "8.33"} /></td>
+                                  <td><input value={rule.notes || ""} onChange={(e) => updateCommercialRule(clientName, { notes: e.target.value })} placeholder="Optional terms" /></td>
+                                </tr>
+                              );
+                            }) : (
+                              <tr><td colSpan={4}>No clients available yet.</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="button-row">
+                        <button disabled={commercialRulesSaving} onClick={() => void saveCommercialBillingRules()}>{commercialRulesSaving ? "Saving..." : "Save billing rules"}</button>
+                      </div>
+                    </div>
+                    <div className="table-wrap">
+                      <table className="dashboard-table">
+                        <thead>
+                          <tr><th>Month</th><th>Client</th><th>Active</th><th>Shortlisted</th><th>Offered</th><th>Joined</th><th>CTC pending</th><th>Total billable CTC</th><th>Billing rule</th><th>Expected billing</th><th>Details</th></tr>
+                        </thead>
+                        <tbody>
+                          {commercialReportRows.length ? commercialReportRows.map((row) => {
+                            const key = `${row.month}-${row.clientName}`;
+                            const expanded = commercialExpandedKey === key;
+                            return (
+                              <React.Fragment key={key}>
+                                <tr>
+                                  <td>{row.month}</td>
+                                  <td>{row.clientName}</td>
+                                  <td>{row.activeCandidates}</td>
+                                  <td>{row.shortlisted}</td>
+                                  <td>{row.offered}</td>
+                                  <td>{row.joined}</td>
+                                  <td>{row.ctcPending}</td>
+                                  <td>{formatCommercialLakhs(row.totalBillableCtcLakhs)}</td>
+                                  <td>{formatCommercialRule(row.billingRule)}</td>
+                                  <td>{formatCommercialInr(row.expectedBillingInr)}</td>
+                                  <td><button className="table-metric-btn" onClick={() => setCommercialExpandedKey(expanded ? "" : key)}>{expanded ? "Hide" : "View"}</button></td>
+                                </tr>
+                                {expanded ? (
+                                  <tr>
+                                    <td colSpan={11}>
+                                      <div className="table-wrap">
+                                        <table className="dashboard-table">
+                                          <thead><tr><th>Name</th><th>Status</th><th>Shortlisted date</th><th>Position/JD</th><th>Expected CTC</th><th>Offer CTC</th><th>Billing rule</th><th>Expected billing</th></tr></thead>
+                                          <tbody>
+                                            {(row.candidates || []).map((candidate) => (
+                                              <tr key={candidate.assessmentId || `${candidate.name}-${candidate.position}`}>
+                                                <td>{candidate.name}</td>
+                                                <td>{candidate.currentStatus}</td>
+                                                <td>{formatDateOrRaw(candidate.shortlistedAt) || "-"}</td>
+                                                <td>{candidate.position}</td>
+                                                <td>{candidate.expectedCtc || "-"}</td>
+                                                <td>{candidate.offerCtc || "-"}</td>
+                                                <td>{formatCommercialRule(candidate.billingRule)}</td>
+                                                <td>{candidate.ctcPending ? "CTC pending" : formatCommercialInr(candidate.expectedBillingInr)}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ) : null}
+                              </React.Fragment>
+                            );
+                          }) : (
+                            <tr><td colSpan={11}>{commercialReportLoading ? "Loading commercial billing report..." : "No commercial billing data for selected filters."}</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
                 <div className="table-wrap">
                   <table className="dashboard-table">
                     <thead>
@@ -27083,6 +27286,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </tbody>
                   </table>
                 </div>
+                )}
                 {drilldownState.open && drilldownState.request?.mode === "reports" ? (
                   <DrilldownModal
                     open={drilldownState.open}
