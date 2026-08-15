@@ -10027,6 +10027,8 @@ function PortalApp({ token, onLogout }) {
   const [commercialReportLoading, setCommercialReportLoading] = useState(false);
   const [commercialRulesSaving, setCommercialRulesSaving] = useState(false);
   const [commercialExpandedKey, setCommercialExpandedKey] = useState("");
+  const [commercialMonthDrafts, setCommercialMonthDrafts] = useState({});
+  const [commercialFieldDrafts, setCommercialFieldDrafts] = useState({});
   const [reportsFilters, setReportsFilters] = useState({
     dateFrom: "",
     dateTo: "",
@@ -26708,7 +26710,25 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       const result = await api(`/company/reports/commercial-billing${params.toString() ? `?${params.toString()}` : ""}`, token);
       const rows = Array.isArray(result?.rows) ? result.rows : (Array.isArray(result?.result?.rows) ? result.result.rows : []);
       const rules = result?.clientBillingRules || result?.result?.clientBillingRules || {};
+      const monthDrafts = {};
+      const fieldDrafts = {};
+      rows.forEach((row) => {
+        (Array.isArray(row?.candidates) ? row.candidates : []).forEach((candidate) => {
+          const assessmentId = String(candidate?.assessmentId || "").trim();
+          if (assessmentId) monthDrafts[assessmentId] = String(candidate?.billingMonth || "").trim();
+          if (assessmentId) {
+            fieldDrafts[assessmentId] = {
+              currentCtc: String(candidate?.currentCtc || "").trim(),
+              expectedCtc: String(candidate?.expectedCtc || "").trim(),
+              offerCtc: String(candidate?.offerCtc || "").trim(),
+              doj: String((candidate?.currentStatus === "joined" ? candidate?.dateOfJoining : candidate?.expectedDoj) || "").trim()
+            };
+          }
+        });
+      });
       setCommercialReportRows(rows);
+      setCommercialMonthDrafts(monthDrafts);
+      setCommercialFieldDrafts(fieldDrafts);
       setCommercialBillingRules(rules && typeof rules === "object" ? rules : {});
       setCommercialRulesDraft(rules && typeof rules === "object" ? rules : {});
       setStatus("workspace", "Commercial billing report refreshed.", "ok");
@@ -26755,10 +26775,28 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         assessmentId: safeAssessmentId,
         commercialBillingMonth: String(commercialBillingMonth || "").trim()
       });
+      setCommercialMonthDrafts((current) => ({ ...current, [safeAssessmentId]: String(commercialBillingMonth || "").trim() }));
       setStatus("workspace", commercialBillingMonth ? "Commercial billing month updated." : "Commercial billing month reset.", "ok");
       void loadCommercialBillingReport(reportsFilters);
     } catch (error) {
       setStatus("workspace", `Billing month update failed: ${String(error?.message || error)}`, "error");
+    }
+  }
+  async function saveCommercialBillingFields(assessmentId, fields = {}) {
+    const safeAssessmentId = String(assessmentId || "").trim();
+    if (!safeAssessmentId) return;
+    try {
+      await api("/company/reports/commercial-billing/fields", token, "POST", {
+        assessmentId: safeAssessmentId,
+        currentCtc: String(fields.currentCtc || "").trim(),
+        expectedCtc: String(fields.expectedCtc || "").trim(),
+        offerCtc: String(fields.offerCtc || "").trim(),
+        doj: String(fields.doj || "").trim()
+      });
+      setStatus("workspace", "Commercial candidate values updated.", "ok");
+      void loadCommercialBillingReport(reportsFilters);
+    } catch (error) {
+      setStatus("workspace", `Commercial values update failed: ${String(error?.message || error)}`, "error");
     }
   }
   useEffect(() => {
@@ -27233,9 +27271,34 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                     <td colSpan={10}>
                                       <div className="table-wrap">
                                         <table className="dashboard-table">
-                                          <thead><tr><th>Name</th><th>Client</th><th>Status</th><th>Shortlisted date</th><th>Billing month</th><th>Position/JD</th><th>Expected CTC</th><th>Offer CTC</th><th>DOJ / Expected DOJ</th><th>Billing rule</th><th>Expected billing</th></tr></thead>
+                                          <thead><tr><th>Name</th><th>Client</th><th>Status</th><th>Shortlisted date</th><th>Billing month</th><th>Position/JD</th><th>Current CTC</th><th>Expected CTC</th><th>Offer CTC</th><th>DOJ / Expected DOJ</th><th>Billing rule</th><th>Expected billing</th><th>Save</th></tr></thead>
                                           <tbody>
-                                            {(row.candidates || []).map((candidate) => (
+                                            {(row.candidates || []).map((candidate) => {
+                                              const assessmentId = String(candidate.assessmentId || "").trim();
+                                              const monthDraft = commercialMonthDrafts[assessmentId] ?? candidate.billingMonth ?? "";
+                                              const hasMonthChange = String(monthDraft || "") !== String(candidate.billingMonth || "");
+                                              const fieldDraft = commercialFieldDrafts[assessmentId] || {
+                                                currentCtc: candidate.currentCtc || "",
+                                                expectedCtc: candidate.expectedCtc || "",
+                                                offerCtc: candidate.offerCtc || "",
+                                                doj: (candidate.currentStatus === "joined" ? candidate.dateOfJoining : candidate.expectedDoj) || ""
+                                              };
+                                              const hasFieldChange = String(fieldDraft.currentCtc || "") !== String(candidate.currentCtc || "")
+                                                || String(fieldDraft.expectedCtc || "") !== String(candidate.expectedCtc || "")
+                                                || String(fieldDraft.offerCtc || "") !== String(candidate.offerCtc || "")
+                                                || String(fieldDraft.doj || "") !== String((candidate.currentStatus === "joined" ? candidate.dateOfJoining : candidate.expectedDoj) || "");
+                                              const updateFieldDraft = (field, value) => setCommercialFieldDrafts((current) => ({
+                                                ...current,
+                                                [assessmentId]: {
+                                                  currentCtc: candidate.currentCtc || "",
+                                                  expectedCtc: candidate.expectedCtc || "",
+                                                  offerCtc: candidate.offerCtc || "",
+                                                  doj: (candidate.currentStatus === "joined" ? candidate.dateOfJoining : candidate.expectedDoj) || "",
+                                                  ...(current[assessmentId] || {}),
+                                                  [field]: value
+                                                }
+                                              }));
+                                              return (
                                               <tr key={candidate.assessmentId || `${candidate.name}-${candidate.position}`}>
                                                 <td>{candidate.name}</td>
                                                 <td>{candidate.clientName}</td>
@@ -27245,23 +27308,27 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                                   <div className="button-row tight" style={{ gap: 6 }}>
                                                     <input
                                                       type="month"
-                                                      value={candidate.billingMonth || ""}
-                                                      onChange={(e) => void saveCommercialBillingMonth(candidate.assessmentId, e.target.value)}
+                                                      value={monthDraft}
+                                                      onChange={(e) => setCommercialMonthDrafts((current) => ({ ...current, [assessmentId]: e.target.value }))}
                                                       style={{ minWidth: 130 }}
                                                     />
+                                                    <button className="primary-btn slim" disabled={!hasMonthChange} onClick={() => void saveCommercialBillingMonth(assessmentId, monthDraft)}>Save</button>
                                                     {candidate.billingMonth && candidate.billingMonth !== candidate.naturalBillingMonth ? (
-                                                      <button className="ghost-btn" onClick={() => void saveCommercialBillingMonth(candidate.assessmentId, "")}>Reset</button>
+                                                      <button className="ghost-btn" onClick={() => void saveCommercialBillingMonth(assessmentId, "")}>Reset</button>
                                                     ) : null}
                                                   </div>
                                                 </td>
                                                 <td>{candidate.position}</td>
-                                                <td>{candidate.expectedCtc || "-"}</td>
-                                                <td>{candidate.offerCtc || "-"}</td>
-                                                <td>{formatDateOrRaw(candidate.currentStatus === "joined" ? candidate.dateOfJoining : candidate.expectedDoj) || "-"}</td>
+                                                <td><input value={fieldDraft.currentCtc} onChange={(e) => updateFieldDraft("currentCtc", e.target.value)} style={{ minWidth: 95 }} /></td>
+                                                <td><input value={fieldDraft.expectedCtc} onChange={(e) => updateFieldDraft("expectedCtc", e.target.value)} style={{ minWidth: 95 }} /></td>
+                                                <td><input value={fieldDraft.offerCtc} onChange={(e) => updateFieldDraft("offerCtc", e.target.value)} style={{ minWidth: 120 }} /></td>
+                                                <td><input value={fieldDraft.doj} onChange={(e) => updateFieldDraft("doj", e.target.value)} placeholder="DOJ / Expected DOJ" style={{ minWidth: 140 }} /></td>
                                                 <td>{formatCommercialRule(candidate.billingRule)}</td>
                                                 <td>{candidate.ctcPending ? "CTC pending" : formatCommercialInr(candidate.expectedBillingInr)}</td>
+                                                <td><button className="primary-btn slim" disabled={!hasFieldChange} onClick={() => void saveCommercialBillingFields(assessmentId, fieldDraft)}>Save</button></td>
                                               </tr>
-                                            ))}
+                                              );
+                                            })}
                                           </tbody>
                                         </table>
                                       </div>

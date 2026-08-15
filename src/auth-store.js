@@ -1585,6 +1585,8 @@ function sanitizeAssessment(item) {
     clientFeedbackUpdatedBy: item.clientFeedbackUpdatedBy ?? item.client_feedback_updated_by ?? p.clientFeedbackUpdatedBy ?? "",
     clientFeedbackHistory: item.clientFeedbackHistory ?? item.client_feedback_history ?? p.clientFeedbackHistory ?? [],
     status: item.status ?? p.status ?? "",
+    commercialBillingMonth: item.commercialBillingMonth ?? item.commercial_billing_month ?? p.commercialBillingMonth ?? p.commercial_billing_month ?? "",
+    commercial_billing_month: item.commercial_billing_month ?? item.commercialBillingMonth ?? p.commercial_billing_month ?? p.commercialBillingMonth ?? "",
     cvProvider: item.cvProvider ?? item.cv_provider ?? p.cvProvider ?? p.cv_provider ?? "",
     cv_provider: item.cv_provider ?? item.cvProvider ?? p.cv_provider ?? p.cvProvider ?? "",
     cvKey: item.cvKey ?? item.cv_key ?? p.cvKey ?? p.cv_key ?? "",
