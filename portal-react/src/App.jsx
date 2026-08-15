@@ -26747,6 +26747,20 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       }
     }));
   }
+  async function saveCommercialBillingMonth(assessmentId, commercialBillingMonth) {
+    const safeAssessmentId = String(assessmentId || "").trim();
+    if (!safeAssessmentId) return;
+    try {
+      await api("/company/reports/commercial-billing/month", token, "POST", {
+        assessmentId: safeAssessmentId,
+        commercialBillingMonth: String(commercialBillingMonth || "").trim()
+      });
+      setStatus("workspace", commercialBillingMonth ? "Commercial billing month updated." : "Commercial billing month reset.", "ok");
+      void loadCommercialBillingReport(reportsFilters);
+    } catch (error) {
+      setStatus("workspace", `Billing month update failed: ${String(error?.message || error)}`, "error");
+    }
+  }
   useEffect(() => {
     if (String(location?.pathname || "").trim() !== "/reports") return;
     if (reportsPageTab !== "commercial") return;
@@ -27219,7 +27233,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                     <td colSpan={10}>
                                       <div className="table-wrap">
                                         <table className="dashboard-table">
-                                          <thead><tr><th>Name</th><th>Client</th><th>Status</th><th>Shortlisted date</th><th>Position/JD</th><th>Expected CTC</th><th>Offer CTC</th><th>Billing rule</th><th>Expected billing</th></tr></thead>
+                                          <thead><tr><th>Name</th><th>Client</th><th>Status</th><th>Shortlisted date</th><th>Billing month</th><th>Position/JD</th><th>Expected CTC</th><th>Offer CTC</th><th>DOJ / Expected DOJ</th><th>Billing rule</th><th>Expected billing</th></tr></thead>
                                           <tbody>
                                             {(row.candidates || []).map((candidate) => (
                                               <tr key={candidate.assessmentId || `${candidate.name}-${candidate.position}`}>
@@ -27227,9 +27241,23 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                                 <td>{candidate.clientName}</td>
                                                 <td>{candidate.currentStatus}</td>
                                                 <td>{formatDateOrRaw(candidate.shortlistedAt) || "-"}</td>
+                                                <td>
+                                                  <div className="button-row tight" style={{ gap: 6 }}>
+                                                    <input
+                                                      type="month"
+                                                      value={candidate.billingMonth || ""}
+                                                      onChange={(e) => void saveCommercialBillingMonth(candidate.assessmentId, e.target.value)}
+                                                      style={{ minWidth: 130 }}
+                                                    />
+                                                    {candidate.billingMonth && candidate.billingMonth !== candidate.naturalBillingMonth ? (
+                                                      <button className="ghost-btn" onClick={() => void saveCommercialBillingMonth(candidate.assessmentId, "")}>Reset</button>
+                                                    ) : null}
+                                                  </div>
+                                                </td>
                                                 <td>{candidate.position}</td>
                                                 <td>{candidate.expectedCtc || "-"}</td>
                                                 <td>{candidate.offerCtc || "-"}</td>
+                                                <td>{formatDateOrRaw(candidate.currentStatus === "joined" ? candidate.dateOfJoining : candidate.expectedDoj) || "-"}</td>
                                                 <td>{formatCommercialRule(candidate.billingRule)}</td>
                                                 <td>{candidate.ctcPending ? "CTC pending" : formatCommercialInr(candidate.expectedBillingInr)}</td>
                                               </tr>

@@ -12988,6 +12988,35 @@ function findCommercialOfferAmount(assessment = {}) {
   ).trim();
 }
 
+function findCommercialExpectedDoj(assessment = {}, candidate = null) {
+  const history = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const entry = history[index];
+    if (!entry || typeof entry !== "object") continue;
+    if (normalizeCommercialStatus(entry?.status || "") !== "offered") continue;
+    const value = String(entry?.statusAt || entry?.status_at || entry?.atValue || entry?.at_value || "").trim();
+    if (value) return value;
+  }
+  return String(
+    assessment?.expectedDoj
+    || assessment?.expected_doj
+    || assessment?.payload?.expectedDoj
+    || assessment?.payload?.expected_doj
+    || assessment?.offerDoj
+    || assessment?.offer_doj
+    || candidate?.expectedDoj
+    || candidate?.expected_doj
+    || candidate?.offerDoj
+    || candidate?.offer_doj
+    || ""
+  ).trim();
+}
+
+function normalizeCommercialBillingMonth(value = "") {
+  const text = String(value || "").trim();
+  return /^\d{4}-\d{2}$/.test(text) ? text : "";
+}
+
 function buildCommercialBillingReport({ user, candidates = [], assessments = [], jobs = [], billingRules = {}, dateFrom = "", dateTo = "", clientFilter = "", recruiterFilter = "", positionFilter = "" } = {}) {
   const candidateById = new Map((Array.isArray(candidates) ? candidates : []).map((candidate) => [String(candidate?.id || "").trim(), candidate]).filter(([id]) => Boolean(id)));
   const jobById = buildJobIndexById(jobs);
@@ -13019,7 +13048,9 @@ function buildCommercialBillingReport({ user, candidates = [], assessments = [],
     if (clientFilter && clientName !== clientFilter) continue;
     if (recruiterFilter && recruiterLabel !== recruiterFilter) continue;
     if (positionFilter && positionLabel !== positionFilter) continue;
-    const month = formatCommercialMonthKey(shortlistedAt);
+    const overrideMonth = normalizeCommercialBillingMonth(assessment?.commercialBillingMonth || assessment?.commercial_billing_month || assessment?.payload?.commercialBillingMonth || assessment?.payload?.commercial_billing_month || "");
+    const naturalMonth = formatCommercialMonthKey(shortlistedAt);
+    const month = overrideMonth || naturalMonth;
     if (!month) continue;
     const rule = safeRules[clientName] && typeof safeRules[clientName] === "object" ? safeRules[clientName] : null;
     const expectedCtcText = String(assessment?.expectedCtc || assessment?.expected_ctc || candidate?.expected_ctc || candidate?.expectedCtc || "").trim();
@@ -13037,11 +13068,15 @@ function buildCommercialBillingReport({ user, candidates = [], assessments = [],
       name: String(assessment?.candidateName || assessment?.candidate_name || candidate?.name || "Candidate").trim(),
       currentStatus: latestStatus,
       shortlistedAt,
+      billingMonth: month,
+      naturalBillingMonth: naturalMonth,
       month,
       clientName,
       position: positionLabel,
       expectedCtc: expectedCtcText,
       offerCtc: offerCtcText,
+      expectedDoj: normalizeDateOutput(findCommercialExpectedDoj(assessment, candidate)),
+      dateOfJoining: normalizeDateOutput(resolveAssessmentDateOfJoiningRaw(assessment, candidate)),
       ctcLakhs,
       ctcPending: ctcLakhs <= 0 && ruleType !== "flat",
       billingRule: ruleType ? { type: ruleType, value: ruleValue } : null,
@@ -17894,6 +17929,39 @@ const server = http.createServer(async (req, res) => {
         settings
       });
       sendJson(res, 200, { ok: true, result: settings });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/reports/commercial-billing/month") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (String(actor?.role || "").trim().toLowerCase() !== "admin") {
+        throw new Error("Only admin can update commercial billing month.");
+      }
+      const body = await readJsonBody(req);
+      const assessmentId = String(body?.assessmentId || body?.assessment_id || "").trim();
+      const commercialBillingMonth = normalizeCommercialBillingMonth(body?.commercialBillingMonth || body?.commercial_billing_month || "");
+      if (!assessmentId) throw new Error("assessmentId is required.");
+      const existing = await getAssessmentById({ companyId: actor.companyId, assessmentId });
+      if (!existing?.id) throw new Error("Assessment not found.");
+      const existingPayload = existing?.payload && typeof existing.payload === "object" ? existing.payload : {};
+      const nextPayload = { ...existingPayload };
+      if (commercialBillingMonth) nextPayload.commercialBillingMonth = commercialBillingMonth;
+      else delete nextPayload.commercialBillingMonth;
+      const saved = await saveAssessment({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        assessment: {
+          ...existing,
+          payload: nextPayload,
+          commercialBillingMonth: commercialBillingMonth || "",
+          expectedUpdatedAt: existing.updatedAt || existing.updated_at || ""
+        }
+      });
+      sendJson(res, 200, { ok: true, result: { assessment: saved, commercialBillingMonth: commercialBillingMonth || "" } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
