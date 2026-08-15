@@ -5791,6 +5791,26 @@ function toDateInputValue(value) {
   return local.toISOString().slice(0, 16);
 }
 
+function toDateOnlyInputValue(value) {
+  if (!value) return "";
+  const direct = String(value || "").trim().match(/^(\d{4}-\d{2}-\d{2})/);
+  if (direct) return direct[1];
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function formatDayMonth(value) {
+  const dateValue = toDateOnlyInputValue(value);
+  if (!dateValue) return "";
+  const date = new Date(`${dateValue}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "";
+  const day = date.getDate();
+  const suffix = day % 10 === 1 && day !== 11 ? "st" : day % 10 === 2 && day !== 12 ? "nd" : day % 10 === 3 && day !== 13 ? "rd" : "th";
+  return `${day}${suffix} ${date.toLocaleString("en-IN", { month: "short" })}`;
+}
+
 function isInterviewAlignedStatus(status) {
   const value = String(status || "").trim().toLowerCase();
   return [
@@ -26721,7 +26741,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               currentCtc: String(candidate?.currentCtc || "").trim(),
               expectedCtc: String(candidate?.expectedCtc || "").trim(),
               offerCtc: String(candidate?.offerCtc || "").trim(),
-              doj: String((candidate?.currentStatus === "joined" ? candidate?.dateOfJoining : candidate?.expectedDoj) || "").trim()
+              doj: toDateOnlyInputValue((candidate?.currentStatus === "joined" ? candidate?.dateOfJoining : candidate?.expectedDoj) || "")
             };
           }
         });
@@ -27281,19 +27301,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                                 currentCtc: candidate.currentCtc || "",
                                                 expectedCtc: candidate.expectedCtc || "",
                                                 offerCtc: candidate.offerCtc || "",
-                                                doj: (candidate.currentStatus === "joined" ? candidate.dateOfJoining : candidate.expectedDoj) || ""
+                                                doj: toDateOnlyInputValue((candidate.currentStatus === "joined" ? candidate.dateOfJoining : candidate.expectedDoj) || "")
                                               };
-                                              const hasFieldChange = String(fieldDraft.currentCtc || "") !== String(candidate.currentCtc || "")
-                                                || String(fieldDraft.expectedCtc || "") !== String(candidate.expectedCtc || "")
+                                              const originalDoj = toDateOnlyInputValue((candidate.currentStatus === "joined" ? candidate.dateOfJoining : candidate.expectedDoj) || "");
+                                              const hasFieldChange = String(fieldDraft.expectedCtc || "") !== String(candidate.expectedCtc || "")
                                                 || String(fieldDraft.offerCtc || "") !== String(candidate.offerCtc || "")
-                                                || String(fieldDraft.doj || "") !== String((candidate.currentStatus === "joined" ? candidate.dateOfJoining : candidate.expectedDoj) || "");
+                                                || String(fieldDraft.doj || "") !== originalDoj;
                                               const updateFieldDraft = (field, value) => setCommercialFieldDrafts((current) => ({
                                                 ...current,
                                                 [assessmentId]: {
                                                   currentCtc: candidate.currentCtc || "",
                                                   expectedCtc: candidate.expectedCtc || "",
                                                   offerCtc: candidate.offerCtc || "",
-                                                  doj: (candidate.currentStatus === "joined" ? candidate.dateOfJoining : candidate.expectedDoj) || "",
+                                                  doj: originalDoj,
                                                   ...(current[assessmentId] || {}),
                                                   [field]: value
                                                 }
@@ -27319,10 +27339,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                                   </div>
                                                 </td>
                                                 <td>{candidate.position}</td>
-                                                <td><input value={fieldDraft.currentCtc} onChange={(e) => updateFieldDraft("currentCtc", e.target.value)} style={{ minWidth: 95 }} /></td>
+                                                <td>{candidate.currentCtc || "-"}</td>
                                                 <td><input value={fieldDraft.expectedCtc} onChange={(e) => updateFieldDraft("expectedCtc", e.target.value)} style={{ minWidth: 95 }} /></td>
                                                 <td><input value={fieldDraft.offerCtc} onChange={(e) => updateFieldDraft("offerCtc", e.target.value)} style={{ minWidth: 120 }} /></td>
-                                                <td><input value={fieldDraft.doj} onChange={(e) => updateFieldDraft("doj", e.target.value)} placeholder="DOJ / Expected DOJ" style={{ minWidth: 140 }} /></td>
+                                                <td>
+                                                  <div className="button-row tight" style={{ gap: 6 }}>
+                                                    <input type="date" value={fieldDraft.doj} onChange={(e) => updateFieldDraft("doj", e.target.value)} style={{ minWidth: 130 }} />
+                                                    <span className="muted small">{formatDayMonth(fieldDraft.doj) || "-"}</span>
+                                                  </div>
+                                                </td>
                                                 <td>{formatCommercialRule(candidate.billingRule)}</td>
                                                 <td>{candidate.ctcPending ? "CTC pending" : formatCommercialInr(candidate.expectedBillingInr)}</td>
                                                 <td><button className="primary-btn slim" disabled={!hasFieldChange} onClick={() => void saveCommercialBillingFields(assessmentId, fieldDraft)}>Save</button></td>
