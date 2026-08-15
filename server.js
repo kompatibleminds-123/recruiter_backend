@@ -9660,7 +9660,8 @@ function buildDashboardFunnelPayload({
   dateFrom = "",
   dateTo = "",
   clientFilter = "",
-  recruiterFilter = ""
+  recruiterFilter = "",
+  positionFilter = ""
 } = {}) {
   const actorIsAdmin = String(user?.role || "").trim().toLowerCase() === "admin";
   const actorName = String(user?.name || "").trim();
@@ -9746,7 +9747,11 @@ function buildDashboardFunnelPayload({
       };
     })
     .filter((entry) => visibleDateCheck(entry.createdAt))
-    .filter((entry) => (!clientFilter || entry.scope.clientLabel === clientFilter) && (!recruiterFilter || entry.scope.recruiterLabel === recruiterFilter));
+    .filter((entry) => (
+      (!clientFilter || entry.scope.clientLabel === clientFilter)
+      && (!recruiterFilter || entry.scope.recruiterLabel === recruiterFilter)
+      && (!positionFilter || entry.scope.positionLabel === positionFilter)
+    ));
 
   const assessmentScopeRows = allAssessmentRows
     .filter((row) => isDashboardRowInActorScope(row, user, "assessment"))
@@ -9771,7 +9776,11 @@ function buildDashboardFunnelPayload({
       };
     })
     .filter((entry) => visibleDateCheck(entry.convertedAt))
-    .filter((entry) => (!clientFilter || entry.scope.clientLabel === clientFilter) && (!recruiterFilter || entry.scope.recruiterLabel === recruiterFilter));
+    .filter((entry) => (
+      (!clientFilter || entry.scope.clientLabel === clientFilter)
+      && (!recruiterFilter || entry.scope.recruiterLabel === recruiterFilter)
+      && (!positionFilter || entry.scope.positionLabel === positionFilter)
+    ));
 
   const addCandidateRow = (entry = {}) => {
     const { scope = {} } = entry || {};
@@ -9853,7 +9862,8 @@ function buildDashboardFunnelPayload({
       dateFrom: String(dateFrom || "").trim() || null,
       dateTo: String(dateTo || "").trim() || null,
       clientLabel: String(clientFilter || "").trim() || null,
-      recruiterLabel: String(recruiterFilter || "").trim() || null
+      recruiterLabel: String(recruiterFilter || "").trim() || null,
+      positionLabel: String(positionFilter || "").trim() || null
     },
     overall: {
       ...finalizeDashboardFunnelBucket(overall),
@@ -19817,6 +19827,7 @@ const server = http.createServer(async (req, res) => {
       const dateTo = String(requestUrl.searchParams.get("dateTo") || "").trim();
       const clientFilter = String(requestUrl.searchParams.get("clientLabel") || "").trim();
       const recruiterFilter = String(requestUrl.searchParams.get("recruiterLabel") || "").trim();
+      const positionFilter = String(requestUrl.searchParams.get("positionLabel") || "").trim();
       const [candidates, assessments, assessmentEvents, users] = await Promise.all([
         supabaseTableFetchAll(
           "candidates",
@@ -19860,7 +19871,8 @@ const server = http.createServer(async (req, res) => {
         dateFrom,
         dateTo,
         clientFilter,
-        recruiterFilter
+        recruiterFilter,
+        positionFilter
       });
       sendJson(res, 200, {
         ok: true,

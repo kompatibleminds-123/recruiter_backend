@@ -5447,6 +5447,80 @@ function downloadCandidateCardExcelFile(filename, { title, subtitle, sections })
   URL.revokeObjectURL(url);
 }
 
+function escapePdfText(value) {
+  return String(value ?? "")
+    .replace(/\u20b9/g, "Rs.")
+    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, " ")
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
+}
+
+function downloadSimplePdfFile(filename, { title = "Report", subtitle = "", headers = [], rows = [] } = {}) {
+  const safeHeaders = (headers || []).map((item) => String(item || ""));
+  const safeRows = (rows || []).map((row) => (row || []).map((cell) => String(cell ?? "")));
+  const pageWidth = 842;
+  const pageHeight = 595;
+  const margin = 32;
+  const rowHeight = 16;
+  const maxRowsPerPage = 27;
+  const colCount = Math.max(1, safeHeaders.length);
+  const colWidth = Math.floor((pageWidth - (margin * 2)) / colCount);
+  const chunks = [];
+  for (let index = 0; index < Math.max(1, safeRows.length); index += maxRowsPerPage) {
+    chunks.push(safeRows.slice(index, index + maxRowsPerPage));
+  }
+  const truncateCell = (value) => {
+    const maxChars = Math.max(6, Math.floor(colWidth / 5.2));
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+    return text.length > maxChars ? `${text.slice(0, Math.max(0, maxChars - 1))}.` : text;
+  };
+  const contentStreams = chunks.map((chunk, pageIndex) => {
+    const commands = ["BT", "/F1 15 Tf", `${margin} ${pageHeight - 36} Td`, `(${escapePdfText(title)}) Tj`];
+    if (subtitle) {
+      commands.push("/F1 8 Tf", `0 -16 Td`, `(${escapePdfText(subtitle)}) Tj`);
+    }
+    let y = pageHeight - 76;
+    commands.push("/F1 7 Tf");
+    safeHeaders.forEach((header, colIndex) => {
+      commands.push(`1 0 0 1 ${margin + (colIndex * colWidth)} ${y} Tm`, `(${escapePdfText(truncateCell(header))}) Tj`);
+    });
+    y -= rowHeight;
+    chunk.forEach((row) => {
+      row.forEach((cell, colIndex) => {
+        commands.push(`1 0 0 1 ${margin + (colIndex * colWidth)} ${y} Tm`, `(${escapePdfText(truncateCell(cell))}) Tj`);
+      });
+      y -= rowHeight;
+    });
+    commands.push(`/F1 7 Tf`, `1 0 0 1 ${pageWidth - 90} 20 Tm`, `(Page ${pageIndex + 1}/${chunks.length}) Tj`, "ET");
+    return commands.join("\n");
+  });
+  const objects = [];
+  objects.push("<< /Type /Catalog /Pages 2 0 R >>");
+  const pageObjectIds = contentStreams.map((_, index) => 3 + (index * 2));
+  objects.push(`<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageObjectIds.length} >>`);
+  contentStreams.forEach((stream, index) => {
+    const pageObjectId = 3 + (index * 2);
+    const contentObjectId = pageObjectId + 1;
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${3 + (contentStreams.length * 2)} 0 R >> >> /Contents ${contentObjectId} 0 R >>`);
+    objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+  });
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  downloadTextFile(filename, pdf, "application/pdf");
+}
+
 function downloadPresetExcelFile(filename, rows, presetId, settings = DEFAULT_COPY_SETTINGS, sheetName = "Sheet1") {
   const html = buildExcelHtmlFromPreset(rows, presetId, settings, sheetName);
   downloadTextFile(filename, html, "application/vnd.ms-excel;charset=utf-8");
@@ -9897,6 +9971,9 @@ function PortalApp({ token, onLogout }) {
   const [agendaBusyIds, setAgendaBusyIds] = useState({});
   const [agendaOpeningAssessmentIds, setAgendaOpeningAssessmentIds] = useState({});
   const [reportsTab, setReportsTab] = useState("client");
+  const [reportsPageTab, setReportsPageTab] = useState("recruiter");
+  const [reportsSummary, setReportsSummary] = useState(null);
+  const [reportsLoading, setReportsLoading] = useState(false);
   const [reportsFilters, setReportsFilters] = useState({
     dateFrom: "",
     dateTo: "",
@@ -12645,9 +12722,10 @@ function PortalApp({ token, onLogout }) {
     const forceCore = Boolean(forceFiveTabsRefresh);
     const forceAll = Boolean(preloadAllTabs);
     const isDashboardRoute = pathname === "/dashboard";
+    const isReportsRoute = pathname === "/reports";
     const isMarketingRoute = pathname === "/marketing" || pathname === "/marketing-module";
     const shouldSkipCoreSummaries = Boolean(skipCoreSummaries);
-    const needsDashboard = !shouldSkipCoreSummaries && (isDashboardRoute || forceCore || forceAll);
+    const needsDashboard = !shouldSkipCoreSummaries && (isDashboardRoute || isReportsRoute || forceCore || forceAll);
     const needsApplicants = forceCore || forceAll;
     const needsIntake = pathname === "/intake-settings" || pathname === "/jobs" || pathname === "/applicants" || forceAll;
     const needsJobs = forceAll || (!isMarketingRoute && pathname !== "/mail-settings" && pathname !== "/login-settings" && pathname !== "/plan");
@@ -26351,6 +26429,146 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   const maxRecruiterScore = Math.max(1, ...recruiterLeaderboardRanked.map((row) => row.performanceScore));
   const maxRecruiterSourced = Math.max(1, ...recruiterLeaderboardRanked.map((row) => row.sourced));
   const maxRecruiterShared = Math.max(1, ...recruiterLeaderboardRanked.map((row) => row.shared));
+  const reportsSummarySource = reportsSummary && typeof reportsSummary === "object" && Object.keys(reportsSummary).length
+    ? reportsSummary
+    : dashboardSummary;
+  const reportsClientGroupsDisplay = (Array.isArray(reportsSummarySource?.byClient) ? reportsSummarySource.byClient : []).map(normalizeDashboardFunnelGroup);
+  const reportsRecruiterGroupsDisplay = (Array.isArray(reportsSummarySource?.byRecruiter) ? reportsSummarySource.byRecruiter : []).map(normalizeDashboardFunnelGroup);
+  const reportsClientPositionRows = Array.isArray(reportsSummarySource?.byClientPosition) ? reportsSummarySource.byClientPosition : [];
+  const reportsRecruiterPositionRows = Array.isArray(reportsSummarySource?.byRecruiterPosition) ? reportsSummarySource.byRecruiterPosition : [];
+  const reportsClientOptions = Array.from(new Set([
+    ...(Array.isArray(state.dashboard?.availableClients) ? state.dashboard.availableClients : []),
+    ...(Array.isArray(reportsSummarySource?.availableClients) ? reportsSummarySource.availableClients : []),
+    ...reportsClientPositionRows.map((row) => row.clientLabel)
+  ].map((item) => String(item || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const reportsRecruiterOptions = Array.from(new Set([
+    ...(Array.isArray(state.dashboard?.availableRecruiters) ? state.dashboard.availableRecruiters : []),
+    ...(Array.isArray(reportsSummarySource?.availableRecruiters) ? reportsSummarySource.availableRecruiters : []),
+    ...reportsRecruiterPositionRows.map((row) => row.recruiterLabel)
+  ].map((item) => String(item || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const reportsRoleOptions = Array.from(new Set([
+    ...reportsClientPositionRows.map((row) => row.positionLabel),
+    ...reportsRecruiterPositionRows.map((row) => row.positionLabel),
+    ...(Array.isArray(state.jobs) ? state.jobs.map((job) => job?.title || job?.jdTitle || job?.position || "") : [])
+  ].map((item) => String(item || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const reportTabs = [
+    { id: "recruiter", label: "Recruiter Report" },
+    { id: "client", label: "Client wise report" },
+    { id: "role", label: "Role / JD wise report" },
+    { id: "joinings", label: "Joinings report" },
+    { id: "interviews", label: "Interviews report" }
+  ];
+  const getReportMetrics = (row = {}) => {
+    const source = row?.metrics && typeof row.metrics === "object" ? row.metrics : row;
+    return {
+      sourced: Number(source?.totalCandidates || source?.sourced || 0),
+      shared: Number(source?.sharedProfiles || source?.converted || 0),
+      interviews: Number(source?.interviews || source?.under_interview_process || 0),
+      shortlisted: Number(source?.shortlisted || 0),
+      offers: Number(source?.offers || source?.offered || 0),
+      joined: Number(source?.joined || 0)
+    };
+  };
+  const appendReportMetricCells = (metrics = {}) => ([
+    metrics.sourced,
+    metrics.shared,
+    metrics.interviews,
+    metrics.shortlisted,
+    metrics.offers,
+    metrics.joined,
+    `${safePct(metrics.shared, metrics.sourced)}%`,
+    `${safePct(metrics.interviews, metrics.shared)}%`,
+    `${safePct(metrics.shortlisted, metrics.interviews)}%`,
+    `${safePct(metrics.offers, metrics.shortlisted)}%`,
+    `${safePct(metrics.joined, metrics.offers)}%`
+  ]);
+  function buildReportsTableConfig(reportType = reportsPageTab) {
+    const filterSubtitle = [
+      reportsFilters.dateFrom || reportsFilters.dateTo ? `Date: ${reportsFilters.dateFrom || "start"} to ${reportsFilters.dateTo || "today"}` : "Date: All time",
+      reportsFilters.client ? `Client: ${reportsFilters.client}` : "Client: All",
+      reportsFilters.recruiter ? `Recruiter: ${reportsFilters.recruiter}` : "Recruiter: All",
+      reportsFilters.job ? `Role/JD: ${reportsFilters.job}` : "Role/JD: All"
+    ].join(" | ");
+    const commonMetricHeaders = ["Sourced", "Shared", "Interviews", "Shortlisted", "Offers", "Joined", "CV %", "Interview %", "Shortlist %", "Offer %", "Joining %"];
+    if (reportType === "client") {
+      return {
+        title: "Client wise report",
+        subtitle: filterSubtitle,
+        headers: ["Client", ...commonMetricHeaders],
+        rows: reportsClientGroupsDisplay.map((group) => [group.label, ...appendReportMetricCells(getReportMetrics(group))])
+      };
+    }
+    if (reportType === "role") {
+      return {
+        title: "Role / JD wise report",
+        subtitle: filterSubtitle,
+        headers: ["Client", "Role / JD", ...commonMetricHeaders],
+        rows: reportsClientPositionRows.map((row) => [row.clientLabel || "Unassigned", row.positionLabel || "Unassigned", ...appendReportMetricCells(getReportMetrics(row))])
+      };
+    }
+    if (reportType === "joinings") {
+      return {
+        title: "Joinings report",
+        subtitle: filterSubtitle,
+        headers: ["Client", "Role / JD", "Offers", "Joined", "Joining %"],
+        rows: [...reportsClientPositionRows]
+          .sort((a, b) => getReportMetrics(b).joined - getReportMetrics(a).joined)
+          .map((row) => {
+            const metrics = getReportMetrics(row);
+            return [row.clientLabel || "Unassigned", row.positionLabel || "Unassigned", metrics.offers, metrics.joined, `${safePct(metrics.joined, metrics.offers)}%`];
+          })
+      };
+    }
+    if (reportType === "interviews") {
+      return {
+        title: "Interviews report",
+        subtitle: filterSubtitle,
+        headers: ["Client", "Role / JD", "Shared", "Interviews", "Interview %", "Shortlisted", "Shortlist %"],
+        rows: [...reportsClientPositionRows]
+          .sort((a, b) => getReportMetrics(b).interviews - getReportMetrics(a).interviews)
+          .map((row) => {
+            const metrics = getReportMetrics(row);
+            return [row.clientLabel || "Unassigned", row.positionLabel || "Unassigned", metrics.shared, metrics.interviews, `${safePct(metrics.interviews, metrics.shared)}%`, metrics.shortlisted, `${safePct(metrics.shortlisted, metrics.interviews)}%`];
+          })
+      };
+    }
+    return {
+      title: "Recruiter Report",
+      subtitle: filterSubtitle,
+      headers: ["Recruiter", ...commonMetricHeaders],
+      rows: reportsRecruiterGroupsDisplay.map((group) => [group.label, ...appendReportMetricCells(getReportMetrics(group))])
+    };
+  }
+  async function loadReportsSummary(filters = reportsFilters) {
+    setReportsLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
+      if (filters.dateTo) params.set("dateTo", filters.dateTo);
+      if (filters.client) params.set("clientLabel", filters.client);
+      if (filters.recruiter) params.set("recruiterLabel", filters.recruiter);
+      if (filters.job) params.set("positionLabel", filters.job);
+      const result = await api(`/company/dashboard/funnel${params.toString() ? `?${params.toString()}` : ""}`, token);
+      const payload = result?.result?.funnel || result?.funnel || result?.result || result || {};
+      setReportsSummary(payload && typeof payload === "object" ? payload : {});
+      setStatus("workspace", "Reports refreshed.", "ok");
+    } catch (error) {
+      setStatus("workspace", `Reports refresh failed: ${String(error?.message || error)}`, "error");
+    } finally {
+      setReportsLoading(false);
+    }
+  }
+  function downloadActiveReportExcel() {
+    const config = buildReportsTableConfig(reportsPageTab);
+    const safeName = String(config.title || "report").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "report";
+    downloadTextFile(`${safeName}-${new Date().toISOString().slice(0, 10)}.xls`, buildExcelHtmlFromTable(config), "application/vnd.ms-excel;charset=utf-8");
+  }
+  function downloadActiveReportPdf() {
+    const config = buildReportsTableConfig(reportsPageTab);
+    const safeName = String(config.title || "report").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "report";
+    downloadSimplePdfFile(`${safeName}-${new Date().toISOString().slice(0, 10)}.pdf`, config);
+  }
+  const activeReportsTable = buildReportsTableConfig(reportsPageTab);
   const clientPortalSummary = state.clientPortal?.summary || { overall: {}, byClient: [], byClientPosition: [] };
   const selectedClientPortalGroup = (clientPortalSummary.byClient || []).find((group) => String(group.label || "") === String(clientPortalFilters.clientLabel || "")) || null;
   const clientPortalPositionRows = (clientPortalSummary.byClientPosition || []).filter((row) => String(row.clientLabel || "") === String(clientPortalFilters.clientLabel || ""));
@@ -26633,6 +26851,56 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         <div className="workspace-body">
           <RouteErrorBoundary routeKey={location.pathname}>
             <Routes>
+          <Route path="/reports" element={
+            <div className="page-grid">
+              <Section kicker="Reports & Analytics" title="Download reports">
+                <p className="muted">Choose filters, select a report type, then download Excel or PDF. This page is separate from Dashboard and does not show agenda/update actions.</p>
+                <div className="form-grid three-col dashboard-funnel-filters">
+                  <label><span>Date from</span><input type="date" value={reportsFilters.dateFrom} onChange={(e) => setReportsFilters((current) => ({ ...current, dateFrom: e.target.value }))} /></label>
+                  <label><span>Date to</span><input type="date" value={reportsFilters.dateTo} onChange={(e) => setReportsFilters((current) => ({ ...current, dateTo: e.target.value }))} /></label>
+                  <label><span>Recruiter</span><select value={reportsFilters.recruiter} onChange={(e) => setReportsFilters((current) => ({ ...current, recruiter: e.target.value }))}><option value="">All recruiters</option>{reportsRecruiterOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                  <label><span>Client</span><select value={reportsFilters.client} onChange={(e) => setReportsFilters((current) => ({ ...current, client: e.target.value }))}><option value="">All clients</option>{reportsClientOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                  <label><span>Role / JD</span><select value={reportsFilters.job} onChange={(e) => setReportsFilters((current) => ({ ...current, job: e.target.value }))}><option value="">All roles</option>{reportsRoleOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                  <div className="button-row align-end">
+                    <button disabled={reportsLoading} onClick={() => void loadReportsSummary()}>{reportsLoading ? "Loading..." : "Apply filters"}</button>
+                    <button className="ghost-btn" onClick={() => {
+                      const cleared = { dateFrom: "", dateTo: "", recruiter: "", client: "", job: "" };
+                      setReportsFilters(cleared);
+                      void loadReportsSummary(cleared);
+                    }}>Reset</button>
+                  </div>
+                </div>
+              </Section>
+              <Section kicker="Report Type" title="Select report">
+                <div className="reports-view-tabs">
+                  {reportTabs.map((tab) => (
+                    <button key={tab.id} className={reportsPageTab === tab.id ? "active" : ""} onClick={() => setReportsPageTab(tab.id)}>{tab.label}</button>
+                  ))}
+                </div>
+                <div className="button-row">
+                  <button onClick={() => downloadActiveReportExcel()}>Download Excel</button>
+                  <button className="ghost-btn" onClick={() => downloadActiveReportPdf()}>Download PDF</button>
+                </div>
+                <div className="table-wrap">
+                  <table className="dashboard-table">
+                    <thead>
+                      <tr>{activeReportsTable.headers.map((header) => <th key={header}>{header}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      {activeReportsTable.rows.length ? activeReportsTable.rows.map((row, rowIndex) => (
+                        <tr key={`${reportsPageTab}-${rowIndex}`}>
+                          {row.map((cell, cellIndex) => <td key={`${rowIndex}-${cellIndex}`}>{cell}</td>)}
+                        </tr>
+                      )) : (
+                        <tr><td colSpan={Math.max(1, activeReportsTable.headers.length)}>No report data for selected filters.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </Section>
+            </div>
+          } />
+
           <Route path="/dashboard" element={
             <div className="page-grid">
               <Section kicker="Today" title="Today's Agenda">
