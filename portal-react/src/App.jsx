@@ -12532,12 +12532,13 @@ function PortalApp({ token, onLogout }) {
     }));
   }
 
-  async function loadDashboardAgenda(range = agendaRange) {
+  async function loadDashboardAgenda(range = agendaRange, options = {}) {
+    const silent = options?.silent === true;
     const key = JSON.stringify({
       range: String(range || "today")
     });
     dashboardAgendaLoadKeyRef.current = key;
-    setDashboardAgendaLoading(true);
+    if (!silent) setDashboardAgendaLoading(true);
     const params = new URLSearchParams();
     params.set("range", String(range || "today"));
     try {
@@ -12561,7 +12562,7 @@ function PortalApp({ token, onLogout }) {
       });
       return agenda;
     } finally {
-      if (dashboardAgendaLoadKeyRef.current === key) {
+      if (!silent && dashboardAgendaLoadKeyRef.current === key) {
         setDashboardAgendaLoading(false);
       }
     }
@@ -19232,7 +19233,6 @@ function PortalApp({ token, onLogout }) {
             email: form.emailId,
             linkedin: form.linkedin,
             location: form.location,
-            gender: form.gender,
             company: form.currentCompany,
             role: form.currentDesignation,
             experience: form.totalExperience,
@@ -19241,9 +19241,6 @@ function PortalApp({ token, onLogout }) {
             current_ctc: form.currentCtc,
             expected_ctc: form.expectedCtc,
             notice_period: form.noticePeriod,
-            offer_in_hand: form.offerInHand,
-            current_org_tenure: String(form.currentOrgTenure || "").trim(),
-            reason_of_change: form.reasonForChange,
             recruiter_context_notes: form.recruiterNotes,
             other_pointers: form.otherPointers,
             skills: parseTagInputValue(form.tags),
@@ -19320,7 +19317,6 @@ function PortalApp({ token, onLogout }) {
 	        email: form.emailId,
 	        linkedin: form.linkedin,
 	        location: form.location,
-	        gender: form.gender,
 	        company: form.currentCompany,
 	        role: form.currentDesignation,
 	        experience: form.totalExperience,
@@ -19329,9 +19325,6 @@ function PortalApp({ token, onLogout }) {
 	        current_ctc: form.currentCtc,
 	        expected_ctc: form.expectedCtc,
 	        notice_period: form.noticePeriod,
-	        offer_in_hand: form.offerInHand,
-	        current_org_tenure: String(form.currentOrgTenure || "").trim(),
-	        reason_of_change: form.reasonForChange,
 	        recruiter_context_notes: form.recruiterNotes,
 	        notes: form.callbackNotes,
 	        other_pointers: form.otherPointers,
@@ -25733,7 +25726,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   async function refreshDashboardAfterAssessmentChange() {
     if (String(location?.pathname || "").trim() !== "/dashboard") return;
     await Promise.all([
-      loadDashboardAgenda(agendaRange),
+      loadDashboardAgenda(agendaRange, { silent: true }),
       loadDashboardSummary(dashboardFilters)
     ]);
     if (drilldownState.open && drilldownState.request?.mode === "dashboard") {

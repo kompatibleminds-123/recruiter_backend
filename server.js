@@ -5383,7 +5383,7 @@ async function fetchCandidatesByIdsForCompany(companyId, candidateIds = []) {
     const chunk = ids.slice(index, index + 150);
     if (!chunk.length) continue;
     const query = [
-      "select=id,company_id,name,role,current_company,current_designation,total_experience,relevant_experience,current_ctc,expected_ctc,notice_period,offer_in_hand,lwd_or_doj,current_org_tenure,reason_of_change,location,highest_education,client_name,jd_title,assigned_to_name,assigned_to_user_id,recruiter_name,recruiter_id,source,hidden_from_captured,last_contact_outcome,recruiter_context_notes,other_pointers,draft_payload,email_id,phone_number,gender",
+      "select=id,company_id,name,role,current_company,current_designation,total_experience,current_ctc,expected_ctc,notice_period,location,highest_education,client_name,jd_title,assigned_to_name,assigned_to_user_id,recruiter_name,recruiter_id,source,hidden_from_captured,last_contact_outcome,recruiter_context_notes,other_pointers,draft_payload,email_id,phone_number,gender",
       `company_id=eq.${encodeURIComponent(safeCompanyId)}`,
       `id=in.(${chunk.map((id) => encodeURIComponent(id)).join(",")})`,
       `limit=${chunk.length}`
@@ -22475,16 +22475,11 @@ const server = http.createServer(async (req, res) => {
         company: fieldValueOrUndefined("company", "currentCompany"),
         role: fieldValueOrUndefined("role", "currentDesignation"),
         experience: fieldValueOrUndefined("experience", "totalExperience"),
-        relevant_experience: fieldValueOrUndefined("relevant_experience", "relevantExperience"),
         location: fieldValueOrUndefined("location"),
-        gender: fieldValueOrUndefined("gender"),
         current_ctc: fieldValueOrUndefined("current_ctc", "currentCtc"),
         expected_ctc: fieldValueOrUndefined("expected_ctc", "expectedCtc"),
         notice_period: fieldValueOrUndefined("notice_period", "noticePeriod"),
-        offer_in_hand: fieldValueOrUndefined("offer_in_hand", "offerInHand"),
         lwd_or_doj: fieldValueOrUndefined("lwd_or_doj", "lwdOrDoj"),
-        current_org_tenure: fieldValueOrUndefined("current_org_tenure", "currentOrgTenure"),
-        reason_of_change: fieldValueOrUndefined("reason_of_change", "reasonForChange"),
         phone: fieldValueOrUndefined("phone", "phoneNumber"),
         email: fieldValueOrUndefined("email", "emailId"),
         linkedin: fieldValueOrUndefined("linkedin", "linkedinUrl"),
