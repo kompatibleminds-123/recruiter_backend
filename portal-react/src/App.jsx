@@ -6512,10 +6512,16 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
   const [dateOfJoining, setDateOfJoining] = useState("");
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
+  const frozenAssessmentRef = useRef(null);
   const inferSyncModeRef = useRef("manual");
 
   useEffect(() => {
-    if (!open || !assessment) return;
+    if (!open) {
+      frozenAssessmentRef.current = null;
+      return;
+    }
+    if (!assessment) return;
+    frozenAssessmentRef.current = { ...assessment };
     setCandidateStatus(normalizeAssessmentStatusLabel(assessment.candidateStatus));
     setAtValue(toDateInputValue(assessment.interviewAt || assessment.followUpAt || ""));
     setInferText("");
@@ -6687,7 +6693,11 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
             setStatus("Saving status update...");
             setSaving(true);
             try {
-              await onSave({
+              const targetAssessment = frozenAssessmentRef.current || assessment;
+              if (!targetAssessment?.id && !targetAssessment?.candidateId) {
+                throw new Error("Assessment target missing. Please reopen this row and try again.");
+              }
+              await onSave(targetAssessment, {
                 candidateStatus,
                 atValue: shouldShowCalendar ? effectiveAtValue : "",
                 notes: inferText,
@@ -24743,7 +24753,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
   async function saveAssessmentStatusUpdate(assessment, payload, options = {}) {
     const statusTarget = options.statusTarget || "assessments";
-    const lockKey = String(assessment?.id || assessment?.candidateId || "").trim();
+    const assessmentLockKey = String(assessment?.id || "").trim();
+    const candidateLockKey = String(assessment?.candidateId || "").trim();
+    const lockKeys = Array.from(new Set([assessmentLockKey, candidateLockKey].filter(Boolean)));
     const useInlineAssessmentStatus = String(statusTarget || "").trim() === "assessments";
     const pushAssessmentStatus = (message, kind = "") => {
       if (useInlineAssessmentStatus) {
@@ -24752,7 +24764,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         setStatus(statusTarget, message, kind);
       }
     };
-    if (lockKey && assessmentStatusSaveLockRef.current.has(lockKey)) {
+    if (lockKeys.some((key) => assessmentStatusSaveLockRef.current.has(key))) {
       pushAssessmentStatus("Status update already in progress for this candidate.", "error");
       return;
     }
@@ -24905,7 +24917,16 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       const currentDraft = getCandidateDraftState(currentCandidate);
       nextScreeningAnswers = currentDraft.jdScreeningAnswers || parsePortalObjectField(currentCandidate?.screening_answers || currentCandidate?.screeningAnswers);
     }
-    if (lockKey) assessmentStatusSaveLockRef.current.add(lockKey);
+    if (lockKeys.length) {
+      lockKeys.forEach((key) => assessmentStatusSaveLockRef.current.add(key));
+      setAssessmentActionBusyIds((current) => {
+        const next = { ...current };
+        lockKeys.forEach((key) => {
+          next[key] = true;
+        });
+        return next;
+      });
+    }
     applyAssessmentChange({
       type: "STATUS_UPDATE",
       scope: "all",
@@ -24974,8 +24995,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         pushAssessmentStatus(`Status sync failed: ${String(error?.message || error)}`, "error");
         void refreshAssessmentFallback({ candidateId: linkedCandidateId }).catch(() => {});
       } finally {
-        if (lockKey) {
-          assessmentStatusSaveLockRef.current.delete(lockKey);
+        if (lockKeys.length) {
+          lockKeys.forEach((key) => assessmentStatusSaveLockRef.current.delete(key));
+          setAssessmentActionBusyIds((current) => {
+            const next = { ...current };
+            lockKeys.forEach((key) => {
+              delete next[key];
+            });
+            return next;
+          });
         }
       }
     })();
@@ -27255,6 +27283,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                       const dateCellText = chip.id === "quick_joiners" && row.preserveDateText
                                         ? String(row.date || "").trim()
                                         : (row.date ? formatDateOrRaw(row.date) : "-");
+                                      const statusBusyKey = String(
+                                        row.item?.assessment_id
+                                        || row.item?.assessmentId
+                                        || row.item?.raw?.assessment?.id
+                                        || row.item?.assessment?.id
+                                        || row.item?.id
+                                        || row.item?.candidate_id
+                                        || row.item?.candidateId
+                                        || ""
+                                      ).trim();
+                                      const statusActionBusy = Boolean(statusBusyKey && assessmentActionBusyIds[statusBusyKey]);
                                       return (
                                       <tr key={`${chip.id}-${row.item?.id || row.item?.assessmentId || row.candidateName}-${index}`}>
                                         <td>
@@ -27299,9 +27338,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                           <button
                                             className="ghost-btn"
                                             type="button"
+                                            disabled={statusActionBusy}
                                             onClick={() => openAssessmentStatusFromSearch(row.item)}
                                           >
-                                            Update status
+                                            {statusActionBusy ? "Updating..." : "Update status"}
                                           </button>
                                         </td>
                                       </tr>
@@ -28605,7 +28645,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       {assessmentLane === "active" && !isArchived ? (
                         <>
                           <button className="assessment-btn-primary" onClick={() => { closeAssessmentMoreMenu(); openSavedAssessment(item); }}>Edit assessment</button>
-                          <button className="ghost-btn assessment-btn-neutral" onClick={() => { closeAssessmentMoreMenu(); setAssessmentStatusId(item.id); }}>Update status</button>
+                          <button className="ghost-btn assessment-btn-neutral" disabled={Boolean(assessmentActionBusyIds[String(item.id || "")] || assessmentActionBusyIds[String(item.candidateId || "")])} onClick={() => { closeAssessmentMoreMenu(); setAssessmentStatusId(item.id); }}>{assessmentActionBusyIds[String(item.id || "")] || assessmentActionBusyIds[String(item.candidateId || "")] ? "Updating..." : "Update status"}</button>
                           <button className="ghost-btn assessment-btn-neutral" onClick={() => { closeAssessmentMoreMenu(); void openAssessmentJourney(item); }}>Journey</button>
                           <button className="ghost-btn assessment-btn-neutral" onClick={() => { closeAssessmentMoreMenu(); void openAssessmentCandidateCardModal(item); }}>Candidate card</button>
                           <button
@@ -31944,7 +31984,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         </div>
       ) : null}
       <AttemptsModal open={Boolean(attemptsCandidateId)} candidate={attemptsCandidate} attempts={attempts} onClose={() => setAttemptsCandidateId("")} onRefresh={refreshAttempts} onSave={saveAttempt} />
-      <AssessmentStatusModal open={Boolean(assessmentStatusId)} assessment={assessmentStatusItem} onClose={() => setAssessmentStatusId("")} onSave={(payload) => saveAssessmentStatusUpdate(assessmentStatusItem, payload)} />
+      <AssessmentStatusModal open={Boolean(assessmentStatusId)} assessment={assessmentStatusItem} onClose={() => setAssessmentStatusId("")} onSave={(targetAssessment, payload) => saveAssessmentStatusUpdate(targetAssessment || assessmentStatusItem, payload)} />
       <DrilldownModal
         open={drilldownState.open && String(location?.pathname || "") !== "/dashboard"}
         loading={Boolean(drilldownState.loading)}
