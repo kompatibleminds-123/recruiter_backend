@@ -10049,6 +10049,8 @@ function PortalApp({ token, onLogout }) {
   const [commercialExpandedKey, setCommercialExpandedKey] = useState("");
   const [commercialMonthDrafts, setCommercialMonthDrafts] = useState({});
   const [commercialFieldDrafts, setCommercialFieldDrafts] = useState({});
+  const [commercialMonthSavingIds, setCommercialMonthSavingIds] = useState({});
+  const [commercialFieldSavingIds, setCommercialFieldSavingIds] = useState({});
   const [reportsFilters, setReportsFilters] = useState({
     dateFrom: "",
     dateTo: "",
@@ -26790,6 +26792,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   async function saveCommercialBillingMonth(assessmentId, commercialBillingMonth) {
     const safeAssessmentId = String(assessmentId || "").trim();
     if (!safeAssessmentId) return;
+    setCommercialMonthSavingIds((current) => ({ ...current, [safeAssessmentId]: true }));
     try {
       await api("/company/reports/commercial-billing/month", token, "POST", {
         assessmentId: safeAssessmentId,
@@ -26800,11 +26803,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       void loadCommercialBillingReport(reportsFilters);
     } catch (error) {
       setStatus("workspace", `Billing month update failed: ${String(error?.message || error)}`, "error");
+    } finally {
+      setCommercialMonthSavingIds((current) => ({ ...current, [safeAssessmentId]: false }));
     }
   }
   async function saveCommercialBillingFields(assessmentId, fields = {}) {
     const safeAssessmentId = String(assessmentId || "").trim();
     if (!safeAssessmentId) return;
+    setCommercialFieldSavingIds((current) => ({ ...current, [safeAssessmentId]: true }));
     try {
       await api("/company/reports/commercial-billing/fields", token, "POST", {
         assessmentId: safeAssessmentId,
@@ -26817,6 +26823,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       void loadCommercialBillingReport(reportsFilters);
     } catch (error) {
       setStatus("workspace", `Commercial values update failed: ${String(error?.message || error)}`, "error");
+    } finally {
+      setCommercialFieldSavingIds((current) => ({ ...current, [safeAssessmentId]: false }));
     }
   }
   useEffect(() => {
@@ -27297,6 +27305,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                               const assessmentId = String(candidate.assessmentId || "").trim();
                                               const monthDraft = commercialMonthDrafts[assessmentId] ?? candidate.billingMonth ?? "";
                                               const hasMonthChange = String(monthDraft || "") !== String(candidate.billingMonth || "");
+                                              const isMonthSaving = Boolean(commercialMonthSavingIds[assessmentId]);
+                                              const isFieldSaving = Boolean(commercialFieldSavingIds[assessmentId]);
                                               const fieldDraft = commercialFieldDrafts[assessmentId] || {
                                                 currentCtc: candidate.currentCtc || "",
                                                 expectedCtc: candidate.expectedCtc || "",
@@ -27332,9 +27342,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                                       onChange={(e) => setCommercialMonthDrafts((current) => ({ ...current, [assessmentId]: e.target.value }))}
                                                       style={{ minWidth: 130 }}
                                                     />
-                                                    <button className="primary-btn slim" disabled={!hasMonthChange} onClick={() => void saveCommercialBillingMonth(assessmentId, monthDraft)}>Save</button>
+                                                    <button className="primary-btn slim" disabled={!hasMonthChange || isMonthSaving} onClick={() => void saveCommercialBillingMonth(assessmentId, monthDraft)}>{isMonthSaving ? "Saving..." : "Save"}</button>
                                                     {candidate.billingMonth && candidate.billingMonth !== candidate.naturalBillingMonth ? (
-                                                      <button className="ghost-btn" onClick={() => void saveCommercialBillingMonth(assessmentId, "")}>Reset</button>
+                                                      <button className="ghost-btn" disabled={isMonthSaving} onClick={() => void saveCommercialBillingMonth(assessmentId, "")}>{isMonthSaving ? "Saving..." : "Reset"}</button>
                                                     ) : null}
                                                   </div>
                                                 </td>
@@ -27350,7 +27360,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                                 </td>
                                                 <td>{formatCommercialRule(candidate.billingRule)}</td>
                                                 <td>{candidate.ctcPending ? "CTC pending" : formatCommercialInr(candidate.expectedBillingInr)}</td>
-                                                <td><button className="primary-btn slim" disabled={!hasFieldChange} onClick={() => void saveCommercialBillingFields(assessmentId, fieldDraft)}>Save</button></td>
+                                                <td><button className="primary-btn slim" disabled={!hasFieldChange || isFieldSaving} onClick={() => void saveCommercialBillingFields(assessmentId, fieldDraft)}>{isFieldSaving ? "Saving..." : "Save"}</button></td>
                                               </tr>
                                               );
                                             })}
