@@ -13058,7 +13058,7 @@ function buildCommercialBillingReport({ user, candidates = [], assessments = [],
     const currentCtcText = String(assessment?.currentCtc || assessment?.current_ctc || candidate?.current_ctc || candidate?.currentCtc || "").trim();
     const expectedCtcText = String(assessment?.expectedCtc || assessment?.expected_ctc || candidate?.expected_ctc || candidate?.expectedCtc || "").trim();
     const offerCtcText = findCommercialOfferAmount(assessment);
-    const ctcText = latestStatus === "shortlisted" ? expectedCtcText : (offerCtcText || expectedCtcText);
+    const ctcText = offerCtcText || expectedCtcText;
     const ctcLakhs = parseCommercialCtcLakhs(ctcText);
     const ruleType = String(rule?.type || "").trim().toLowerCase() === "flat" ? "flat" : (rule ? "percentage" : "");
     const ruleValue = Number(rule?.value || 0) || 0;
