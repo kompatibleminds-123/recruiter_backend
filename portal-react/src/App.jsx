@@ -24906,6 +24906,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
   }
 
   async function saveAssessmentStatusUpdate(assessment, payload, options = {}) {
+    const freshAssessment = await resolveFreshAssessmentForStatus(assessment, token, assessmentListItems, state.assessments).catch(() => null);
+    if (freshAssessment && typeof freshAssessment === "object") {
+      assessment = { ...assessment, ...freshAssessment };
+    }
     const statusTarget = options.statusTarget || "assessments";
     const assessmentLockKey = String(assessment?.id || "").trim();
     const candidateLockKey = String(assessment?.candidateId || "").trim();
@@ -25942,19 +25946,25 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     });
   }
 
-  function openAgendaAssessmentStatus(item) {
+  async function openAgendaAssessmentStatus(item) {
     const assessmentId = String(item?.assessmentId || item?.raw?.id || item?.id || "").trim();
     if (!assessmentId) return;
     setAgendaOpeningAssessmentIds((current) => ({ ...current, [assessmentId]: true }));
-    setAssessmentStatusItemSnapshot(item?.raw || item || null);
-    setAssessmentStatusId(assessmentId);
-    setTimeout(() => {
+    try {
+      const fresh = await api(`/company/assessments/by-id?assessmentId=${encodeURIComponent(assessmentId)}`, token).catch(() => null);
+      setAssessmentStatusItemSnapshot(
+        fresh && typeof fresh === "object" && String(fresh.id || "").trim() === assessmentId
+          ? fresh
+          : (item?.raw || item || null)
+      );
+      setAssessmentStatusId(assessmentId);
+    } finally {
       setAgendaOpeningAssessmentIds((current) => {
         const next = { ...current };
         delete next[assessmentId];
         return next;
       });
-    }, 500);
+    }
   }
 
   function reuseAssessmentAsNew(assessment) {
