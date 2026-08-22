@@ -1887,6 +1887,8 @@ function getCandidateDraftState(candidate = {}) {
   ).trim();
   return {
     ...draftPayload,
+    recruiterNotes: draftPayload?.recruiterNotes ?? draftPayload?.recruiter_notes ?? draftPayload?.recruiterContextNotes ?? draftPayload?.recruiter_context_notes ?? "",
+    otherPointers: draftPayload?.otherPointers ?? draftPayload?.other_pointers ?? "",
     ...(normalizedCurrentOrgTenure ? {
       currentOrgTenure: normalizedCurrentOrgTenure,
       current_org_tenure: normalizedCurrentOrgTenure
@@ -18787,9 +18789,9 @@ function PortalApp({ token, onLogout }) {
       candidateStatus: normalizeAssessmentStatusLabel(candidateDraft.candidateStatus || matched?.candidateStatus || candidate?.candidate_status) || "Screening in progress",
       followUpAt: toDateInputValue(candidateDraft.followUpAt || matched?.followUpAt || candidate?.next_follow_up_at),
       interviewAt: toDateInputValue(candidateDraft.interviewAt || matched?.interviewAt),
-      recruiterNotes: candidateDraft.recruiterNotes || matched?.recruiterNotes || candidate?.recruiter_context_notes || "",
+      recruiterNotes: candidateDraft.recruiterNotes || candidateDraft.recruiter_context_notes || matched?.recruiterNotes || matched?.recruiterContextNotes || matched?.recruiter_context_notes || candidate?.recruiter_context_notes || candidate?.recruiterContextNotes || "",
       callbackNotes: candidateDraft.callbackNotes || candidate?.notes || "",
-      otherPointers: candidateDraft.otherPointers || matched?.otherPointers || candidate?.other_pointers || "",
+      otherPointers: candidateDraft.otherPointers || candidateDraft.other_pointers || matched?.otherPointers || matched?.other_pointers || candidate?.other_pointers || candidate?.otherPointers || "",
       tags: candidateDraft.tags || (Array.isArray(candidate?.skills) ? candidate.skills.join(", ") : ""),
       jdScreeningAnswers: candidateDraft.jdScreeningAnswers || matched?.jdScreeningAnswers || {},
       cvAnalysis: matched?.cvAnalysis || candidateCvAnalysis || null,
@@ -18846,9 +18848,9 @@ function PortalApp({ token, onLogout }) {
       candidateStatus: normalizeAssessmentStatusLabel(assessment?.candidateStatus) || "Screening in progress",
       followUpAt: toDateInputValue(assessment?.followUpAt),
       interviewAt: toDateInputValue(assessment?.interviewAt),
-      recruiterNotes: String(assessment?.recruiterNotes || ""),
+      recruiterNotes: String(assessment?.recruiterNotes || assessment?.recruiterContextNotes || assessment?.recruiter_context_notes || ""),
       callbackNotes: String(assessment?.callbackNotes || ""),
-      otherPointers: String(assessment?.otherPointers || ""),
+      otherPointers: String(assessment?.otherPointers || assessment?.other_pointers || ""),
       tags: "",
       jdScreeningAnswers: assessmentScreeningMap,
       cvAnalysis: assessment?.cvAnalysis || null,
@@ -18879,6 +18881,7 @@ function PortalApp({ token, onLogout }) {
         return digits.length > 10 ? digits.slice(-10) : digits;
       };
       const pickDefined = (...values) => values.find((value) => value !== undefined && value !== null);
+      const pickNonEmpty = (...values) => values.find((value) => String(value || "").trim());
       const wantedCandidateId = String(assessment?.candidateId || assessment?.candidate_id || "").trim();
       const wantedEmail = normalizeEmail(assessment?.emailId || assessment?.email || "");
       const wantedPhone = normalizePhone(assessment?.phoneNumber || assessment?.phone || "");
@@ -18918,9 +18921,9 @@ function PortalApp({ token, onLogout }) {
         offerInHand: String(pickDefined(current?.offerInHand, assessment?.offerInHand, candidateDraft.offerInHand, parsedRecruiterBase.offer_in_hand) || ""),
         lwdOrDoj: sanitizeLwdOrDojValue(pickDefined(current?.lwdOrDoj, assessment?.lwdOrDoj, candidateDraft.lwdOrDoj, matchedCandidate?.lwd_or_doj, parsedRecruiterBase.lwd_or_doj) || ""),
         highestEducation: String(pickDefined(current?.highestEducation, assessment?.highestEducation, candidateDraft.highestEducation, matchedCandidate?.highest_education, matchedCandidate?.highestEducation) || ""),
-        recruiterNotes: String(pickDefined(current?.recruiterNotes, assessment?.recruiterNotes, candidateDraft.recruiterNotes, matchedCandidate?.recruiter_context_notes) || ""),
+        recruiterNotes: String(pickNonEmpty(current?.recruiterNotes, assessment?.recruiterNotes, assessment?.recruiterContextNotes, candidateDraft.recruiterNotes, candidateDraft.recruiter_context_notes, matchedCandidate?.recruiter_context_notes, matchedCandidate?.recruiterContextNotes) || ""),
         callbackNotes: String(pickDefined(current?.callbackNotes, assessment?.callbackNotes, candidateDraft.callbackNotes, matchedCandidate?.notes) || ""),
-        otherPointers: String(pickDefined(current?.otherPointers, assessment?.otherPointers, candidateDraft.otherPointers, matchedCandidate?.other_pointers) || ""),
+        otherPointers: String(pickNonEmpty(current?.otherPointers, assessment?.otherPointers, assessment?.other_pointers, candidateDraft.otherPointers, candidateDraft.other_pointers, matchedCandidate?.other_pointers, matchedCandidate?.otherPointers) || ""),
         tags: current?.tags || candidateDraft.tags || (Array.isArray(matchedCandidate?.skills) ? matchedCandidate.skills.join(", ") : ""),
         jdScreeningAnswers: current?.jdScreeningAnswers && Object.keys(current.jdScreeningAnswers || {}).length
           ? current.jdScreeningAnswers
@@ -19417,6 +19420,8 @@ function PortalApp({ token, onLogout }) {
             draft_payload: {
               ...form,
               current_org_tenure: String(form.currentOrgTenure || "").trim(),
+              recruiter_context_notes: String(form.recruiterNotes || "").trim(),
+              other_pointers: String(form.otherPointers || "").trim(),
               jdScreeningAnswers: form.jdScreeningAnswers || {}
             },
             skipSearchDocRebuild: true,
@@ -19502,6 +19507,8 @@ function PortalApp({ token, onLogout }) {
 	        draft_payload: {
 	          ...form,
 	          current_org_tenure: String(form.currentOrgTenure || "").trim(),
+            recruiter_context_notes: String(form.recruiterNotes || "").trim(),
+            other_pointers: String(form.otherPointers || "").trim(),
 	          jdScreeningAnswers: form.jdScreeningAnswers || {}
 	        },
 	        skipSearchDocRebuild: true,
