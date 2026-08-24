@@ -1810,6 +1810,90 @@ function sanitizePdfOverlayText(value = "") {
     .trim();
 }
 
+function readPdfPrimitiveText(value) {
+  if (!value) return "";
+  try {
+    if (typeof value.decodeText === "function") return String(value.decodeText() || "").trim();
+    if (typeof value.asString === "function") return String(value.asString() || "").trim();
+    if (typeof value.value === "function") return String(value.value() || "").trim();
+  } catch {}
+  return String(value || "").replace(/^\(|\)$/g, "").trim();
+}
+
+function readPdfPrimitiveNumber(value) {
+  if (!value) return null;
+  try {
+    if (typeof value.asNumber === "function") return Number(value.asNumber());
+    if (typeof value.value === "function") return Number(value.value());
+  } catch {}
+  const parsed = Number(String(value || "").trim());
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizePdfLinkUri(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^(https?:|mailto:|tel:)/i.test(raw)) return raw;
+  if (/^(www\.|linkedin\.com|in\.linkedin\.com|github\.com)/i.test(raw)) return `https://${raw}`;
+  return "";
+}
+
+function extractPdfPageUriAnnotations(pdfDoc, page) {
+  if (!pdfLib || !pdfDoc || !page) return [];
+  const { PDFName, PDFArray, PDFDict } = pdfLib;
+  const context = pdfDoc.context;
+  const annots = page.node.lookupMaybe(PDFName.of("Annots"), PDFArray);
+  if (!annots) return [];
+  const links = [];
+  for (let index = 0; index < annots.size(); index += 1) {
+    try {
+      const annotRef = annots.get(index);
+      const annot = context.lookup(annotRef, PDFDict);
+      if (!annot) continue;
+      const subtype = readPdfPrimitiveText(annot.lookup(PDFName.of("Subtype")));
+      if (!/\/?Link$/i.test(subtype)) continue;
+      const action = annot.lookupMaybe(PDFName.of("A"), PDFDict);
+      const uri = normalizePdfLinkUri(readPdfPrimitiveText(action?.lookup(PDFName.of("URI"))));
+      if (!uri) continue;
+      const rectArray = annot.lookupMaybe(PDFName.of("Rect"), PDFArray);
+      if (!rectArray || rectArray.size() < 4) continue;
+      const rect = [0, 1, 2, 3].map((slot) => readPdfPrimitiveNumber(rectArray.get(slot)));
+      if (rect.some((value) => !Number.isFinite(value))) continue;
+      links.push({ uri, rect });
+    } catch {
+      // Skip malformed annotations rather than failing CV generation.
+    }
+  }
+  return links;
+}
+
+function addPdfPageUriAnnotation(pdfDoc, page, { uri = "", rect = [] } = {}) {
+  if (!pdfLib || !pdfDoc || !page) return;
+  const { PDFName, PDFArray, PDFString } = pdfLib;
+  const safeUri = normalizePdfLinkUri(uri);
+  if (!safeUri || !Array.isArray(rect) || rect.length < 4) return;
+  const safeRect = rect.map((value) => Number(value));
+  if (safeRect.some((value) => !Number.isFinite(value))) return;
+  const annotation = pdfDoc.context.obj({
+    Type: "Annot",
+    Subtype: "Link",
+    Rect: safeRect,
+    Border: [0, 0, 0],
+    A: {
+      Type: "Action",
+      S: "URI",
+      URI: PDFString.of(safeUri)
+    }
+  });
+  const annotationRef = pdfDoc.context.register(annotation);
+  let annots = page.node.lookupMaybe(PDFName.of("Annots"), PDFArray);
+  if (!annots) {
+    annots = PDFArray.withContext(pdfDoc.context);
+    page.node.set(PDFName.of("Annots"), annots);
+  }
+  annots.push(annotationRef);
+}
+
 async function buildBrandedPdfBuffer({
   pdfBase64 = "",
   companyName = "Your Company",
@@ -1842,6 +1926,7 @@ async function buildBrandedPdfBuffer({
   }
   const outDoc = await PDFDocument.create();
   const srcPages = srcDoc.getPages();
+  const srcPageUriAnnotations = srcPages.map((page) => extractPdfPageUriAnnotations(srcDoc, page));
   const rf = resumeFormatting && typeof resumeFormatting === "object" ? resumeFormatting : {};
 
   const headerEnabled = rf.headerEnabled !== false;
@@ -1915,6 +2000,27 @@ async function buildBrandedPdfBuffer({
       width: Math.max(80, width - bodyLeftInset - bodyRightInset),
       height: renderHeight
     });
+    const renderedWidth = Math.max(80, width - bodyLeftInset - bodyRightInset);
+    const renderedX = bodyLeftInset;
+    const renderedY = bottomPad + innerBottomGap;
+    const scaleX = renderedWidth / width;
+    const scaleY = renderHeight / height;
+    for (const link of srcPageUriAnnotations[index] || []) {
+      const [x1, y1, x2, y2] = link.rect || [];
+      const left = Math.min(x1, x2);
+      const right = Math.max(x1, x2);
+      const bottom = Math.min(y1, y2);
+      const top = Math.max(y1, y2);
+      addPdfPageUriAnnotation(outDoc, page, {
+        uri: link.uri,
+        rect: [
+          renderedX + (left * scaleX),
+          renderedY + (bottom * scaleY),
+          renderedX + (right * scaleX),
+          renderedY + (top * scaleY)
+        ]
+      });
+    }
 
     if (watermarkEnabled || templateStyle === "watermark_footer_only") {
       page.drawText(watermarkText, {
