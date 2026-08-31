@@ -27080,8 +27080,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       raw: item,
       action: () => setAssessmentStatusId(String(item.id || ""))
     }))
-    .sort((a, b) => new Date(a.when) - new Date(b.when))
-    .slice(0, 5);
+    .sort((a, b) => new Date(a.when) - new Date(b.when));
   const liveDashboardAgendaSnapshot = useMemo(() => ({
     agendaRange,
     overdueFollowUpCount: overdueFollowUps.length,
