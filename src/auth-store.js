@@ -2160,11 +2160,12 @@ function toStandardAnswerList(rawQuestions, rawScreeningAnswers) {
   }
   return [];
 }
-function assessmentRow(assessment, actor, companyId) {
+function assessmentRow(assessment, actor, companyId, options = {}) {
   const a = sanitizeAssessment(assessment);
   const id = persistedAssessmentId(a.id);
   const now = new Date().toISOString();
   const preserveUpdatedAt = Boolean(a.preserveUpdatedAt);
+  const preserveRecruiterOwnership = Boolean(options?.preserveRecruiterOwnership);
   const explicitUpdatedAt = String(a.updatedAt || a.updated_at || "").trim();
   const recruiterName = String(
     a.recruiter_name
@@ -2209,9 +2210,9 @@ function assessmentRow(assessment, actor, companyId) {
   return {
     id,
     company_id: companyId,
-    recruiter_id: next.recruiterId || actor.id,
-    recruiter_name: next.recruiterName || actor.name,
-    recruiter_email: next.recruiterEmail || actor.email,
+    recruiter_id: preserveRecruiterOwnership ? next.recruiterId : (next.recruiterId || actor.id),
+    recruiter_name: preserveRecruiterOwnership ? next.recruiterName : (next.recruiterName || actor.name),
+    recruiter_email: preserveRecruiterOwnership ? next.recruiterEmail : (next.recruiterEmail || actor.email),
     candidate_id: candidateId,
     candidate_name: next.candidateName || "",
     phone_number: next.phoneNumber || "",
@@ -2265,6 +2266,7 @@ function assessmentRow(assessment, actor, companyId) {
         const payload = { ...next };
         delete payload.assigned_to_name;
         delete payload.assignedToName;
+        delete payload._preserveRecruiterOwnership;
         return payload;
       })(),
       updatedAt: next.updatedAt
@@ -6683,25 +6685,29 @@ async function findExistingAssessmentIdForCandidate({ actorUserId, companyId, as
   if (match) return String(match.id || "").trim();
   return "";
 }
-async function saveAssessment({ actorUserId, companyId, assessment }) {
+async function saveAssessment({ actorUserId, companyId, assessment, allowRecruiterOwnershipChange = false }) {
   if (!actorUserId || !companyId || !assessment) throw new Error("actorUserId, companyId, and assessment payload are required.");
   const actor = sanitizeUser(await getUserById(actorUserId, companyId)); if (!actor) throw new Error("Authenticated recruiter not found for this company.");
   if (!cfg().on) {
     const store = readStore(); store.assessments = Array.isArray(store.assessments) ? store.assessments : []; const now = new Date().toISOString(); const id = persistedAssessmentId(assessment.id); const ix = store.assessments.findIndex((i) => i.id === id && i.companyId === companyId);
+    const previous = ix >= 0 ? store.assessments[ix] : null;
+    const previousRecruiterName = previous && !allowRecruiterOwnershipChange ? String(previous?.recruiter_name ?? previous?.recruiterName ?? "").trim() : "";
+    const previousRecruiterEmail = previous && !allowRecruiterOwnershipChange ? String(previous?.recruiter_email ?? previous?.recruiterEmail ?? "").trim() : "";
+    const previousRecruiterId = previous && !allowRecruiterOwnershipChange ? String(previous?.recruiter_id ?? previous?.recruiterId ?? "").trim() : "";
     const recruiterName = String(
-      assessment?.recruiter_name
-      || assessment?.recruiterName
-      || ""
+      previous && !allowRecruiterOwnershipChange
+        ? previousRecruiterName
+        : (assessment?.recruiter_name || assessment?.recruiterName || "")
     ).trim();
     const recruiterEmail = String(
-      assessment?.recruiter_email
-      || assessment?.recruiterEmail
-      || ""
+      previous && !allowRecruiterOwnershipChange
+        ? previousRecruiterEmail
+        : (assessment?.recruiter_email || assessment?.recruiterEmail || "")
     ).trim();
     const recruiterId = String(
-      assessment?.recruiter_id
-      || assessment?.recruiterId
-      || ""
+      previous && !allowRecruiterOwnershipChange
+        ? previousRecruiterId
+        : (assessment?.recruiter_id || assessment?.recruiterId || "")
     ).trim();
     const next = {
       ...assessment,
@@ -6749,7 +6755,7 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
     if (idNeedle) {
       const rowsPrev = await sbSel(
         "assessments",
-        `select=id,candidate_status,status,interview_at,offer_doj,offer_amount,updated_at,created_at,client_name,jd_title,candidate_id&company_id=eq.${enc(companyId)}&id=eq.${enc(idNeedle)}&limit=1`
+        `select=id,candidate_status,status,interview_at,offer_doj,offer_amount,updated_at,created_at,client_name,jd_title,candidate_id,recruiter_id,recruiter_name,recruiter_email&company_id=eq.${enc(companyId)}&id=eq.${enc(idNeedle)}&limit=1`
       ).catch(() => []);
       previous = rowsPrev && rowsPrev[0] ? rowsPrev[0] : null;
     }
@@ -6776,28 +6782,23 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
   const preservedRecruiterId = String(previous?.recruiter_id || previous?.recruiterId || "").trim();
   const preservedRecruiterName = String(previous?.recruiter_name || previous?.recruiterName || "").trim();
   const preservedRecruiterEmail = String(previous?.recruiter_email || previous?.recruiterEmail || "").trim();
+  const preserveRecruiterOwnership = Boolean(previous && !allowRecruiterOwnershipChange);
   const resolvedRecruiterId = String(
-    safeAssessmentForSave.recruiter_id
-    || safeAssessmentForSave.recruiterId
-    || preservedRecruiterId
-    || actor.id
-    || ""
+    preserveRecruiterOwnership
+      ? preservedRecruiterId
+      : (safeAssessmentForSave.recruiter_id || safeAssessmentForSave.recruiterId || preservedRecruiterId || actor.id || "")
   ).trim();
   let resolvedRecruiterName = String(
-    safeAssessmentForSave.recruiter_name
-    || safeAssessmentForSave.recruiterName
-    || preservedRecruiterName
-    || actor.name
-    || ""
+    preserveRecruiterOwnership
+      ? preservedRecruiterName
+      : (safeAssessmentForSave.recruiter_name || safeAssessmentForSave.recruiterName || preservedRecruiterName || actor.name || "")
   ).trim();
   let resolvedRecruiterEmail = String(
-    safeAssessmentForSave.recruiter_email
-    || safeAssessmentForSave.recruiterEmail
-    || preservedRecruiterEmail
-    || actor.email
-    || ""
+    preserveRecruiterOwnership
+      ? preservedRecruiterEmail
+      : (safeAssessmentForSave.recruiter_email || safeAssessmentForSave.recruiterEmail || preservedRecruiterEmail || actor.email || "")
   ).trim();
-  if (resolvedRecruiterId) {
+  if (!preserveRecruiterOwnership && resolvedRecruiterId) {
     try {
       const owner = await getUserById(resolvedRecruiterId, companyId);
       if (owner) {
@@ -6813,7 +6814,7 @@ async function saveAssessment({ actorUserId, companyId, assessment }) {
   safeAssessmentForSave.recruiter_email = resolvedRecruiterEmail;
   safeAssessmentForSave.recruiterEmail = resolvedRecruiterEmail;
 
-  const assessmentPayload = assessmentRow(safeAssessmentForSave, actor, companyId);
+  const assessmentPayload = assessmentRow(safeAssessmentForSave, actor, companyId, { preserveRecruiterOwnership });
   const rows = await sbIns("assessments", [assessmentPayload], { conflict: "id", upsert: true });
   let saved = sanitizeAssessment(rows[0]);
   if (!saved?.id) {
