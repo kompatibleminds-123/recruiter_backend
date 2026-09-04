@@ -17068,12 +17068,22 @@ function PortalApp({ token, onLogout }) {
     setStatus("workspace", "No linked assessment found for this candidate yet.", "error");
   }
 
-  function openInterviewStoredCv() {
+  async function openInterviewStoredCv() {
     if (!interviewMeta.candidateId) {
       setStatus("interview", "Save or open a real candidate draft before opening the stored CV.", "error");
       return;
     }
-    const storedFile = interviewForm.cvAnalysis?.storedFile || null;
+    const freshCandidate = await refreshCandidateRowById(interviewMeta.candidateId).catch(() => null);
+    const latestCvMeta = getCandidateProfileCvMeta(freshCandidate || {});
+    const storedFile = latestCvMeta?.key || latestCvMeta?.url || latestCvMeta?.provider
+      ? {
+          provider: latestCvMeta.provider || "",
+          key: latestCvMeta.key || "",
+          url: latestCvMeta.url || "",
+          filename: latestCvMeta.filename || "",
+          mimeType: latestCvMeta.mimeType || ""
+        }
+      : (interviewForm.cvAnalysis?.storedFile || null);
     if (!storedFile) {
       setStatus("interview", "No uploaded CV available yet.", "error");
       return;
@@ -19265,9 +19275,22 @@ function PortalApp({ token, onLogout }) {
     const initialStatus = !normalizedInitialStatus || normalizedInitialStatus === "screening in progress"
       ? "CV shared"
       : canonicalInitialStatus;
-    const interviewCandidate = interviewMeta.candidateId
+    const lockKey = String(interviewMeta.assessmentId || interviewMeta.candidateId || "").trim();
+    if (lockKey && assessmentStatusSaveLockRef.current.has(lockKey)) {
+      setStatus("interview", "Assessment action already in progress for this candidate. Please wait.", "error");
+      return;
+    }
+    if (lockKey) {
+      assessmentStatusSaveLockRef.current.add(lockKey);
+      setAssessmentActionBusyIds((current) => ({ ...current, [lockKey]: true }));
+    }
+    const localInterviewCandidate = interviewMeta.candidateId
       ? (state.candidates || []).find((item) => String(item?.id || "") === String(interviewMeta.candidateId))
       : null;
+    const freshInterviewCandidate = interviewMeta.candidateId
+      ? await api(`/candidates?id=${encodeURIComponent(String(interviewMeta.candidateId))}&scope=company&limit=1`, token).then((rows) => Array.isArray(rows) ? rows[0] || null : null).catch(() => null)
+      : null;
+    const interviewCandidate = freshInterviewCandidate || localInterviewCandidate;
     const interviewCandidateCvMeta = getCandidateProfileCvMeta(interviewCandidate || {});
     const interviewCandidateMeta = interviewCandidate ? decodePortalApplicantMetadata(interviewCandidate) : null;
     const interviewCandidateCvAnalysis = interviewCandidateMeta?.cvAnalysisCache?.result
@@ -19331,20 +19354,11 @@ function PortalApp({ token, onLogout }) {
       recruiterEmail: assessmentOwnerEmail,
       recruiterId: assessmentOwnerId
     };
-    assessment.cvAnalysis = form.cvAnalysis || interviewCandidateCvAnalysis || null;
-    assessment.cv_provider = String(form.cvAnalysis?.storedFile?.provider || interviewCandidateCvMeta.provider || interviewCandidateMeta?.fileProvider || "").trim();
-    assessment.cv_key = String(form.cvAnalysis?.storedFile?.key || interviewCandidateCvMeta.key || interviewCandidateMeta?.fileKey || "").trim();
-    assessment.cv_url = String(form.cvAnalysis?.storedFile?.url || interviewCandidateCvMeta.url || interviewCandidateMeta?.fileUrl || "").trim();
-    assessment.cv_filename = String(form.cvAnalysis?.storedFile?.filename || interviewCandidateCvMeta.filename || interviewCandidateMeta?.filename || "").trim();
-    const lockKey = String(interviewMeta.assessmentId || interviewMeta.candidateId || "").trim();
-    if (lockKey && assessmentStatusSaveLockRef.current.has(lockKey)) {
-      setStatus("interview", "Assessment action already in progress for this candidate. Please wait.", "error");
-      return;
-    }
-    if (lockKey) {
-      assessmentStatusSaveLockRef.current.add(lockKey);
-      setAssessmentActionBusyIds((current) => ({ ...current, [lockKey]: true }));
-    }
+    assessment.cvAnalysis = interviewCandidateCvAnalysis || form.cvAnalysis || null;
+    assessment.cv_provider = String(interviewCandidateCvMeta.provider || interviewCandidateMeta?.fileProvider || form.cvAnalysis?.storedFile?.provider || "").trim();
+    assessment.cv_key = String(interviewCandidateCvMeta.key || interviewCandidateMeta?.fileKey || form.cvAnalysis?.storedFile?.key || "").trim();
+    assessment.cv_url = String(interviewCandidateCvMeta.url || interviewCandidateMeta?.fileUrl || form.cvAnalysis?.storedFile?.url || "").trim();
+    assessment.cv_filename = String(interviewCandidateCvMeta.filename || interviewCandidateMeta?.filename || form.cvAnalysis?.storedFile?.filename || "").trim();
     delete assessment.assigned_to_name;
     delete assessment.assignedToName;
     if (interviewMeta.candidateId) {
@@ -25345,13 +25359,16 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     const candidate = linkedCandidate && typeof linkedCandidate === "object" ? linkedCandidate : null;
     const candidateMetaSource = candidate || base?.raw?.candidate || base?.candidate || base;
     const cvMeta = getCandidateProfileCvMeta(candidateMetaSource || {});
+    const hasCandidateCv = Boolean(cvMeta.provider || cvMeta.key || cvMeta.url || cvMeta.filename);
     return {
       ...base,
-      cv_provider: base.cv_provider || base.cvProvider || cvMeta.provider || "",
-      cv_key: base.cv_key || base.cvKey || cvMeta.key || "",
-      cv_url: base.cv_url || base.cvUrl || cvMeta.url || "",
-      cv_filename: base.cv_filename || base.cvFilename || cvMeta.filename || "",
-      cvAnalysis: base.cvAnalysis || base.cv_analysis || candidate?.cvAnalysis || candidate?.cv_analysis || base?.raw?.candidate?.cvAnalysis || base?.raw?.candidate?.cv_analysis || null
+      cv_provider: hasCandidateCv ? cvMeta.provider || "" : (base.cv_provider || base.cvProvider || ""),
+      cv_key: hasCandidateCv ? cvMeta.key || "" : (base.cv_key || base.cvKey || ""),
+      cv_url: hasCandidateCv ? cvMeta.url || "" : (base.cv_url || base.cvUrl || ""),
+      cv_filename: hasCandidateCv ? cvMeta.filename || "" : (base.cv_filename || base.cvFilename || ""),
+      cvAnalysis: hasCandidateCv
+        ? (candidate?.cvAnalysis || candidate?.cv_analysis || base?.raw?.candidate?.cvAnalysis || base?.raw?.candidate?.cv_analysis || base.cvAnalysis || base.cv_analysis || null)
+        : (base.cvAnalysis || base.cv_analysis || null)
     };
   }
 
