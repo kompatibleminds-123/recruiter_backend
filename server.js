@@ -2406,6 +2406,27 @@ function getCurrentCandidateCvFileRef(meta = {}, fallbackFileRef = null) {
   };
 }
 
+function getCandidateRowCvFileRef(candidate = {}, meta = {}, fallbackFileRef = null) {
+  const safeCandidate = candidate && typeof candidate === "object" ? candidate : {};
+  const safeMeta = meta && typeof meta === "object" ? meta : {};
+  const hasRowRef = Boolean(
+    safeCandidate.cv_provider || safeCandidate.cvProvider ||
+    safeCandidate.cv_key || safeCandidate.cvKey ||
+    safeCandidate.cv_url || safeCandidate.cvUrl ||
+    safeCandidate.cv_filename || safeCandidate.cvFilename
+  );
+  if (hasRowRef) {
+    return {
+      provider: String(safeCandidate.cv_provider || safeCandidate.cvProvider || safeMeta.fileProvider || "").trim(),
+      key: String(safeCandidate.cv_key || safeCandidate.cvKey || safeMeta.fileKey || "").trim(),
+      url: String(safeCandidate.cv_url || safeCandidate.cvUrl || safeMeta.fileUrl || "").trim(),
+      filename: String(safeCandidate.cv_filename || safeCandidate.cvFilename || safeMeta.filename || "resume.pdf").trim(),
+      mimeType: String(safeCandidate.cv_mime_type || safeCandidate.cvMimeType || safeMeta.mimeType || "application/octet-stream").trim()
+    };
+  }
+  return getCurrentCandidateCvFileRef(safeMeta, fallbackFileRef);
+}
+
 function buildBrandedCvArtifactFingerprint({
   candidateId = "",
   assessmentId = "",
@@ -21237,7 +21258,7 @@ const server = http.createServer(async (req, res) => {
       const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
       const meta = candidate ? decodeApplicantMetadata(candidate) : {};
       const fallbackFileRef = inferStoredFileRefFromUrl(actor, requestUrl);
-      const fileRef = fallbackFileRef || getCurrentCandidateCvFileRef(meta);
+      const fileRef = getCandidateRowCvFileRef(candidate, meta, fallbackFileRef);
       if (!fileRef || (!fileRef.key && !fileRef.url)) {
         if (!candidate) throw new Error("Candidate not found in this company.");
         throw new Error("CV file not available for this candidate.");
@@ -21469,7 +21490,7 @@ const server = http.createServer(async (req, res) => {
       const candidate = (await listCandidatesForUser(actor, { id: candidateId, limit: 1 }))[0] || null;
       const meta = candidate ? decodeApplicantMetadata(candidate) : {};
       const fallbackFileRef = inferStoredFileRefFromUrl(actor, requestUrl);
-      const fileRef = getCurrentCandidateCvFileRef(meta, fallbackFileRef) || {};
+      const fileRef = getCandidateRowCvFileRef(candidate, meta, fallbackFileRef) || {};
       const fileProvider = fileRef.provider || "";
       const fileKey = fileRef.key || "";
       const fileUrl = fileRef.url || "";
@@ -21551,7 +21572,7 @@ const server = http.createServer(async (req, res) => {
         });
       }
       const matchedMeta = decodeApplicantMetadata(matchedCandidate || {});
-      const matchedFileRef = getCurrentCandidateCvFileRef(matchedMeta, null);
+      const matchedFileRef = getCandidateRowCvFileRef(matchedCandidate, matchedMeta, null);
       const shouldPreferCurrentCandidateFile = Boolean(matchedCandidate || matchedFileRef?.key || matchedFileRef?.url || matchedFileRef?.provider);
       const fileRef = shouldPreferCurrentCandidateFile
         ? (matchedFileRef || fallbackFileRef || inferStoredFileRefFromUrl(actor, requestUrl) || {})
@@ -21629,7 +21650,12 @@ const server = http.createServer(async (req, res) => {
       delete nextMeta.fileUrl;
       delete nextMeta.cvAnalysisCache;
       await patchCandidate(candidate.id, {
-        raw_note: encodeApplicantMetadata(nextMeta)
+        raw_note: encodeApplicantMetadata(nextMeta),
+        cv_provider: "",
+        cv_key: "",
+        cv_url: "",
+        cv_filename: "",
+        cv_mime_type: ""
       }, { companyId: actor.companyId });
       sendJson(res, 200, { ok: true, result: { removed: true } });
     } catch (error) {
@@ -23573,7 +23599,12 @@ const server = http.createServer(async (req, res) => {
         delete immediateMeta.cvAnalysisCache.timelineConfidenceLabel;
       }
       await patchCandidate(candidate.id, {
-        raw_note: encodeApplicantMetadata(immediateMeta)
+        raw_note: encodeApplicantMetadata(immediateMeta),
+        cv_provider: storedFilePayload.provider,
+        cv_key: storedFilePayload.key,
+        cv_url: storedFilePayload.url,
+        cv_filename: storedFilePayload.filename,
+        cv_mime_type: storedFilePayload.mimeType
       }, { companyId: actor.companyId });
       emitCapturedStreamEvent(actor.companyId, "candidate_changed", { candidateId: candidate.id });
       emitApplicantStreamEvent(actor.companyId, "candidate_changed", { candidateId: candidate.id });
@@ -23643,6 +23674,11 @@ const server = http.createServer(async (req, res) => {
             const shouldApplyAutofill = effectiveAiParsingEnabled;
             await patchCandidate(candidate.id, {
               raw_note: encodeApplicantMetadata(nextMeta),
+              cv_provider: storedFilePayload.provider,
+              cv_key: storedFilePayload.key,
+              cv_url: storedFilePayload.url,
+              cv_filename: storedFilePayload.filename,
+              cv_mime_type: storedFilePayload.mimeType,
               ...(shouldApplyAutofill ? buildCvAutofillPatch(refreshed || candidate, result) : {})
             }, { companyId: actor.companyId });
             emitCapturedStreamEvent(actor.companyId, "candidate_changed", { candidateId: candidate.id });
@@ -23744,6 +23780,11 @@ const server = http.createServer(async (req, res) => {
       const shouldApplyAutofill = effectiveAiParsingEnabled;
       await patchCandidate(candidate.id, {
         raw_note: encodeApplicantMetadata(nextMeta),
+        cv_provider: storedFilePayload.provider,
+        cv_key: storedFilePayload.key,
+        cv_url: storedFilePayload.url,
+        cv_filename: storedFilePayload.filename,
+        cv_mime_type: storedFilePayload.mimeType,
         ...(shouldApplyAutofill ? buildCvAutofillPatch(candidate, result) : {})
       }, { companyId: actor.companyId });
       emitCapturedStreamEvent(actor.companyId, "candidate_changed", { candidateId: candidate.id });
