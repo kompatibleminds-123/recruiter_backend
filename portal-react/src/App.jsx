@@ -2079,14 +2079,14 @@ function getCandidateProfileCvMeta(item = {}) {
   const candidateRaw = item?.raw?.candidate || item;
   const candidate = candidateRaw && typeof candidateRaw === "object" ? candidateRaw : {};
   const meta = decodePortalApplicantMetadata(candidate);
-  const storedFile = candidate.cvAnalysis?.storedFile || candidate.cv_analysis?.storedFile || meta?.cvAnalysisCache?.storedFile || {};
+  const storedFile = meta?.cvAnalysisCache?.storedFile || candidate.cvAnalysis?.storedFile || candidate.cv_analysis?.storedFile || {};
   return {
     candidateId: candidate.candidate_id || candidate.candidateId || candidate.id || "",
-    url: storedFile?.url || candidate.cv_url || candidate.cvUrl || meta?.fileUrl || "",
-    filename: storedFile?.filename || candidate.cv_filename || candidate.cvFilename || meta?.filename || "",
-    key: storedFile?.key || candidate.cv_key || candidate.cvKey || meta?.fileKey || "",
-    provider: storedFile?.provider || candidate.cv_provider || candidate.cvProvider || meta?.fileProvider || "",
-    mimeType: storedFile?.mimeType || candidate.cv_mime_type || candidate.cvMimeType || meta?.mimeType || ""
+    url: meta?.fileUrl || storedFile?.url || candidate.cv_url || candidate.cvUrl || "",
+    filename: meta?.filename || storedFile?.filename || candidate.cv_filename || candidate.cvFilename || "",
+    key: meta?.fileKey || storedFile?.key || candidate.cv_key || candidate.cvKey || "",
+    provider: meta?.fileProvider || storedFile?.provider || candidate.cv_provider || candidate.cvProvider || "",
+    mimeType: meta?.mimeType || storedFile?.mimeType || candidate.cv_mime_type || candidate.cvMimeType || ""
   };
 }
 
@@ -5310,6 +5310,21 @@ function mergeStoredCvIntoApplicantMeta(existingMeta = {}, cvAnalysis = null) {
   const meta = existingMeta && typeof existingMeta === "object" ? { ...existingMeta } : {};
   const stored = cvAnalysis?.storedFile && typeof cvAnalysis.storedFile === "object" ? cvAnalysis.storedFile : null;
   if (!stored) return meta;
+  const existingRef = [
+    String(meta.fileProvider || "").trim(),
+    String(meta.fileKey || "").trim(),
+    String(meta.fileUrl || "").trim(),
+    String(meta.filename || "").trim()
+  ].join("|");
+  const incomingRef = [
+    String(stored.provider || "").trim(),
+    String(stored.key || "").trim(),
+    String(stored.url || "").trim(),
+    String(stored.filename || "").trim()
+  ].join("|");
+  if (existingRef.replace(/\|/g, "") && incomingRef.replace(/\|/g, "") && existingRef !== incomingRef) {
+    return meta;
+  }
   // When user re-uploads/replaces a CV, latest stored file must become source of truth.
   if (stored.provider) meta.fileProvider = String(stored.provider || "").trim();
   if (stored.key) meta.fileKey = String(stored.key || "").trim();
@@ -19489,7 +19504,8 @@ function PortalApp({ token, onLogout }) {
       setInterviewDraftSaving(true);
 	    setStatus("interview", "Saving draft...");
 	    try {
-	      const existingCandidate = (state.candidates || []).find((item) => String(item.id) === candidateIdSnapshot);
+	      const freshCandidate = await api(`/candidates?id=${encodeURIComponent(candidateIdSnapshot)}&scope=company&limit=1`, token).then((rows) => Array.isArray(rows) ? rows[0] || null : null).catch(() => null);
+	      const existingCandidate = freshCandidate || (state.candidates || []).find((item) => String(item.id) === candidateIdSnapshot);
 	      const existingMeta = decodePortalApplicantMetadata(existingCandidate || {});
 	      const nextMeta = mergeStoredCvIntoApplicantMeta(existingMeta, form.cvAnalysis || null);
 	      const linkedAssessment = assessmentIdSnapshot
