@@ -1983,6 +1983,11 @@ async function buildBrandedPdfBuffer({
     const srcPage = srcPages[index];
     const { width, height } = srcPage.getSize();
     const page = outDoc.addPage([width, height]);
+    // Blank PDF pages can legally omit Contents, but pdf-lib cannot embed them.
+    // Preserve the page (and its links/branding) with an empty content stream.
+    if (!srcPage.node.Contents()) {
+      srcPage.node.addContentStream(srcDoc.context.register(srcDoc.context.flateStream("")));
+    }
     const embedded = await outDoc.embedPage(srcPage);
     const showHeaderOnThisPage = headerEnabled && index === 0 && templateStyle !== "watermark_footer_only";
     const showSideRibbon = templateStyle === "side_ribbon_branding";
