@@ -3,6 +3,7 @@ const { URL } = require("url");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { buildRecruiterIncentives } = require("./src/recruiter-incentives");
 const { parseCandidatePayload } = require("./src/parser");
 const { callOpenAiJsonSchema, callOpenAiQuestions, normalizeCandidateFileWithAi, normalizeCandidateWithAi, extractLinkedInAssistFromScreenshotWithAi } = require("./src/ai");
 const { parseCandidateHybrid } = require("./src/hybrid-candidate-service");
@@ -18156,6 +18157,57 @@ const server = http.createServer(async (req, res) => {
         }
       });
       sendJson(res, 200, { ok: true, result: { assessment: saved } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (requestUrl.pathname === "/company/reports/recruiter-incentives") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (String(actor?.role || "").trim().toLowerCase() !== "admin") {
+        sendJson(res, 403, { ok: false, error: "Only admin can access recruiter incentives." });
+        return;
+      }
+      if (req.method !== "GET") {
+        sendJson(res, 405, { ok: false, error: "Method not allowed" });
+        return;
+      }
+      const [assessments, users] = await Promise.all([
+        listAssessments({ actorUserId: actor.id, companyId: actor.companyId }),
+        listCompanyUsers(actor.companyId)
+      ]);
+      const usersById = new Map(users.map((user) => [String(user.id), user]));
+      const joinings = [];
+      // Prefer the newest copy when duplicate assessments describe one joining.
+      const ordered = [...assessments].sort((a, b) => String(b.updatedAt || b.generatedAt || "").localeCompare(String(a.updatedAt || a.generatedAt || "")));
+      for (const assessment of ordered) {
+        if (normalizeAssessmentStatusLabel(assessment.candidateStatus || assessment.candidate_status || assessment.status).trim().toLowerCase() !== "joined") continue;
+        const payload = assessment.payload || {};
+        const history = Array.isArray(assessment.statusHistory) ? assessment.statusHistory : [];
+        const joinedEntry = [...history].reverse().find((entry) => String(entry.status || "").trim().toLowerCase() === "joined");
+        // Expected DOJ and commercial billing month are deliberately excluded.
+        const joiningValue = String(joinedEntry?.statusAt || joinedEntry?.status_at || joinedEntry?.atValue || joinedEntry?.at_value
+          || assessment.dateOfJoining || assessment.date_of_joining || payload.dateOfJoining || payload.date_of_joining || "");
+        const joinedOn = /^\d{4}-\d{2}-\d{2}/.test(joiningValue)
+          ? joiningValue.slice(0, 10) : normalizeDateOutput(joiningValue).slice(0, 10);
+        const assignedId = String(assessment.assignedToUserId || assessment.assigned_to_user_id || payload.assignedToUserId || payload.assigned_to_user_id || "");
+        const name = String(assessment.assignedToName || assessment.assigned_to_name || assessment.recruiterName || assessment.recruiter_name || "").trim();
+        const nameMatches = users.filter((user) => String(user.name || "").trim().toLowerCase() === name.toLowerCase());
+        const owner = usersById.get(assignedId) || (nameMatches.length === 1 ? nameMatches[0] : null)
+          || (!name ? usersById.get(String(assessment.recruiterId || assessment.recruiter_id || "")) : null);
+        const offerCtc = findCommercialOfferAmount(assessment);
+        joinings.push({
+          assessmentId: String(assessment.id || ""), candidateId: String(assessment.candidateId || assessment.candidate_id || ""),
+          name: assessment.candidateName || assessment.candidate_name || "Candidate",
+          client: assessment.clientName || assessment.client_name || "Unassigned",
+          position: assessment.jdTitle || assessment.jd_title || "", joinedOn,
+          recruiterId: owner ? String(owner.id) : "", recruiterName: owner?.name || name || "Unassigned",
+          offerCtc, ctcLakhs: parseCommercialCtcLakhs(offerCtc)
+        });
+      }
+      sendJson(res, 200, { ok: true, result: buildRecruiterIncentives(joinings) });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
