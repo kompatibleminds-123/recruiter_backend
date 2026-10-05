@@ -13374,7 +13374,7 @@ function PortalApp({ token, onLogout }) {
     if (String(filters?.dateTo || "").trim()) params.set("dateTo", String(filters.dateTo).trim());
     addCsv("clients", filters?.clients);
     addCsv("jds", filters?.jds);
-    addCsv("jdIds", getJobIdsForSelectedTitles(filters?.jds));
+    // This dropdown filters by title, including legacy records without a job ID.
     addCsv("locations", filters?.locations);
     addCsv("assignedTo", filters?.assignedTo);
     addCsv("sources", filters?.sources);
@@ -13463,7 +13463,7 @@ function PortalApp({ token, onLogout }) {
     if (String(filters?.dateTo || "").trim()) params.set("dateTo", String(filters.dateTo).trim());
     addCsv("clients", filters?.clients);
     addCsv("jds", filters?.jds);
-    addCsv("jdIds", getJobIdsForSelectedTitles(filters?.jds));
+    // This dropdown filters by title, including legacy records without a job ID.
     addCsv("assignedTo", filters?.assignedTo);
     addCsv("capturedBy", filters?.capturedBy);
     addCsv("sources", filters?.sources);
@@ -13727,7 +13727,7 @@ function PortalApp({ token, onLogout }) {
     if (String(filters?.dateTo || "").trim()) params.set("dateTo", String(filters.dateTo).trim());
     addCsv("clients", filters?.clients);
     addCsv("jds", filters?.jds);
-    addCsv("jdIds", getJobIdsForSelectedTitles(filters?.jds));
+    // This dropdown filters by title, including legacy records without a job ID.
     addCsv("recruiters", filters?.recruiters);
     addCsv("outcomes", filters?.outcomes);
     if (lane) params.set("lane", String(lane || "active").trim() || "active");
@@ -13775,7 +13775,7 @@ function PortalApp({ token, onLogout }) {
     };
     addCsv("clients", filters?.clients);
     addCsv("jds", filters?.jds);
-    addCsv("jdIds", getJobIdsForSelectedTitles(filters?.jds));
+    // This dropdown filters by title, including legacy records without a job ID.
     addCsv("recruiters", filters?.recruiters);
     addCsv("outcomes", filters?.outcomes);
     const query = params.toString();
@@ -14945,24 +14945,6 @@ function PortalApp({ token, onLogout }) {
     });
     return Array.from(titles).sort((a, b) => a.localeCompare(b));
   }, [activeJobTitlesForFilters, normalizeClientFilterKey]);
-  const getJobIdsForSelectedTitles = useCallback((selectedTitles = []) => {
-    const titleKeys = new Set((Array.isArray(selectedTitles) ? selectedTitles : [])
-      .map((value) => normalizeJobTitleKey(value))
-      .filter(Boolean));
-    if (!titleKeys.size) return [];
-    const jobs = Array.from(
-      new Map(
-        [
-          ...(Array.isArray(state.jobs) ? state.jobs : []),
-          ...(Array.isArray(jobsCatalog) ? jobsCatalog : [])
-        ].map((job) => [String(job?.id || `${job?.title || ""}`), job])
-      ).values()
-    );
-    return jobs
-      .filter((job) => titleKeys.has(normalizeJobTitleKey(job?.title || "")))
-      .map((job) => String(job?.id || "").trim())
-      .filter(Boolean);
-  }, [jobsCatalog, normalizeJobTitleKey, state.jobs]);
   const assessmentOptions = useMemo(() => {
     const clients = new Set();
     const recruiters = new Set();

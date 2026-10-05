@@ -4643,9 +4643,12 @@ function buildJdFilterQueryClause(selectedValues = [], fieldName = "jd_title") {
   values.forEach((value) => {
     const clean = String(value || "").replace(/[%*]/g, "").trim();
     if (!clean) return;
+    // PostgREST parses punctuation after URL decoding; quote literal values so
+    // parentheses in job titles cannot terminate the surrounding OR expression.
+    const quote = (text) => encodeURIComponent(`"${text.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`);
     const like = `*${clean.replace(/,/g, " ")}*`;
-    parts.push(`${fieldName}.eq.${encodeURIComponent(value)}`);
-    parts.push(`${fieldName}.ilike.${encodeURIComponent(like)}`);
+    parts.push(`${fieldName}.eq.${quote(value)}`);
+    parts.push(`${fieldName}.ilike.${quote(like)}`);
   });
   return parts.length ? `or=(${parts.join(",")})` : "";
 }
