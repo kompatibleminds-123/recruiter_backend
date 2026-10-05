@@ -13200,6 +13200,7 @@ function buildCommercialBillingReport({ user, candidates = [], assessments = [],
     const expectedBillingInr = ruleType === "flat"
       ? ruleValue
       : (ctcLakhs > 0 && ruleValue > 0 ? (ctcLakhs * 100000 * ruleValue / 100) : 0);
+    const assuredBillingInr = latestStatus === "joined" ? expectedBillingInr : 0;
     const candidateRow = {
       assessmentId: String(assessment?.id || "").trim(),
       candidateId,
@@ -13219,7 +13220,8 @@ function buildCommercialBillingReport({ user, candidates = [], assessments = [],
       ctcLakhs,
       ctcPending: ctcLakhs <= 0 && ruleType !== "flat",
       billingRule: ruleType ? { type: ruleType, value: ruleValue } : null,
-      expectedBillingInr
+      expectedBillingInr,
+      assuredBillingInr
     };
     const key = month;
     if (!rowsByKey.has(key)) {
@@ -13232,6 +13234,7 @@ function buildCommercialBillingReport({ user, candidates = [], assessments = [],
         ctcPending: 0,
         totalBillableCtcLakhs: 0,
         expectedBillingInr: 0,
+        assuredBillingInr: 0,
         clientCount: 0,
         clients: [],
         candidates: []
@@ -13247,6 +13250,7 @@ function buildCommercialBillingReport({ user, candidates = [], assessments = [],
     if (candidateRow.ctcPending) row.ctcPending += 1;
     if (ctcLakhs > 0) row.totalBillableCtcLakhs += ctcLakhs;
     row.expectedBillingInr += expectedBillingInr;
+    row.assuredBillingInr += assuredBillingInr;
     row.candidates.push(candidateRow);
   }
   return Array.from(rowsByKey.values())

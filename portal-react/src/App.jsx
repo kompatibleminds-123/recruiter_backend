@@ -26870,7 +26870,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       ? {
           title: "Commercial Billing Report",
           subtitle: "Admin only",
-          headers: ["Month", "Clients", "Active", "Shortlisted", "Offered", "Joined", "CTC Pending", "Total Billable CTC", "Expected Billing"],
+          headers: ["Month", "Clients", "Active", "Shortlisted", "Offered", "Joined", "CTC Pending", "Total Billable CTC", "Expected Billing", "Assured Billing"],
           rows: commercialReportRows.map((row) => [
             row.month,
             Array.isArray(row.clients) ? row.clients.join(", ") : "",
@@ -26880,7 +26880,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             row.joined,
             row.ctcPending,
             formatCommercialLakhs(row.totalBillableCtcLakhs),
-            formatCommercialInr(row.expectedBillingInr)
+            formatCommercialInr(row.expectedBillingInr),
+            formatCommercialInr(row.assuredBillingInr)
           ])
         }
       : buildReportsTableConfig(reportsPageTab);
@@ -26892,8 +26893,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       ? {
           title: "Commercial Billing Report",
           subtitle: "Admin only",
-          headers: ["Month", "Clients", "Active", "Shortlisted", "Offered", "Joined", "CTC Pending", "Total CTC", "Billing"],
-          rows: commercialReportRows.map((row) => [row.month, Array.isArray(row.clients) ? row.clients.join(", ") : "", row.activeCandidates, row.shortlisted, row.offered, row.joined, row.ctcPending, formatCommercialLakhs(row.totalBillableCtcLakhs), formatCommercialInr(row.expectedBillingInr)])
+          headers: ["Month", "Clients", "Active", "Shortlisted", "Offered", "Joined", "CTC Pending", "Total CTC", "Expected Billing", "Assured Billing"],
+          rows: commercialReportRows.map((row) => [row.month, Array.isArray(row.clients) ? row.clients.join(", ") : "", row.activeCandidates, row.shortlisted, row.offered, row.joined, row.ctcPending, formatCommercialLakhs(row.totalBillableCtcLakhs), formatCommercialInr(row.expectedBillingInr), formatCommercialInr(row.assuredBillingInr)])
         }
       : buildReportsTableConfig(reportsPageTab);
     const safeName = String(config.title || "report").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "report";
@@ -27305,7 +27306,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <div className="table-wrap">
                       <table className="dashboard-table">
                         <thead>
-                          <tr><th>Month</th><th>Clients</th><th>Active</th><th>Shortlisted</th><th>Offered</th><th>Joined</th><th>CTC pending</th><th>Total billable CTC</th><th>Expected billing</th><th>Details</th></tr>
+                          <tr><th>Month</th><th>Clients</th><th>Active</th><th>Shortlisted</th><th>Offered</th><th>Joined</th><th>CTC pending</th><th>Total billable CTC</th><th>Expected billing</th><th title="Billing for joined candidates only, using the same billing month and client rules">Assured billing</th><th>Details</th></tr>
                         </thead>
                         <tbody>
                           {commercialReportRows.length ? commercialReportRows.map((row) => {
@@ -27323,14 +27324,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                   <td>{row.ctcPending}</td>
                                   <td>{formatCommercialLakhs(row.totalBillableCtcLakhs)}</td>
                                   <td>{formatCommercialInr(row.expectedBillingInr)}</td>
+                                  <td>{formatCommercialInr(row.assuredBillingInr)}</td>
                                   <td><button className="table-metric-btn" onClick={() => setCommercialExpandedKey(expanded ? "" : key)}>{expanded ? "Hide" : "View"}</button></td>
                                 </tr>
                                 {expanded ? (
                                   <tr>
-                                    <td colSpan={10}>
+                                    <td colSpan={11}>
                                       <div className="table-wrap">
                                         <table className="dashboard-table">
-                                          <thead><tr><th>Name</th><th>Client</th><th>Status</th><th>Shortlisted date</th><th>Billing month</th><th>Position/JD</th><th>Current CTC</th><th>Expected CTC</th><th>Offer CTC</th><th>DOJ / Expected DOJ</th><th>Billing rule</th><th>Expected billing</th><th>Save</th></tr></thead>
+                                          <thead><tr><th>Name</th><th>Client</th><th>Status</th><th>Shortlisted date</th><th>Billing month</th><th>Position/JD</th><th>Current CTC</th><th>Expected CTC</th><th>Offer CTC</th><th>DOJ / Expected DOJ</th><th>Billing rule</th><th>Expected billing</th><th>Assured billing</th><th>Save</th></tr></thead>
                                           <tbody>
                                             {(row.candidates || []).map((candidate) => {
                                               const assessmentId = String(candidate.assessmentId || "").trim();
@@ -27391,6 +27393,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                                                 </td>
                                                 <td>{formatCommercialRule(candidate.billingRule)}</td>
                                                 <td>{candidate.ctcPending ? "CTC pending" : formatCommercialInr(candidate.expectedBillingInr)}</td>
+                                                <td>{candidate.currentStatus === "joined" && candidate.ctcPending ? "CTC pending" : formatCommercialInr(candidate.assuredBillingInr)}</td>
                                                 <td><button className="primary-btn slim" disabled={!hasFieldChange || isFieldSaving} onClick={() => void saveCommercialBillingFields(assessmentId, fieldDraft)}>{isFieldSaving ? "Saving..." : "Save"}</button></td>
                                               </tr>
                                               );
@@ -27404,7 +27407,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                               </React.Fragment>
                             );
                           }) : (
-                            <tr><td colSpan={10}>{commercialReportLoading ? "Loading commercial billing report..." : "No commercial billing data for selected filters."}</td></tr>
+                            <tr><td colSpan={11}>{commercialReportLoading ? "Loading commercial billing report..." : "No commercial billing data for selected filters."}</td></tr>
                           )}
                         </tbody>
                       </table>
