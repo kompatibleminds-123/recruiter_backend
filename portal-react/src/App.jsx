@@ -11093,6 +11093,10 @@ function PortalApp({ token, onLogout }) {
     mustHaveSkills: "",
     generatedBooleanHints: "",
     generatedBooleanSuggestion: "",
+    generatedBooleanOptions: [],
+    booleanSourceHash: "",
+    booleanGeneratedAt: null,
+    booleanGeneratedByModel: "",
     redFlags: "",
     recruiterNotes: "",
     standardQuestions: "",
@@ -19776,6 +19780,10 @@ function PortalApp({ token, onLogout }) {
       mustHaveSkills: "",
       generatedBooleanHints: "",
       generatedBooleanSuggestion: "",
+      generatedBooleanOptions: [],
+      booleanSourceHash: "",
+      booleanGeneratedAt: null,
+      booleanGeneratedByModel: "",
       redFlags: "",
       recruiterNotes: "",
       standardQuestions: "",
@@ -19819,6 +19827,10 @@ function PortalApp({ token, onLogout }) {
       mustHaveSkills: String(job.mustHaveSkills || ""),
       generatedBooleanHints: String(job.generatedBooleanHints || ""),
       generatedBooleanSuggestion: String(job.generatedBooleanSuggestion || job.generated_boolean_suggestion || ""),
+      generatedBooleanOptions: Array.isArray(job.generatedBooleanOptions || job.generated_boolean_options) ? (job.generatedBooleanOptions || job.generated_boolean_options) : [],
+      booleanSourceHash: String(job.booleanSourceHash || job.boolean_source_hash || ""),
+      booleanGeneratedAt: job.booleanGeneratedAt || job.boolean_generated_at || null,
+      booleanGeneratedByModel: String(job.booleanGeneratedByModel || job.boolean_generated_by_model || ""),
       redFlags: String(job.redFlags || ""),
       recruiterNotes: String(job.recruiterNotes || ""),
       standardQuestions: String(job.standardQuestions || ""),
@@ -19854,7 +19866,7 @@ function PortalApp({ token, onLogout }) {
     setJobsCatalog((current) => applyPatch(current));
   }
 
-  async function saveJobDraft() {
+  async function saveJobDraft({ forceBooleanRegeneration = false } = {}) {
     if (jobActionBusy) return;
     setJobActionBusy(true);
     setStatus("jobs", "Saving JD...");
@@ -19878,6 +19890,7 @@ function PortalApp({ token, onLogout }) {
       });
       const normalizedClientName = canonicalizeClientName(jobDraft.clientName || "");
       const result = await api("/company/jds", token, "POST", {
+        forceBooleanRegeneration,
         job: {
           ...jobDraft,
           clientName: normalizedClientName,
@@ -19902,10 +19915,27 @@ function PortalApp({ token, onLogout }) {
       applySavedJobToWorkspace(savedJobRecord);
       if (nextId) {
         setSelectedJobId(nextId);
-        setJobDraft((current) => ({ ...current, id: nextId }));
+        setJobDraft((current) => ({
+          ...current,
+          id: nextId,
+          generatedBooleanOptions: Array.isArray(result?.generatedBooleanOptions) ? result.generatedBooleanOptions : current.generatedBooleanOptions,
+          generatedBooleanSuggestion: String(result?.generatedBooleanSuggestion || current.generatedBooleanSuggestion || ""),
+          booleanSourceHash: String(result?.booleanSourceHash || ""),
+          booleanGeneratedAt: result?.booleanGeneratedAt || null,
+          booleanGeneratedByModel: String(result?.booleanGeneratedByModel || "")
+        }));
       }
       void reloadJobsWorkspace().catch(() => {});
-      setStatus("jobs", "JD saved.", "ok");
+      const booleanStatus = String(result?.booleanGeneration?.status || "");
+      if (booleanStatus === "generated") {
+        setStatus("jobs", `JD saved. ${Number(result?.booleanGeneration?.optionCount || 0)} fresh AI Boolean options generated.`, "ok");
+      } else if (booleanStatus === "cached") {
+        setStatus("jobs", "JD saved. Existing AI Boolean options reused; no new OpenAI call was made.", "ok");
+      } else if (booleanStatus === "failed") {
+        setStatus("jobs", `JD saved, but Boolean generation failed: ${String(result?.booleanGeneration?.error || "OpenAI unavailable")}`, "error");
+      } else {
+        setStatus("jobs", "JD saved.", "ok");
+      }
     } catch (error) {
       setStatus("jobs", `JD save failed: ${String(error?.message || error)}`, "error");
     } finally {
@@ -19980,11 +20010,23 @@ function PortalApp({ token, onLogout }) {
       };
       applySavedJobToWorkspace(savedJobRecord);
       if (nextId) {
-        loadJobIntoDraft(nextId);
+        setSelectedJobId(nextId);
+        setSelectedJobClient(normalizedClientName);
+        setJobListLane("active");
+        setJobDraft((current) => ({ ...current, ...savedJobRecord }));
       } else {
         resetJobDraftBlank();
       }
-      setStatus("jobs", "Saved as a new JD.", "ok");
+      const booleanStatus = String(result?.booleanGeneration?.status || "");
+      if (booleanStatus === "generated") {
+        setStatus("jobs", `Saved as a new JD with ${Number(result?.booleanGeneration?.optionCount || 0)} AI Boolean options.`, "ok");
+      } else if (booleanStatus === "cached") {
+        setStatus("jobs", "Saved as a new JD with the existing matching Boolean options.", "ok");
+      } else if (booleanStatus === "failed") {
+        setStatus("jobs", `Saved as a new JD, but Boolean generation failed: ${String(result?.booleanGeneration?.error || "OpenAI unavailable")}`, "error");
+      } else {
+        setStatus("jobs", "Saved as a new JD.", "ok");
+      }
       void reloadJobsWorkspace().catch(() => {});
     } catch (error) {
       setStatus("jobs", `Save as new failed: ${String(error?.message || error)}`, "error");
@@ -30827,16 +30869,66 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <span className="field-help">Rich JD is shown on hosted apply link. JD share email still uses the admin JD mail template.</span>
                   </div>
                   <label className="full"><span>Must-have skills</span><textarea disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.mustHaveSkills} onChange={(e) => setJobDraft((c) => ({ ...c, mustHaveSkills: e.target.value }))} placeholder="Shown on hosted apply link only when filled." /></label>
-                  <label className="full">
-                    <span>Admin approved Boolean search string (internal only)</span>
-                    <textarea
-                      disabled={jobDraftReadOnly || jobActionBusy}
-                      value={jobDraft.generatedBooleanHints || ""}
-                      onChange={(e) => setJobDraft((c) => ({ ...c, generatedBooleanHints: e.target.value }))}
-                      placeholder={'Example: ("Sales" OR "Business Development") AND ("Fintech" OR "NBFC" OR "BFSI")'}
-                    />
-                    <span className="field-help">Internal recruiter helper only. This does not show in JD share mail or public apply link.</span>
-                  </label>
+                  <div className="full jd-boolean-options-shell">
+                    <label className="full">
+                      <span>Admin approved Boolean search string (internal only)</span>
+                      <textarea
+                        disabled={jobDraftReadOnly || jobActionBusy}
+                        value={jobDraft.generatedBooleanHints || ""}
+                        onChange={(e) => setJobDraft((c) => ({ ...c, generatedBooleanHints: e.target.value }))}
+                        placeholder={'Example: ("Sales" OR "Business Development") AND ("Fintech" OR "NBFC" OR "BFSI")'}
+                      />
+                      <span className="field-help">Select an AI option below or edit the approved Boolean manually. This remains internal.</span>
+                    </label>
+                    <div className="jd-boolean-options-head">
+                      <div>
+                        <span className="form-label">AI Boolean options</span>
+                        <div className="field-help">
+                          Generated after saving a new or meaningfully changed JD. Unchanged JDs reuse their saved options without another OpenAI call.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="ghost-btn"
+                        disabled={jobDraftReadOnly || jobActionBusy || !String(jobDraft.title || "").trim() || !String(jobDraft.jobDescription || "").trim()}
+                        onClick={() => void saveJobDraft({ forceBooleanRegeneration: true })}
+                      >
+                        {jobActionBusy
+                          ? "Generating..."
+                          : (Array.isArray(jobDraft.generatedBooleanOptions) && jobDraft.generatedBooleanOptions.length ? "Regenerate options" : "Generate options")}
+                      </button>
+                    </div>
+                    {Array.isArray(jobDraft.generatedBooleanOptions) && jobDraft.generatedBooleanOptions.length ? (
+                      <div className="jd-boolean-options-grid">
+                        {jobDraft.generatedBooleanOptions.map((option, index) => {
+                          const query = String(option?.query || "").trim();
+                          const selected = query && query === String(jobDraft.generatedBooleanHints || "").trim();
+                          return (
+                            <button
+                              type="button"
+                              key={`${option?.label || "boolean"}-${index}`}
+                              className={`jd-boolean-option${selected ? " selected" : ""}`}
+                              disabled={jobDraftReadOnly || jobActionBusy}
+                              onClick={() => setJobDraft((current) => ({ ...current, generatedBooleanHints: query }))}
+                            >
+                              <span className="jd-boolean-option__label">{String(option?.label || `Option ${index + 1}`)}</span>
+                              <code>{query}</code>
+                              {option?.rationale ? <small>{String(option.rationale)}</small> : null}
+                              <strong>{selected ? "Selected for approval" : "Use this option"}</strong>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="jd-boolean-empty">Save this JD to generate 3–4 focused Boolean options.</div>
+                    )}
+                    {jobDraft.booleanGeneratedAt ? (
+                      <div className="field-help jd-boolean-generated-meta">
+                        Last generated: {new Date(jobDraft.booleanGeneratedAt).toLocaleString()}
+                        {jobDraft.booleanGeneratedByModel ? ` | ${jobDraft.booleanGeneratedByModel}` : ""}
+                      </div>
+                    ) : null}
+                  </div>
                   <label className="full"><span>Red flags</span><textarea disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.redFlags} onChange={(e) => setJobDraft((c) => ({ ...c, redFlags: e.target.value }))} /></label>
                   <label className="full"><span>Standard screening questions</span><textarea disabled={jobDraftReadOnly || jobActionBusy} value={jobDraft.standardQuestions} onChange={(e) => setJobDraft((c) => ({ ...c, standardQuestions: e.target.value }))} placeholder="Recruiter-only. These are used in Interview Panel and will not show on hosted apply link." /></label>
                 </div>

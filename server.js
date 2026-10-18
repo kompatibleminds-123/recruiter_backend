@@ -4,6 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { buildRecruiterIncentives } = require("./src/recruiter-incentives");
+const { buildJobBooleanFingerprint, generateJobBooleanOptions, getCachedJobBooleanState } = require("./src/job-boolean");
 const { parseCandidatePayload } = require("./src/parser");
 const { callOpenAiJsonSchema, callOpenAiQuestions, normalizeCandidateFileWithAi, normalizeCandidateWithAi, extractLinkedInAssistFromScreenshotWithAi } = require("./src/ai");
 const { parseCandidateHybrid } = require("./src/hybrid-candidate-service");
@@ -2969,6 +2970,60 @@ function stableStringifyForCache(value) {
 
 function sha256Hex(value = "") {
   return crypto.createHash("sha256").update(String(value || "")).digest("hex");
+}
+
+async function prepareJobBooleanOptions({ job = {}, existingJob = null, force = false } = {}) {
+  const sourceHash = buildJobBooleanFingerprint(job);
+  const cached = getCachedJobBooleanState(job, existingJob);
+
+  if (!force && cached?.options?.length >= 3) {
+    return {
+      job: {
+        ...job,
+        generatedBooleanOptions: cached.options,
+        generatedBooleanSuggestion: String(cached.sourceJob?.generatedBooleanSuggestion || cached.options[0]?.query || "").trim(),
+        booleanSourceHash: sourceHash,
+        booleanGeneratedAt: cached.sourceJob?.booleanGeneratedAt || cached.sourceJob?.boolean_generated_at || null,
+        booleanGeneratedByModel: String(cached.sourceJob?.booleanGeneratedByModel || cached.sourceJob?.boolean_generated_by_model || "").trim()
+      },
+      meta: { status: "cached", generated: false, optionCount: cached.options.length }
+    };
+  }
+
+  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+  const model = String(process.env.OPENAI_BOOLEAN_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini").trim();
+  try {
+    const options = await generateJobBooleanOptions({
+      job,
+      apiKey,
+      model,
+      callOpenAiJsonSchema
+    });
+    const generatedAt = new Date().toISOString();
+    return {
+      job: {
+        ...job,
+        generatedBooleanOptions: options,
+        generatedBooleanSuggestion: options[0]?.query || "",
+        booleanSourceHash: sourceHash,
+        booleanGeneratedAt: generatedAt,
+        booleanGeneratedByModel: model
+      },
+      meta: { status: "generated", generated: true, optionCount: options.length, generatedAt, model }
+    };
+  } catch (error) {
+    return {
+      job: {
+        ...job,
+        generatedBooleanOptions: [],
+        generatedBooleanSuggestion: "",
+        booleanSourceHash: "",
+        booleanGeneratedAt: null,
+        booleanGeneratedByModel: ""
+      },
+      meta: { status: "failed", generated: false, optionCount: 0, error: String(error?.message || error) }
+    };
+  }
 }
 
 function normalizeEtagValue(value = "") {
@@ -18593,12 +18648,29 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
+      const incomingJob = body.job || body;
+      const incomingJobId = String(incomingJob?.id || "").trim();
+      const existingJobs = incomingJobId && !/^jd-/i.test(incomingJobId)
+        ? await listCompanyJobs(actor.companyId, actor.id, {
+            includeArchived: true,
+            viewerRole: actor.role,
+            includeJobShortcuts: false
+          }).catch(() => [])
+        : [];
+      const existingJob = (Array.isArray(existingJobs) ? existingJobs : []).find(
+        (item) => String(item?.id || "").trim() === incomingJobId
+      ) || null;
+      const booleanPreparation = await prepareJobBooleanOptions({
+        job: incomingJob,
+        existingJob,
+        force: Boolean(body?.forceBooleanRegeneration)
+      });
       const job = await saveCompanyJob({
         actorUserId: actor.id,
         companyId: actor.companyId,
-        job: body.job || body
+        job: booleanPreparation.job
       });
-      sendJson(res, 200, { ok: true, result: job });
+      sendJson(res, 200, { ok: true, result: { ...job, booleanGeneration: booleanPreparation.meta } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
