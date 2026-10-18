@@ -10487,6 +10487,7 @@ function PortalApp({ token, onLogout }) {
   const [jobClientQuickCreateName, setJobClientQuickCreateName] = useState("");
   const [jobClientQuickCreateBusy, setJobClientQuickCreateBusy] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState("");
+  const [selectedJobClient, setSelectedJobClient] = useState("");
   const [jobListLane, setJobListLane] = useState("active");
   const [jobsCatalog, setJobsCatalog] = useState([]);
   const jobClientUniverse = useMemo(() => {
@@ -10607,6 +10608,29 @@ function PortalApp({ token, onLogout }) {
     if (!key) return cleaned;
     return String(canonicalClientNameByKey.get(key) || cleaned).trim();
   }, [canonicalClientNameByKey, normalizeClientIdentityKey, sanitizeClientNameInput]);
+  const jobsInSelectedLane = useMemo(
+    () => (Array.isArray(jobsCatalog) ? jobsCatalog : []).filter((job) => (
+      jobListLane === "archived" ? Boolean(job?.isArchived) : !Boolean(job?.isArchived)
+    )),
+    [jobsCatalog, jobListLane]
+  );
+  const jobListClientOptions = useMemo(() => {
+    const byIdentity = new Map();
+    jobsInSelectedLane.forEach((job) => {
+      const clientName = canonicalizeClientName(String(job?.clientName || job?.client_name || "").trim());
+      const identity = normalizeClientIdentityKey(clientName);
+      if (!clientName || !identity) return;
+      if (!byIdentity.has(identity)) byIdentity.set(identity, clientName);
+    });
+    return Array.from(byIdentity.values()).sort((a, b) => a.localeCompare(b));
+  }, [jobsInSelectedLane, canonicalizeClientName, normalizeClientIdentityKey]);
+  const clientScopedJobs = useMemo(() => {
+    const selectedClientKey = normalizeClientIdentityKey(selectedJobClient);
+    if (!selectedClientKey) return [];
+    return jobsInSelectedLane.filter((job) => normalizeClientIdentityKey(
+      canonicalizeClientName(String(job?.clientName || job?.client_name || "").trim())
+    ) === selectedClientKey);
+  }, [jobsInSelectedLane, selectedJobClient, canonicalizeClientName, normalizeClientIdentityKey]);
   const archivedClientNameKeys = useMemo(() => {
     const keys = new Set();
     (Array.isArray(clientRecords) ? clientRecords : []).forEach((item) => {
@@ -19775,6 +19799,7 @@ function PortalApp({ token, onLogout }) {
       return;
     }
     setSelectedJobId(String(job.id || ""));
+    setSelectedJobClient(canonicalizeClientName(String(job.clientName || job.client_name || "")));
     setJobClientQuickCreateOpen(false);
     setJobClientQuickCreateName("");
     setJobListLane(Boolean(job.isArchived) ? "archived" : "active");
@@ -30476,18 +30501,36 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 <div className="form-grid">
                   <label>
                     <span>Existing jobs</span>
-                    <select value={jobListLane} onChange={(e) => setJobListLane(e.target.value)}>
+                    <select value={jobListLane} onChange={(e) => {
+                      setJobListLane(e.target.value);
+                      setSelectedJobClient("");
+                      resetJobDraftBlank();
+                    }}>
                       <option value="active">Active JDs</option>
                       <option value="archived">Archived JDs</option>
                     </select>
                   </label>
                   <label>
+                    <span>Select client</span>
+                    <select value={selectedJobClient} onChange={(e) => {
+                      const nextClient = e.target.value;
+                      resetJobDraftBlank();
+                      setSelectedJobClient(nextClient);
+                      if (nextClient) {
+                        setJobDraft((current) => ({ ...current, clientName: nextClient }));
+                      }
+                    }}>
+                      <option value="">Select client</option>
+                      {jobListClientOptions.map((clientName) => (
+                        <option key={`existing-job-client-${clientName}`} value={clientName}>{clientName}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
                     <span>Select JD</span>
-                    <select value={selectedJobId} onChange={(e) => loadJobIntoDraft(e.target.value)}>
-                      <option value="">Select JD</option>
-                      {jobsCatalog
-                        .filter((job) => (jobListLane === "archived" ? Boolean(job?.isArchived) : !Boolean(job?.isArchived)))
-                        .map((job) => <option key={job.id} value={job.id}>{getArchivedJobOptionLabel(job)}</option>)}
+                    <select disabled={!selectedJobClient} value={selectedJobId} onChange={(e) => loadJobIntoDraft(e.target.value)}>
+                      <option value="">{selectedJobClient ? "Select JD" : "Select client first"}</option>
+                      {clientScopedJobs.map((job) => <option key={job.id} value={job.id}>{getArchivedJobOptionLabel(job)}</option>)}
                     </select>
                     {jobListLane === "archived" && selectedJobId ? (
                       <small className="muted">
