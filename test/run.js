@@ -1,6 +1,7 @@
 const path = require("path");
 
 const specs = [
+  "./assessment-visibility.spec.js",
   "./recruiter-incentives.spec.js",
   "./commercial-billing.spec.js",
   "./job-title-filter.spec.js",

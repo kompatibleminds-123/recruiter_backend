@@ -5537,13 +5537,8 @@ async function listAssessmentsForUser(user, options = {}) {
   const page = Math.max(1, Number(options.page || 1));
   const offset = Math.max(0, (page - 1) * limit);
   const filters = normalizeAssessmentFilterOptions(options.filters || {});
-  if (filters.recruiters.length) {
-    const recruiterCandidateIds = await resolveAssessmentCandidateIdsForAssignees(user.companyId, filters.recruiters);
-    if (recruiterCandidateIds.length) filters.jdIds = filters.jdIds || [];
-    if (recruiterCandidateIds.length) {
-      filters.recruiterCandidateIds = recruiterCandidateIds;
-    }
-  }
+  // Filter the same hydrated assessment assignee used by the displayed row and
+  // stats. Candidate-ID prefiltering drops legacy/unlinked assessments.
   const rows = sortAssessmentsForList(await getAssessmentsUniverseForUser(user), options.sortBy || "updated");
   const filtered = rows.filter((item) => applyAssessmentFiltersLocal(item, filters));
   const items = filtered.slice(offset, offset + limit);

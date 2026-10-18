@@ -1,9 +1,23 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 const { calculateIncentive, nextSalaryMonth, buildRecruiterIncentives } = require("../src/recruiter-incentives");
 
 async function run() {
+  const { reportingMonth, financialYearForMonth, startedFinancialYearMonths, financialYearLabel } = await import(pathToFileURL(path.join(__dirname, "../portal-react/src/incentive-financial-year.mjs")).href);
+  assert.equal(financialYearForMonth("2026-10"), "2026");
+  assert.equal(financialYearForMonth("2027-03"), "2026");
+  assert.equal(financialYearForMonth("2027-04"), "2027");
+  assert.equal(financialYearLabel("2026"), "Apr 26 – Mar 27");
+  assert.deepEqual(startedFinancialYearMonths("2026", "2026-10"), ["2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"]);
+  assert.equal(startedFinancialYearMonths("2026", "2026-11").at(-1), "2026-11");
+  assert.equal(startedFinancialYearMonths("2026", "2027-03").at(-1), "2027-03");
+  assert.equal(startedFinancialYearMonths("2026", "2027-03").length, 12);
+  assert.equal(startedFinancialYearMonths("2025", "2026-10").length, 12);
+  assert.deepEqual(startedFinancialYearMonths("2027", "2026-10"), []);
+  assert.equal(reportingMonth(new Date("2026-10-31T18:29:59Z")), "2026-10");
+  assert.equal(reportingMonth(new Date("2026-10-31T18:30:00Z")), "2026-11");
   for (const [ctc, incentive] of [[0, 0], [10, 0], [10.01, 500], [15, 500], [15.01, 1000], [20, 1000], [20.01, 1500], [25, 1500], [26, 1600], [27, 1700], [32, 2200], [26.5, 1650]]) {
     assert.equal(calculateIncentive(ctc), incentive, `CTC ${ctc}`);
   }
@@ -47,7 +61,8 @@ async function run() {
         assert.deepEqual(scope, { actorUserId: "admin", companyId: "company" });
         return [
           { id: "1", candidateId: "1", candidateStatus: "Joined", recruiterName: "Alex", offerAmount: "26", commercialBillingMonth: "2026-10", statusHistory: [{ status: "Joined", statusAt: "2026-08-01T00:00:00Z" }] },
-          { id: "2", candidateStatus: "Offered", recruiterName: "Alex", offerAmount: "50", dateOfJoining: "2026-08-02" },
+          { id: "2", candidateStatus: "Offered", recruiterName: "Alex", offerAmount: "50", dateOfJoining: "2026-08-02", expectedDoj: "2026-08-02" },
+          { id: "4", candidateStatus: "Shortlisted", recruiterName: "Alex", offerAmount: "50", expectedDoj: "2026-08-02" },
           { id: "3", candidateStatus: "Joined", recruiterName: "Alex", offerAmount: "50", expectedDoj: "2026-08-02" }
         ];
       },
