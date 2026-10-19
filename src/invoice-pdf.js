@@ -91,6 +91,24 @@ function drawLines(page, lines, { x, y, font, size = 8, color = TEXT, lineHeight
   return nextY;
 }
 
+function drawCenteredCellText(page, value, { x, y, width, height, font, size = 8, color = TEXT, lineHeight = 11, maxLines = 20 }) {
+  const lines = wrapText(value, font, size, Math.max(1, width - 8), maxLines);
+  const visibleLines = lines.slice(0, maxLines);
+  const blockHeight = Math.max(size, (visibleLines.length - 1) * lineHeight + size);
+  let baselineY = y + ((height + blockHeight) / 2) - size;
+  visibleLines.forEach((line) => {
+    const lineWidth = font.widthOfTextAtSize(String(line || ""), size);
+    page.drawText(String(line || ""), {
+      x: x + Math.max(4, (width - lineWidth) / 2),
+      y: baselineY,
+      font,
+      size,
+      color
+    });
+    baselineY -= lineHeight;
+  });
+}
+
 function drawCell(page, { x, y, width, height, fill = null, border = BORDER, borderWidth = 0.6 }) {
   page.drawRectangle({ x, y, width, height, color: fill || undefined, borderColor: border, borderWidth });
 }
@@ -241,7 +259,7 @@ async function generateInvoicePdf(input = {}, savedSettings = {}) {
   let x = left;
   for (let i = 0; i < cols.length; i += 1) {
     drawCell(page, { x, y: 402, width: cols[i], height: 38, fill: PALE });
-    drawLines(page, wrapText(headers[i], bold, 7.1, cols[i] - 7, 2), { x: x + 3.5, y: 424, font: bold, size: 7.1, lineHeight: 9, maxLines: 2 });
+    drawCenteredCellText(page, headers[i], { x, y: 402, width: cols[i], height: 38, font: bold, size: 7.1, lineHeight: 9, maxLines: 2 });
     x += cols[i];
   }
   x = left;
@@ -262,7 +280,7 @@ async function generateInvoicePdf(input = {}, savedSettings = {}) {
   for (let i = 0; i < cols.length; i += 1) {
     drawCell(page, { x, y: 282, width: cols[i], height: 120 });
     const rowFontSize = i === 1 ? 8.2 : 7.5;
-    drawLines(page, wrapText(rowValues[i], i === 1 ? regular : bold, rowFontSize, cols[i] - 7, 8), { x: x + 3.5, y: 382, font: i === 1 ? regular : bold, size: rowFontSize, lineHeight: i === 1 ? 13 : 10, maxLines: 8 });
+    drawCenteredCellText(page, rowValues[i], { x, y: 282, width: cols[i], height: 120, font: i === 1 ? regular : bold, size: rowFontSize, lineHeight: i === 1 ? 13 : 10, maxLines: 8 });
     x += cols[i];
   }
 
