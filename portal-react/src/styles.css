@@ -22,6 +22,60 @@
   font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
+.invoice-generator .span-all {
+  grid-column: 1 / -1;
+}
+
+.invoice-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.invoice-image-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.invoice-image-grid label {
+  display: grid;
+  gap: 0.5rem;
+  color: #2d3c5e;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.invoice-image-grid img {
+  width: min(220px, 100%);
+  height: 90px;
+  object-fit: contain;
+  object-position: left center;
+  padding: 0.5rem;
+  border: 1px solid #dbe4f2;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.invoice-total-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 1rem 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid #cddbf3;
+  border-radius: 12px;
+  background: #f4f8ff;
+  color: #102957;
+}
+
+@media (max-width: 768px) {
+  .invoice-image-grid { grid-template-columns: 1fr; }
+}
+
 * { box-sizing: border-box; }
 body {
   margin: 0;

@@ -955,6 +955,14 @@ function sanitizeSharedExportPresetSettings(raw) {
     source.clientBillingRules && typeof source.clientBillingRules === "object" && !Array.isArray(source.clientBillingRules)
       ? source.clientBillingRules
       : {};
+  const rawInvoiceProfile =
+    source.invoiceProfile && typeof source.invoiceProfile === "object" && !Array.isArray(source.invoiceProfile)
+      ? source.invoiceProfile
+      : {};
+  const rawInvoiceClientProfiles =
+    source.invoiceClientProfiles && typeof source.invoiceClientProfiles === "object" && !Array.isArray(source.invoiceClientProfiles)
+      ? source.invoiceClientProfiles
+      : {};
   const rawSheetImportLearnedAliases =
     source.sheetImportLearnedAliases && typeof source.sheetImportLearnedAliases === "object"
       ? source.sheetImportLearnedAliases
@@ -1095,6 +1103,42 @@ function sanitizeSharedExportPresetSettings(raw) {
       notes: String(rule.notes || "").trim().slice(0, 200)
     };
   });
+  const invoiceString = (value, maxLength = 500) => String(value || "").trim().slice(0, maxLength);
+  const invoiceImage = (value) => {
+    const safe = String(value || "").trim();
+    return /^data:image\/(?:png|jpe?g);base64,/i.test(safe) && safe.length <= 3_000_000 ? safe : "";
+  };
+  const invoiceProfile = {
+    legalName: invoiceString(rawInvoiceProfile.legalName, 200),
+    tradeName: invoiceString(rawInvoiceProfile.tradeName, 200),
+    address: invoiceString(rawInvoiceProfile.address, 1200),
+    cin: invoiceString(rawInvoiceProfile.cin, 40),
+    pan: invoiceString(rawInvoiceProfile.pan, 20),
+    gstin: invoiceString(rawInvoiceProfile.gstin, 30),
+    state: invoiceString(rawInvoiceProfile.state, 100),
+    stateCode: invoiceString(rawInvoiceProfile.stateCode, 4),
+    bankAccountName: invoiceString(rawInvoiceProfile.bankAccountName, 200),
+    bankAccountNumber: invoiceString(rawInvoiceProfile.bankAccountNumber, 80),
+    bankIfsc: invoiceString(rawInvoiceProfile.bankIfsc, 30),
+    bankName: invoiceString(rawInvoiceProfile.bankName, 120),
+    bankBranch: invoiceString(rawInvoiceProfile.bankBranch, 120),
+    defaultHsnSac: invoiceString(rawInvoiceProfile.defaultHsnSac || "998311", 20),
+    defaultGstRate: Math.max(0, Math.min(100, Number(rawInvoiceProfile.defaultGstRate ?? 18) || 0)),
+    logoDataUrl: invoiceImage(rawInvoiceProfile.logoDataUrl),
+    signatureDataUrl: invoiceImage(rawInvoiceProfile.signatureDataUrl)
+  };
+  const invoiceClientProfiles = {};
+  Object.entries(rawInvoiceClientProfiles).slice(0, 1000).forEach(([clientName, profile]) => {
+    const safeClient = invoiceString(clientName, 200);
+    if (!safeClient || !profile || typeof profile !== "object" || Array.isArray(profile)) return;
+    invoiceClientProfiles[safeClient] = {
+      legalName: invoiceString(profile.legalName || safeClient, 200),
+      address: invoiceString(profile.address, 1200),
+      gstin: invoiceString(profile.gstin, 30),
+      state: invoiceString(profile.state, 100),
+      stateCode: invoiceString(profile.stateCode, 4)
+    };
+  });
   const defaultHeaderFields = [
     "candidate_name",
     "target_role",
@@ -1197,6 +1241,8 @@ function sanitizeSharedExportPresetSettings(raw) {
     personalShortcutsByUser,
     clientDirectory: sanitizeClientDirectoryList(rawClientDirectory),
     clientBillingRules,
+    invoiceProfile,
+    invoiceClientProfiles,
     updatedAt: String(source.updatedAt || "").trim(),
     updatedBy: String(source.updatedBy || "").trim()
   };

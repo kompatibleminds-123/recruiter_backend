@@ -4,6 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { buildRecruiterIncentives } = require("./src/recruiter-incentives");
+const { generateInvoicePdf } = require("./src/invoice-pdf");
 const { buildJobBooleanFingerprint, generateJobBooleanOptions, getCachedJobBooleanState } = require("./src/job-boolean");
 const { parseCandidatePayload } = require("./src/parser");
 const { callOpenAiJsonSchema, callOpenAiQuestions, normalizeCandidateFileWithAi, normalizeCandidateWithAi, extractLinkedInAssistFromScreenshotWithAi } = require("./src/ai");
@@ -18101,7 +18102,8 @@ const server = http.createServer(async (req, res) => {
     try {
       const user = await requireSessionUser(getBearerToken(req));
       const settings = await getCompanySharedExportPresets(user.companyId);
-      sendJson(res, 200, { ok: true, result: settings });
+      const { invoiceProfile: _invoiceProfile, invoiceClientProfiles: _invoiceClientProfiles, ...sharedSettings } = settings || {};
+      sendJson(res, 200, { ok: true, result: sharedSettings });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
     }
@@ -18112,10 +18114,16 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const body = await readJsonBody(req);
+      const currentSettings = await getCompanySharedExportPresets(actor.companyId).catch(() => ({}));
+      const requestedSettings = body.settings || body;
       const settings = await saveCompanySharedExportPresets({
         actorUserId: actor.id,
         companyId: actor.companyId,
-        settings: body.settings || body,
+        settings: {
+          ...requestedSettings,
+          invoiceProfile: currentSettings?.invoiceProfile || {},
+          invoiceClientProfiles: currentSettings?.invoiceClientProfiles || {}
+        },
         saveAsSuggestedGlobal: body?.saveAsSuggestedGlobal === true
       });
       emitShortcutStreamEvent(actor.companyId, "company_shortcuts_changed", {
@@ -18123,6 +18131,71 @@ const server = http.createServer(async (req, res) => {
         settings
       });
       sendJson(res, 200, { ok: true, result: settings });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (requestUrl.pathname === "/company/reports/invoice/settings") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (String(actor?.role || "").trim().toLowerCase() !== "admin") {
+        sendJson(res, 403, { ok: false, error: "Only admin can access invoice settings." });
+        return;
+      }
+      if (req.method === "GET") {
+        const settings = await getCompanySharedExportPresets(actor.companyId).catch(() => ({}));
+        sendJson(res, 200, {
+          ok: true,
+          result: {
+            invoiceProfile: settings?.invoiceProfile || {},
+            invoiceClientProfiles: settings?.invoiceClientProfiles || {},
+            clientBillingRules: settings?.clientBillingRules || {}
+          }
+        });
+        return;
+      }
+      if (req.method === "POST") {
+        const body = await readJsonBody(req);
+        const currentSettings = await getCompanySharedExportPresets(actor.companyId).catch(() => ({}));
+        const saved = await saveCompanySharedExportPresets({
+          actorUserId: actor.id,
+          companyId: actor.companyId,
+          settings: {
+            ...currentSettings,
+            invoiceProfile: body?.invoiceProfile && typeof body.invoiceProfile === "object" ? body.invoiceProfile : currentSettings?.invoiceProfile,
+            invoiceClientProfiles: body?.invoiceClientProfiles && typeof body.invoiceClientProfiles === "object" ? body.invoiceClientProfiles : currentSettings?.invoiceClientProfiles
+          }
+        });
+        sendJson(res, 200, {
+          ok: true,
+          result: {
+            invoiceProfile: saved?.invoiceProfile || {},
+            invoiceClientProfiles: saved?.invoiceClientProfiles || {},
+            clientBillingRules: saved?.clientBillingRules || {}
+          }
+        });
+        return;
+      }
+      sendJson(res, 405, { ok: false, error: "Method not allowed" });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/reports/invoice/pdf") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (String(actor?.role || "").trim().toLowerCase() !== "admin") {
+        sendJson(res, 403, { ok: false, error: "Only admin can generate invoices." });
+        return;
+      }
+      const body = await readJsonBody(req);
+      const settings = await getCompanySharedExportPresets(actor.companyId).catch(() => ({}));
+      const result = await generateInvoicePdf(body?.invoice || body || {}, settings);
+      sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
@@ -22470,7 +22543,8 @@ const server = http.createServer(async (req, res) => {
       summary.byClientPosition = Array.from(byPosition.values()).sort((a, b) => `${a.clientLabel} ${a.positionLabel}`.localeCompare(`${b.clientLabel} ${b.positionLabel}`));
       summary.byStatus = Array.from(byStatus.entries()).map(([label, count]) => ({ label, count })).sort((a, b) => String(a.label).localeCompare(String(b.label)));
       const agenda = buildClientPortalAgenda(scopedUniverse, dateRange);
-      sendJson(res, 200, { ok: true, result: { summary, agenda, user: clientUser, copySettings } });
+      const { invoiceProfile: _invoiceProfile, invoiceClientProfiles: _invoiceClientProfiles, ...safeCopySettings } = copySettings || {};
+      sendJson(res, 200, { ok: true, result: { summary, agenda, user: clientUser, copySettings: safeCopySettings } });
     } catch (error) {
       sendJson(res, 401, { ok: false, error: String(error.message || error) });
     }
