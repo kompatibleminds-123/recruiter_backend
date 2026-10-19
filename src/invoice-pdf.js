@@ -187,7 +187,7 @@ async function generateInvoicePdf(input = {}, savedSettings = {}) {
   const invoice = normalizeInvoiceInput(input, savedSettings);
   validateInvoice(invoice);
   const doc = await PDFDocument.create();
-  const page = doc.addPage([612, 792]);
+  const page = doc.addPage([612, 842]);
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const logo = await embedDataUrlImage(doc, invoice.profile.logoDataUrl);
@@ -195,20 +195,20 @@ async function generateInvoicePdf(input = {}, savedSettings = {}) {
   const left = 34;
   const width = 544;
 
-  page.drawText("TAX INVOICE", { x: left, y: 748, font: bold, size: 18, color: NAVY });
-  page.drawText(`Invoice ${invoice.invoiceNumber}`, { x: left, y: 728, font: regular, size: 9, color: MUTED });
+  page.drawText("TAX INVOICE", { x: left, y: 798, font: bold, size: 18, color: NAVY });
+  page.drawText(`Invoice ${invoice.invoiceNumber}`, { x: left, y: 778, font: regular, size: 9, color: MUTED });
   if (logo) {
     const scale = Math.min(130 / logo.width, 68 / logo.height);
     const logoWidth = logo.width * scale;
     const logoHeight = logo.height * scale;
-    page.drawImage(logo, { x: 568 - logoWidth, y: 704, width: logoWidth, height: logoHeight });
+    page.drawImage(logo, { x: 568 - logoWidth, y: 754, width: logoWidth, height: logoHeight });
   } else {
-    drawLines(page, wrapText(invoice.profile.tradeName || invoice.profile.legalName, bold, 8, 130, 2), { x: 438, y: 742, font: bold, size: 8, color: NAVY, lineHeight: 10, maxLines: 2 });
+    drawLines(page, wrapText(invoice.profile.tradeName || invoice.profile.legalName, bold, 8, 130, 2), { x: 438, y: 792, font: bold, size: 8, color: NAVY, lineHeight: 10, maxLines: 2 });
   }
 
-  drawCell(page, { x: left, y: 610, width: 325, height: 98, fill: PALE });
-  drawCell(page, { x: left + 325, y: 610, width: 219, height: 98 });
-  let y = 690;
+  drawCell(page, { x: left, y: 610, width: 325, height: 128, fill: PALE });
+  drawCell(page, { x: left + 325, y: 610, width: 219, height: 128 });
+  let y = 720;
   page.drawText(text(invoice.profile.legalName), { x: left + 10, y, font: bold, size: 8, color: TEXT });
   y -= 14;
   y = drawLines(page, wrapText(invoice.profile.address, regular, 8, 300, 3), { x: left + 10, y, font: regular, size: 8, lineHeight: 11, maxLines: 3 });
@@ -218,11 +218,11 @@ async function generateInvoicePdf(input = {}, savedSettings = {}) {
     invoice.profile.gstin ? `GSTIN: ${text(invoice.profile.gstin)}` : ""
   ].filter(Boolean);
   drawLines(page, sellerIds, { x: left + 10, y: y - 2, font: regular, size: 7.5, lineHeight: 10 });
-  page.drawText(`Invoice No: ${invoice.invoiceNumber}`, { x: left + 337, y: 688, font: bold, size: 9, color: TEXT });
-  page.drawText(`Invoice Date: ${formatInvoiceDate(invoice.invoiceDate)}`, { x: left + 337, y: 672, font: regular, size: 8, color: TEXT });
-  page.drawText(`Reverse Charge: ${invoice.reverseCharge}`, { x: left + 337, y: 656, font: regular, size: 8, color: TEXT });
-  page.drawText(`State: ${text(invoice.profile.state) || "-"}`, { x: left + 337, y: 636, font: regular, size: 8, color: TEXT });
-  page.drawText(`State Code: ${text(invoice.profile.stateCode) || "-"}`, { x: left + 337, y: 621, font: regular, size: 8, color: TEXT });
+  page.drawText(`Invoice No: ${invoice.invoiceNumber}`, { x: left + 337, y: 718, font: bold, size: 9, color: TEXT });
+  page.drawText(`Invoice Date: ${formatInvoiceDate(invoice.invoiceDate)}`, { x: left + 337, y: 700, font: regular, size: 8, color: TEXT });
+  page.drawText(`Reverse Charge: ${invoice.reverseCharge}`, { x: left + 337, y: 682, font: regular, size: 8, color: TEXT });
+  page.drawText(`State: ${text(invoice.profile.state) || "-"}`, { x: left + 337, y: 654, font: regular, size: 8, color: TEXT });
+  page.drawText(`State Code: ${text(invoice.profile.stateCode) || "-"}`, { x: left + 337, y: 636, font: regular, size: 8, color: TEXT });
 
   drawCell(page, { x: left, y: 440, width, height: 152 });
   page.drawRectangle({ x: left, y: 572, width, height: 20, color: NAVY });
