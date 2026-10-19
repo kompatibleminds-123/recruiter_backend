@@ -1,6 +1,6 @@
 const assert = require("assert");
 const { PDFDocument } = require("pdf-lib");
-const { generateInvoicePdf, indianNumberWords, normalizeInvoiceInput } = require("../src/invoice-pdf");
+const { formatInvoiceDate, generateInvoicePdf, indianNumberWords, normalizeInvoiceInput } = require("../src/invoice-pdf");
 
 async function run() {
   const settings = {
@@ -30,6 +30,9 @@ async function run() {
   assert.strictEqual(normalized.igst, 21600);
   assert.strictEqual(normalized.roundedTotal, 141600);
   assert.strictEqual(indianNumberWords(141600), "One Lakh Forty One Thousand Six Hundred Only");
+  assert.strictEqual(formatInvoiceDate("2026-10-19"), "19th Oct, 2026");
+  assert.strictEqual(formatInvoiceDate("2026-10-01"), "1st Oct, 2026");
+  assert.strictEqual(formatInvoiceDate("2026-10-12"), "12th Oct, 2026");
   const result = await generateInvoicePdf(input, settings);
   assert.strictEqual(result.mimeType, "application/pdf");
   assert.strictEqual(result.filename, "TEST-26-27-001.pdf");

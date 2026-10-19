@@ -19,6 +19,20 @@ function money(value) {
   return number(value).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function formatInvoiceDate(value) {
+  const raw = text(value);
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const date = match
+    ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])))
+    : new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  const day = date.getUTCDate();
+  const mod100 = day % 100;
+  const suffix = mod100 >= 11 && mod100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" }[day % 10] || "th");
+  const month = date.toLocaleString("en-GB", { month: "short", timeZone: "UTC" });
+  return `${day}${suffix} ${month}, ${date.getUTCFullYear()}`;
+}
+
 function safeFilename(value = "invoice") {
   return text(value).replace(/[^a-z0-9._-]+/gi, "-").replace(/^-+|-+$/g, "") || "invoice";
 }
@@ -184,16 +198,18 @@ async function generateInvoicePdf(input = {}, savedSettings = {}) {
   page.drawText("TAX INVOICE", { x: left, y: 748, font: bold, size: 18, color: NAVY });
   page.drawText(`Invoice ${invoice.invoiceNumber}`, { x: left, y: 728, font: regular, size: 9, color: MUTED });
   if (logo) {
-    const scale = Math.min(95 / logo.width, 48 / logo.height);
-    page.drawImage(logo, { x: 483, y: 716, width: logo.width * scale, height: logo.height * scale });
+    const scale = Math.min(130 / logo.width, 68 / logo.height);
+    const logoWidth = logo.width * scale;
+    const logoHeight = logo.height * scale;
+    page.drawImage(logo, { x: 568 - logoWidth, y: 704, width: logoWidth, height: logoHeight });
   } else {
-    page.drawText(text(invoice.profile.tradeName || invoice.profile.legalName), { x: 420, y: 736, font: bold, size: 10, color: NAVY });
+    drawLines(page, wrapText(invoice.profile.tradeName || invoice.profile.legalName, bold, 8, 130, 2), { x: 438, y: 742, font: bold, size: 8, color: NAVY, lineHeight: 10, maxLines: 2 });
   }
 
   drawCell(page, { x: left, y: 610, width: 325, height: 98, fill: PALE });
   drawCell(page, { x: left + 325, y: 610, width: 219, height: 98 });
   let y = 690;
-  page.drawText(text(invoice.profile.legalName), { x: left + 10, y, font: bold, size: 9, color: TEXT });
+  page.drawText(text(invoice.profile.legalName), { x: left + 10, y, font: bold, size: 8, color: TEXT });
   y -= 14;
   y = drawLines(page, wrapText(invoice.profile.address, regular, 8, 300, 3), { x: left + 10, y, font: regular, size: 8, lineHeight: 11, maxLines: 3 });
   const sellerIds = [
@@ -203,33 +219,36 @@ async function generateInvoicePdf(input = {}, savedSettings = {}) {
   ].filter(Boolean);
   drawLines(page, sellerIds, { x: left + 10, y: y - 2, font: regular, size: 7.5, lineHeight: 10 });
   page.drawText(`Invoice No: ${invoice.invoiceNumber}`, { x: left + 337, y: 688, font: bold, size: 9, color: TEXT });
-  page.drawText(`Invoice Date: ${invoice.invoiceDate}`, { x: left + 337, y: 672, font: regular, size: 8, color: TEXT });
+  page.drawText(`Invoice Date: ${formatInvoiceDate(invoice.invoiceDate)}`, { x: left + 337, y: 672, font: regular, size: 8, color: TEXT });
   page.drawText(`Reverse Charge: ${invoice.reverseCharge}`, { x: left + 337, y: 656, font: regular, size: 8, color: TEXT });
   page.drawText(`State: ${text(invoice.profile.state) || "-"}`, { x: left + 337, y: 636, font: regular, size: 8, color: TEXT });
   page.drawText(`State Code: ${text(invoice.profile.stateCode) || "-"}`, { x: left + 337, y: 621, font: regular, size: 8, color: TEXT });
 
-  drawCell(page, { x: left, y: 466, width, height: 126 });
+  drawCell(page, { x: left, y: 440, width, height: 152 });
   page.drawRectangle({ x: left, y: 572, width, height: 20, color: NAVY });
   page.drawText("DETAILS OF RECEIVER / BILLED TO", { x: left + 8, y: 578, font: bold, size: 8, color: rgb(1, 1, 1) });
   page.drawText(text(invoice.client.name || invoice.clientName), { x: left + 10, y: 556, font: bold, size: 9, color: TEXT });
-  drawLines(page, wrapText(invoice.client.address, regular, 8, 500, 5), { x: left + 10, y: 542, font: regular, size: 8, lineHeight: 11, maxLines: 5 });
+  drawLines(page, wrapText(invoice.client.address, regular, 8.5, 310, 8), { x: left + 10, y: 542, font: regular, size: 8.5, lineHeight: 12, maxLines: 8 });
   const clientMeta = [
     invoice.client.gstin ? `GSTIN: ${text(invoice.client.gstin)}` : "GSTIN: -",
     `State: ${text(invoice.client.state) || "-"}`,
     `State Code: ${text(invoice.client.stateCode) || "-"}`
   ];
-  drawLines(page, clientMeta, { x: left + 330, y: 542, font: regular, size: 8, lineHeight: 13 });
+  drawLines(page, clientMeta, { x: left + 330, y: 542, font: regular, size: 8.5, lineHeight: 15 });
 
-  const cols = [32, 196, 58, 56, 76, 62, 64];
-  const headers = ["Sr.", "Product / Service", "HSN/SAC", "Fee", "Taxable", "GST", "Total"];
+  const cols = [28, 176, 50, 44, 68, 45, 68, 65];
+  const headers = ["Sr.", "Product / Service", "HSN/SAC", "Fee", "Taxable", "GST rate", "Tax amount", "Total"];
   let x = left;
   for (let i = 0; i < cols.length; i += 1) {
-    drawCell(page, { x, y: 428, width: cols[i], height: 38, fill: PALE });
-    drawLines(page, wrapText(headers[i], bold, 7.3, cols[i] - 8, 2), { x: x + 4, y: 450, font: bold, size: 7.3, lineHeight: 9, maxLines: 2 });
+    drawCell(page, { x, y: 402, width: cols[i], height: 38, fill: PALE });
+    drawLines(page, wrapText(headers[i], bold, 7.1, cols[i] - 7, 2), { x: x + 3.5, y: 424, font: bold, size: 7.1, lineHeight: 9, maxLines: 2 });
     x += cols[i];
   }
   x = left;
   const serviceLabel = [invoice.serviceDescription, invoice.candidateName ? `Candidate: ${invoice.candidateName}` : "", invoice.annualCtc ? `Annual CTC: Rs. ${money(invoice.annualCtc)}` : ""].filter(Boolean).join("\n");
+  const taxAmountLabel = invoice.taxMode === "cgst_sgst"
+    ? `CGST: Rs. ${money(invoice.cgst)}\nSGST: Rs. ${money(invoice.sgst)}`
+    : invoice.taxMode === "igst" ? `IGST: Rs. ${money(invoice.igst)}` : "Nil";
   const rowValues = [
     "1",
     serviceLabel,
@@ -237,26 +256,28 @@ async function generateInvoicePdf(input = {}, savedSettings = {}) {
     invoice.feePercent ? `${invoice.feePercent}%` : "-",
     `Rs. ${money(invoice.taxableAmount)}`,
     invoice.taxMode === "none" ? "Nil" : `${invoice.gstRate}%`,
+    taxAmountLabel,
     `Rs. ${money(invoice.total)}`
   ];
   for (let i = 0; i < cols.length; i += 1) {
-    drawCell(page, { x, y: 318, width: cols[i], height: 110 });
-    drawLines(page, wrapText(rowValues[i], i === 1 ? regular : bold, 7.2, cols[i] - 8, 7), { x: x + 4, y: 410, font: i === 1 ? regular : bold, size: 7.2, lineHeight: 10, maxLines: 7 });
+    drawCell(page, { x, y: 282, width: cols[i], height: 120 });
+    const rowFontSize = i === 1 ? 8.2 : 7.5;
+    drawLines(page, wrapText(rowValues[i], i === 1 ? regular : bold, rowFontSize, cols[i] - 7, 8), { x: x + 3.5, y: 382, font: i === 1 ? regular : bold, size: rowFontSize, lineHeight: i === 1 ? 13 : 10, maxLines: 8 });
     x += cols[i];
   }
 
-  drawCell(page, { x: left, y: 253, width: 360, height: 65, fill: PALE });
-  drawCell(page, { x: left + 360, y: 253, width: 184, height: 65 });
-  page.drawText("Amount in words", { x: left + 8, y: 301, font: bold, size: 7.5, color: MUTED });
-  drawLines(page, wrapText(indianNumberWords(invoice.roundedTotal), bold, 8.5, 340, 3), { x: left + 8, y: 285, font: bold, size: 8.5, lineHeight: 11, maxLines: 3 });
+  drawCell(page, { x: left, y: 215, width: 360, height: 67, fill: PALE });
+  drawCell(page, { x: left + 360, y: 215, width: 184, height: 67 });
+  page.drawText("Amount in words", { x: left + 8, y: 265, font: bold, size: 7.5, color: MUTED });
+  drawLines(page, wrapText(indianNumberWords(invoice.roundedTotal), bold, 8.5, 340, 3), { x: left + 8, y: 249, font: bold, size: 8.5, lineHeight: 11, maxLines: 3 });
   const taxLines = invoice.taxMode === "cgst_sgst"
     ? [`CGST: Rs. ${money(invoice.cgst)}`, `SGST: Rs. ${money(invoice.sgst)}`]
     : invoice.taxMode === "igst" ? [`IGST: Rs. ${money(invoice.igst)}`] : ["GST: Nil"];
-  drawLines(page, [...taxLines, `Rounded Total: Rs. ${invoice.roundedTotal.toLocaleString("en-IN")}`], { x: left + 370, y: 300, font: bold, size: 8, lineHeight: 15 });
+  drawLines(page, [...taxLines, `Rounded Total: Rs. ${invoice.roundedTotal.toLocaleString("en-IN")}`], { x: left + 370, y: 264, font: bold, size: 8, lineHeight: 15 });
 
-  drawCell(page, { x: left, y: 78, width: 280, height: 157 });
-  drawCell(page, { x: left + 280, y: 78, width: 264, height: 157 });
-  page.drawText("BANK DETAILS", { x: left + 8, y: 218, font: bold, size: 8.5, color: NAVY });
+  drawCell(page, { x: left, y: 38, width: 280, height: 160 });
+  drawCell(page, { x: left + 280, y: 38, width: 264, height: 160 });
+  page.drawText("BANK DETAILS", { x: left + 8, y: 181, font: bold, size: 8.5, color: NAVY });
   const bankLines = [
     invoice.profile.bankAccountName ? `Account Name: ${text(invoice.profile.bankAccountName)}` : "",
     invoice.profile.bankAccountNumber ? `Account No: ${text(invoice.profile.bankAccountNumber)}` : "",
@@ -264,19 +285,21 @@ async function generateInvoicePdf(input = {}, savedSettings = {}) {
     invoice.profile.bankName ? `Bank: ${text(invoice.profile.bankName)}` : "",
     invoice.profile.bankBranch ? `Branch: ${text(invoice.profile.bankBranch)}` : ""
   ].filter(Boolean);
-  drawLines(page, bankLines, { x: left + 8, y: 198, font: regular, size: 8, lineHeight: 14, maxLines: 7 });
+  drawLines(page, bankLines, { x: left + 8, y: 161, font: regular, size: 8, lineHeight: 14, maxLines: 7 });
   if (invoice.notes) {
-    page.drawText("Terms / Notes", { x: left + 8, y: 112, font: bold, size: 7.5, color: NAVY });
-    drawLines(page, wrapText(invoice.notes, regular, 7, 258, 2), { x: left + 8, y: 98, font: regular, size: 7, lineHeight: 9, maxLines: 2 });
+    page.drawText("Terms / Notes", { x: left + 8, y: 72, font: bold, size: 7.5, color: NAVY });
+    drawLines(page, wrapText(invoice.notes, regular, 7, 258, 2), { x: left + 8, y: 58, font: regular, size: 7, lineHeight: 9, maxLines: 2 });
   }
-  page.drawText("Certified that the particulars given above are true and correct", { x: left + 292, y: 218, font: regular, size: 7.2, color: MUTED });
-  page.drawText(text(invoice.profile.legalName), { x: left + 292, y: 200, font: bold, size: 8, color: TEXT });
+  page.drawText("Certified that the particulars given above are true and correct", { x: left + 292, y: 181, font: regular, size: 7.2, color: MUTED });
+  drawLines(page, wrapText(invoice.profile.legalName, bold, 8, 242, 2), { x: left + 292, y: 163, font: bold, size: 8, color: TEXT, lineHeight: 10, maxLines: 2 });
   if (signature) {
-    const scale = Math.min(150 / signature.width, 62 / signature.height);
-    page.drawImage(signature, { x: left + 335, y: 112, width: signature.width * scale, height: signature.height * scale });
+    const scale = Math.min(205 / signature.width, 88 / signature.height);
+    const signatureWidth = signature.width * scale;
+    const signatureHeight = signature.height * scale;
+    page.drawImage(signature, { x: left + 412 - (signatureWidth / 2), y: 62, width: signatureWidth, height: signatureHeight });
   }
-  page.drawText("Authorized Signatory", { x: left + 355, y: 92, font: regular, size: 8, color: TEXT });
-  page.drawText("Original for Recipient", { x: left, y: 54, font: regular, size: 7, color: MUTED });
+  page.drawText("Authorized Signatory", { x: left + 355, y: 49, font: regular, size: 8, color: TEXT });
+  page.drawText("Original for Recipient", { x: left, y: 19, font: regular, size: 7, color: MUTED });
 
   const bytes = await doc.save();
   return {
@@ -297,6 +320,7 @@ async function generateInvoicePdf(input = {}, savedSettings = {}) {
 
 module.exports = {
   generateInvoicePdf,
+  formatInvoiceDate,
   indianNumberWords,
   normalizeInvoiceInput
 };
