@@ -48,6 +48,7 @@ async function run() {
   assert.strictEqual(extracted.invoice.candidateName, input.candidateName);
   assert.strictEqual(extracted.invoice.taxableAmount, normalized.taxableAmount);
   assert.strictEqual(extracted.invoice.taxMode, normalized.taxMode);
+  assert.strictEqual(extracted.invoice.feePercent, 10);
 
   const multi = normalizeInvoiceInput({
     ...input,
