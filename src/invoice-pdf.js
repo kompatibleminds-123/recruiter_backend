@@ -408,7 +408,7 @@ async function generateCreditNotePdf(input = {}, savedSettings = {}) {
   let y = 430;
   rows.forEach(([label, value]) => { drawCell(page, { x: left, y, width: 180, height: 35, fill: PALE }); drawCell(page, { x: left + 180, y, width: 356, height: 35 }); page.drawText(label, { x: left + 9, y: y + 13, font: bold, size: 8.5, color: TEXT }); drawLines(page, wrapText(value, regular, 8.5, 336, 2), { x: left + 190, y: y + 13, font: regular, size: 8.5, lineHeight: 10, maxLines: 2 }); y -= 35; });
   page.drawText("This credit note adjusts the above referenced invoice.", { x: left, y: 230, font: regular, size: 8.5, color: MUTED });
-  page.drawText(text(profile.legalName), { x: 370, y: 115, font: bold, size: 8, color: TEXT });
+  drawLines(page, wrapText(profile.legalName, bold, 8, 180, 2), { x: 356, y: 166, font: bold, size: 8, color: TEXT, lineHeight: 10, maxLines: 2 });
   if (signature) {
     const scale = Math.min(160 / signature.width, 65 / signature.height);
     const signatureWidth = signature.width * scale;

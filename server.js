@@ -18590,7 +18590,15 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req)); if (String(actor?.role || "").trim().toLowerCase() !== "admin") throw new Error("Only admin can create credit notes.");
       const body = await readJsonBody(req); const input = body?.creditNote || body || {}; const invoiceId = String(input.invoiceId || "").trim();
       const invoiceRows = await supabaseTableFetch("invoices", `?select=*&id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&limit=1`); const invoice = invoiceRows?.[0]; if (!invoice?.id) throw new Error("Select a valid invoice.");
-      const settings = await getCompanySharedExportPresets(actor.companyId).catch(() => ({})); const noteInput = { ...input, clientName: invoice.client_name, originalInvoiceNumber: invoice.invoice_number };
+      const currentSettings = await getCompanySharedExportPresets(actor.companyId).catch(() => ({}));
+      const invoiceSnapshot = invoice.invoice_snapshot && typeof invoice.invoice_snapshot === "object" ? invoice.invoice_snapshot : {};
+      const invoiceClient = invoice.client_snapshot && typeof invoice.client_snapshot === "object" ? invoice.client_snapshot : {};
+      const invoiceProfile = invoiceSnapshot.profileDetails && typeof invoiceSnapshot.profileDetails === "object" ? invoiceSnapshot.profileDetails : {};
+      const settings = {
+        invoiceProfile: Object.keys(invoiceProfile).length ? invoiceProfile : (currentSettings.invoiceProfile || {}),
+        invoiceClientProfiles: { [String(invoice.client_name || "").trim()]: Object.keys(invoiceClient).length ? invoiceClient : (invoiceSnapshot.clientDetails || currentSettings.invoiceClientProfiles?.[String(invoice.client_name || "").trim()] || {}) }
+      };
+      const noteInput = { ...input, clientName: invoice.client_name, originalInvoiceNumber: invoice.invoice_number };
       const generated = await generateCreditNotePdf(noteInput, settings); const financialYear = getIndiaFinancialYear(noteInput.creditNoteDate);
       const duplicate = await supabaseTableFetch("credit_notes", `?select=id&company_id=eq.${encodeURIComponent(actor.companyId)}&financial_year=eq.${encodeURIComponent(financialYear)}&credit_note_number=eq.${encodeURIComponent(noteInput.creditNoteNumber)}&limit=1`); if (duplicate?.length) throw new Error("This credit note number already exists in the selected financial year.");
       const totalCredit = Number(generated.totals.total || 0); const alreadyRows = await supabaseTableFetchAll("credit_notes", `?select=total_amount&invoice_id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}`, { pageSize: 100, maxPages: 2 }); const alreadyCredited = (alreadyRows || []).reduce((sum, row) => sum + Number(row.total_amount || 0), 0); if (alreadyCredited + totalCredit > Number(invoice.total_amount || 0) + 0.01) throw new Error("Credit total cannot exceed the original invoice total.");
