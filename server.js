@@ -13248,7 +13248,7 @@ function sanitizeCreditNoteRecord(row = {}) {
   };
 }
 
-function buildInvoiceAnalytics(rows = []) {
+function buildInvoiceAnalytics(rows = [], creditNotes = []) {
   const issued = (Array.isArray(rows) ? rows : []).filter((row) => String(row?.status || "").toLowerCase() === "finalized");
   const byMonth = new Map();
   const byClient = new Map();
@@ -13256,15 +13256,40 @@ function buildInvoiceAnalytics(rows = []) {
     const month = String(row.invoiceDate || row.invoice_date || "").slice(0, 7) || "Unknown";
     const client = String(row.clientName || row.client_name || "Unassigned").trim() || "Unassigned";
     const taxable = Number(row.taxableAmount ?? row.taxable_amount ?? 0) || 0;
-    const gst = (Number(row.cgst ?? row.cgst_amount ?? 0) || 0) + (Number(row.sgst ?? row.sgst_amount ?? 0) || 0) + (Number(row.igst ?? row.igst_amount ?? 0) || 0);
+    const cgst = Number(row.cgst ?? row.cgst_amount ?? 0) || 0;
+    const sgst = Number(row.sgst ?? row.sgst_amount ?? 0) || 0;
+    const igst = Number(row.igst ?? row.igst_amount ?? 0) || 0;
+    const gst = cgst + sgst + igst;
     const total = Number(row.total ?? row.total_amount ?? 0) || 0;
     byMonth.set(month, (byMonth.get(month) || 0) + total);
     byClient.set(client, (byClient.get(client) || 0) + total);
     sum.taxableAmount += taxable;
+    sum.cgstAmount += cgst;
+    sum.sgstAmount += sgst;
+    sum.igstAmount += igst;
     sum.gstAmount += gst;
     sum.totalAmount += total;
     return sum;
-  }, { invoiceCount: issued.length, taxableAmount: 0, gstAmount: 0, totalAmount: 0 });
+  }, { invoiceCount: issued.length, creditNoteCount: 0, taxableAmount: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstAmount: 0, creditAmount: 0, totalAmount: 0 });
+  (Array.isArray(creditNotes) ? creditNotes : []).forEach((row) => {
+    const month = String(row.creditNoteDate || row.credit_note_date || "").slice(0, 7) || "Unknown";
+    const client = String(row.clientName || row.client_name || "Unassigned").trim() || "Unassigned";
+    const taxable = Number(row.taxableAmount ?? row.taxable_amount ?? 0) || 0;
+    const cgst = Number(row.cgst ?? row.cgst_amount ?? 0) || 0;
+    const sgst = Number(row.sgst ?? row.sgst_amount ?? 0) || 0;
+    const igst = Number(row.igst ?? row.igst_amount ?? 0) || 0;
+    const total = Number(row.total ?? row.total_amount ?? 0) || 0;
+    byMonth.set(month, (byMonth.get(month) || 0) - total);
+    byClient.set(client, (byClient.get(client) || 0) - total);
+    totals.creditNoteCount += 1;
+    totals.creditAmount += total;
+    totals.taxableAmount -= taxable;
+    totals.cgstAmount -= cgst;
+    totals.sgstAmount -= sgst;
+    totals.igstAmount -= igst;
+    totals.gstAmount -= cgst + sgst + igst;
+    totals.totalAmount -= total;
+  });
   return {
     ...totals,
     byMonth: Array.from(byMonth, ([month, totalAmount]) => ({ month, totalAmount })).sort((a, b) => a.month.localeCompare(b.month)),
@@ -18290,8 +18315,14 @@ const server = http.createServer(async (req, res) => {
         `?select=*&company_id=eq.${encodeURIComponent(actor.companyId)}&financial_year=eq.${encodeURIComponent(financialYear)}&order=invoice_date.desc,created_at.desc`,
         { pageSize: 1000, maxPages: 20 }
       );
+      const creditRows = await supabaseTableFetchAll(
+        "credit_notes",
+        `?select=*&company_id=eq.${encodeURIComponent(actor.companyId)}&financial_year=eq.${encodeURIComponent(financialYear)}`,
+        { pageSize: 1000, maxPages: 20 }
+      ).catch(() => []);
       const invoices = (rows || []).map(sanitizeInvoiceRecord);
-      sendJson(res, 200, { ok: true, result: { financialYear, invoices, analytics: buildInvoiceAnalytics(invoices) } });
+      const creditNotes = (creditRows || []).map(sanitizeCreditNoteRecord);
+      sendJson(res, 200, { ok: true, result: { financialYear, invoices, analytics: buildInvoiceAnalytics(invoices, creditNotes) } });
     } catch (error) {
       const message = String(error?.message || error);
       sendJson(res, 400, { ok: false, error: /invoices|relation/i.test(message) ? "Invoice database is not ready. Run sql/2026-10-20-invoices.sql in Supabase first." : message });

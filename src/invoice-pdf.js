@@ -379,9 +379,19 @@ async function generateCreditNotePdf(input = {}, savedSettings = {}) {
   const page = doc.addPage([612, 842]);
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const logo = await embedDataUrlImage(doc, profile.logoDataUrl);
+  const signature = await embedDataUrlImage(doc, profile.signatureDataUrl);
   const left = 38; const width = 536;
   page.drawText("CREDIT NOTE", { x: left, y: 790, font: bold, size: 19, color: NAVY });
   page.drawText(`Credit Note ${noteNumber}`, { x: left, y: 770, font: regular, size: 9, color: MUTED });
+  if (logo) {
+    const scale = Math.min(130 / logo.width, 68 / logo.height);
+    const logoWidth = logo.width * scale;
+    const logoHeight = logo.height * scale;
+    page.drawImage(logo, { x: 574 - logoWidth, y: 754, width: logoWidth, height: logoHeight });
+  } else {
+    drawLines(page, wrapText(profile.tradeName || profile.legalName, bold, 8, 130, 2), { x: 444, y: 792, font: bold, size: 8, color: NAVY, lineHeight: 10, maxLines: 2 });
+  }
   drawCell(page, { x: left, y: 635, width, height: 110 });
   page.drawRectangle({ x: left, y: 725, width, height: 20, color: NAVY });
   page.drawText("SUPPLIER / ISSUER", { x: left + 8, y: 731, font: bold, size: 8, color: rgb(1, 1, 1) });
@@ -399,6 +409,12 @@ async function generateCreditNotePdf(input = {}, savedSettings = {}) {
   rows.forEach(([label, value]) => { drawCell(page, { x: left, y, width: 180, height: 35, fill: PALE }); drawCell(page, { x: left + 180, y, width: 356, height: 35 }); page.drawText(label, { x: left + 9, y: y + 13, font: bold, size: 8.5, color: TEXT }); drawLines(page, wrapText(value, regular, 8.5, 336, 2), { x: left + 190, y: y + 13, font: regular, size: 8.5, lineHeight: 10, maxLines: 2 }); y -= 35; });
   page.drawText("This credit note adjusts the above referenced invoice.", { x: left, y: 230, font: regular, size: 8.5, color: MUTED });
   page.drawText(text(profile.legalName), { x: 370, y: 115, font: bold, size: 8, color: TEXT });
+  if (signature) {
+    const scale = Math.min(160 / signature.width, 65 / signature.height);
+    const signatureWidth = signature.width * scale;
+    const signatureHeight = signature.height * scale;
+    page.drawImage(signature, { x: 486 - (signatureWidth / 2), y: 77, width: signatureWidth, height: signatureHeight });
+  }
   page.drawText("Authorized Signatory", { x: 400, y: 70, font: regular, size: 8, color: TEXT });
   const bytes = await doc.save();
   return { filename: `${safeFilename(noteNumber)}.pdf`, mimeType: "application/pdf", fileData: Buffer.from(bytes).toString("base64"), totals: { taxableAmount, cgst, sgst, igst, total, taxMode } };
