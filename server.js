@@ -18377,7 +18377,7 @@ const server = http.createServer(async (req, res) => {
         })),
         prefer: "return=minimal"
       }).catch(() => null);
-      sendJson(res, 200, { ok: true, result: { invoice: sanitizeInvoiceRecord(savedRows?.[0] || invoiceRow), fileData: generated.fileData, mimeType: generated.mimeType, filename: generated.filename } });
+      sendJson(res, 200, { ok: true, result: { invoice: sanitizeInvoiceRecord(savedRows?.[0] || invoiceRow) } });
     } catch (error) {
       const message = String(error?.message || error);
       sendJson(res, 400, { ok: false, error: /invoices|relation/i.test(message) ? "Invoice database is not ready. Run sql/2026-10-20-invoices.sql in Supabase first." : message });
@@ -18534,7 +18534,7 @@ const server = http.createServer(async (req, res) => {
       await supabaseTableFetch("invoice_items", `?invoice_id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}`, { method: "DELETE", prefer: "return=minimal" });
       await supabaseTableFetch("invoice_items", "?select=id", { method: "POST", body: normalized.items.map((item) => ({ id: crypto.randomUUID(), invoice_id: invoiceId, company_id: actor.companyId, assessment_id: item.assessmentId || null, candidate_id: item.candidateId || null, candidate_name: item.candidateName, description: item.serviceDescription, annual_ctc: item.annualCtc, fee_percent: item.feePercent, taxable_amount: item.taxableAmount, created_at: now })), prefer: "return=minimal" });
       await deleteStoredFile({ provider: existing.file_provider, key: existing.file_key, url: existing.file_url }).catch(() => null);
-      sendJson(res, 200, { ok: true, result: { invoice: sanitizeInvoiceRecord(savedRows?.[0] || { ...existing, ...patch }), fileData: generated.fileData, mimeType: generated.mimeType, filename: generated.filename } });
+      sendJson(res, 200, { ok: true, result: { invoice: sanitizeInvoiceRecord(savedRows?.[0] || { ...existing, ...patch }) } });
     } catch (error) { sendJson(res, 400, { ok: false, error: String(error?.message || error) }); }
     return;
   }

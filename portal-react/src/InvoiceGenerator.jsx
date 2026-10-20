@@ -93,7 +93,7 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
     const next = editingInvoice.input || {};
     setClientName(next.clientName || editingInvoice.invoice?.clientName || "");
     const editClientName = next.clientName || editingInvoice.invoice?.clientName || "";
-    setClient({ ...EMPTY_CLIENT, ...(clientProfiles[editClientName] || {}), legalName: clientProfiles[editClientName]?.legalName || editClientName });
+    setClient({ ...EMPTY_CLIENT, ...(clientProfiles[editClientName] || {}), ...(next.clientDetails || {}), legalName: next.clientDetails?.legalName || clientProfiles[editClientName]?.legalName || editClientName });
     setInvoice((current) => ({ ...current, ...next, invoiceNumber: editingInvoice.invoice?.invoiceNumber || next.invoiceNumber || "", items: Array.isArray(editingInvoice.items) && editingInvoice.items.length ? editingInvoice.items : (next.items || current.items) }));
     setReviewed(false);
   }, [editingInvoice]);
@@ -142,7 +142,6 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
     setWorking(true);
     try {
       const invoicePayload = { ...invoice, items: invoice.items.map((item) => ({ ...item })), clientName, clientDetails: { ...client, legalName: client.legalName || clientName } };
-      await saveSettings({ quiet: true });
       const endpoint = action === "finalize" ? (editingInvoice?.invoice?.id ? `/company/invoices/${encodeURIComponent(editingInvoice.invoice.id)}` : "/company/invoices/finalize") : "/company/reports/invoice/pdf";
       const result = await api(endpoint, token, action === "finalize" && editingInvoice?.invoice?.id ? "PUT" : "POST", {
         invoice: invoicePayload
