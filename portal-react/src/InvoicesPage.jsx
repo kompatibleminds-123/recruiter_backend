@@ -171,13 +171,14 @@ export default function InvoicesPage({ token, api, clients = [] }) {
       try {
         const file = await readPdf(sourceFile);
         const preview = await api("/company/invoices/historical/preview", token, "POST", { file });
-        rows.push({ id: `${Date.now()}-${rows.length}`, file, invoice: preview.invoice || {}, missingFields: preview.missingFields || [], state: preview.status || "needs_review", error: "" });
+        rows.push({ id: `${Date.now()}-${rows.length}`, file, invoice: preview.invoice || {}, missingFields: preview.missingFields || [], state: preview.status || "needs_review", aiAssisted: Boolean(preview.aiAssisted), error: "" });
       } catch (error) {
         rows.push({ id: `${Date.now()}-${rows.length}`, file: null, filename: sourceFile.name, invoice: {}, missingFields: [], state: "error", error: error.message });
       }
     }
     setBulkRows(rows);
-    setStatus({ text: `${rows.length} invoice PDFs processed. Review the extracted values before importing.`, kind: "success" });
+    const aiAssisted = rows.filter((row) => row.aiAssisted).length;
+    setStatus({ text: `${rows.length} invoice PDFs processed${aiAssisted ? `; AI completed ${aiAssisted} incomplete invoice${aiAssisted === 1 ? "" : "s"}` : ""}. Review the extracted values before importing.`, kind: "success" });
     setLoading(false);
   };
 

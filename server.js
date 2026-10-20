@@ -5,7 +5,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { buildRecruiterIncentives } = require("./src/recruiter-incentives");
 const { generateInvoicePdf, normalizeInvoiceInput, generateCreditNotePdf } = require("./src/invoice-pdf");
-const { extractHistoricalInvoice } = require("./src/invoice-import");
+const { extractHistoricalInvoice, getHistoricalInvoiceText, normalizeAiInvoiceFields } = require("./src/invoice-import");
 const { buildJobBooleanFingerprint, generateJobBooleanOptions, getCachedJobBooleanState } = require("./src/job-boolean");
 const { parseCandidatePayload } = require("./src/parser");
 const { callOpenAiJsonSchema, callOpenAiQuestions, normalizeCandidateFileWithAi, normalizeCandidateWithAi, extractLinkedInAssistFromScreenshotWithAi } = require("./src/ai");
@@ -18464,7 +18464,35 @@ const server = http.createServer(async (req, res) => {
       }
       const body = await readJsonBody(req);
       const settings = await getCompanySharedExportPresets(actor.companyId).catch(() => ({}));
-      const preview = await extractHistoricalInvoice(body?.file || {}, settings);
+      const file = body?.file || {};
+      const pdfText = await getHistoricalInvoiceText(file);
+      const preview = await extractHistoricalInvoice(file, settings, { text: pdfText });
+      const requiresAi = !preview.invoice?.candidateName || !(Number(preview.invoice?.taxableAmount) > 0);
+      if (requiresAi && String(process.env.OPENAI_API_KEY || "").trim()) {
+        const schema = {
+          type: "object", additionalProperties: false,
+          required: ["candidateName", "annualCtc", "feePercent", "taxableAmount", "gstRate", "taxMode"],
+          properties: {
+            candidateName: { type: "string" }, annualCtc: { type: "number" }, feePercent: { type: "number" },
+            taxableAmount: { type: "number" }, gstRate: { type: "number" }, taxMode: { type: "string", enum: ["igst", "cgst_sgst", "none", ""] }
+          }
+        };
+        const aiResult = await callOpenAiJsonSchema({
+          apiKey: String(process.env.OPENAI_API_KEY || "").trim(), model: "gpt-4.1-mini", schemaName: "historical_invoice_fields", schema,
+          prompt: ["Extract the requested fields from this Indian recruitment invoice text.", "Use only explicit values. Return empty string or 0 if absent.", "Candidate is the person shown after Candidate. Taxable amount is before GST; do not return total including GST.", "", pdfText.slice(0, 18000)].join("\n")
+        });
+        const ai = normalizeAiInvoiceFields(aiResult);
+        if (ai.candidateName) preview.invoice.candidateName = ai.candidateName;
+        if (ai.annualCtc) preview.invoice.annualCtc = ai.annualCtc;
+        if (ai.feePercent) preview.invoice.feePercent = ai.feePercent;
+        if (ai.taxableAmount) preview.invoice.taxableAmount = ai.taxableAmount;
+        if (ai.gstRate) preview.invoice.gstRate = ai.gstRate;
+        if (ai.taxMode) preview.invoice.taxMode = ai.taxMode;
+        preview.invoice.items = [{ ...(preview.invoice.items?.[0] || {}), candidateName: preview.invoice.candidateName, annualCtc: preview.invoice.annualCtc, feePercent: preview.invoice.feePercent, taxableAmount: preview.invoice.taxableAmount }];
+        preview.missingFields = (preview.missingFields || []).filter((field) => field !== "candidateName" && field !== "taxableAmount");
+        preview.status = preview.missingFields.length ? "needs_review" : "ready";
+        preview.aiAssisted = true;
+      }
       sendJson(res, 200, { ok: true, result: preview });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });

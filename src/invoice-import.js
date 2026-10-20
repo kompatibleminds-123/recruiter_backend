@@ -36,7 +36,7 @@ function allMatches(text, pattern) {
   return Array.from(text.matchAll(pattern), (match) => clean(match[1])).filter(Boolean);
 }
 
-async function extractHistoricalInvoice(file = {}, settings = {}) {
+async function getHistoricalInvoiceText(file = {}) {
   const buffer = Buffer.from(String(file.fileData || ""), "base64");
   if (!buffer.length || buffer.length > 12 * 1024 * 1024 || buffer.subarray(0, 4).toString() !== "%PDF") {
     throw new Error("Please upload a valid text PDF smaller than 12 MB.");
@@ -50,6 +50,21 @@ async function extractHistoricalInvoice(file = {}, settings = {}) {
   }
   const text = clean(rawText);
   if (text.length < 30) throw new Error("No readable text found in this PDF.");
+  return text;
+}
+
+function normalizeAiInvoiceFields(ai = {}) {
+  const candidateName = clean(ai.candidateName);
+  const taxableAmount = Math.max(0, amount(ai.taxableAmount));
+  const annualCtc = Math.max(0, amount(ai.annualCtc));
+  const feePercent = Math.max(0, amount(ai.feePercent));
+  const gstRate = Math.max(0, amount(ai.gstRate));
+  const taxMode = ["igst", "cgst_sgst", "none"].includes(clean(ai.taxMode)) ? clean(ai.taxMode) : "";
+  return { candidateName, annualCtc, feePercent, taxableAmount, gstRate, taxMode };
+}
+
+async function extractHistoricalInvoice(file = {}, settings = {}, options = {}) {
+  const text = options.text || await getHistoricalInvoiceText(file);
 
   const knownClients = Object.keys(settings?.invoiceClientProfiles || {}).sort((a, b) => b.length - a.length);
   const knownClient = knownClients.find((name) => text.toLowerCase().includes(name.toLowerCase())) || "";
@@ -116,4 +131,4 @@ async function extractHistoricalInvoice(file = {}, settings = {}) {
   };
 }
 
-module.exports = { extractHistoricalInvoice, isoDate };
+module.exports = { extractHistoricalInvoice, getHistoricalInvoiceText, normalizeAiInvoiceFields, isoDate };
