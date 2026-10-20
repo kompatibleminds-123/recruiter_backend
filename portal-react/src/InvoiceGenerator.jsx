@@ -135,13 +135,8 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
         invoice: { ...invoice, clientName }
       });
       const file = dataUrlToFile(`data:${result.mimeType};base64,${result.fileData}`, result.filename || "invoice.pdf");
-      if (action === "share" && navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
-        await navigator.share({ title: `Invoice ${invoice.invoiceNumber}`, files: [file] });
-        setStatus({ text: "Invoice shared.", kind: "success" });
-      } else {
-        downloadFile(file);
-        setStatus({ text: action === "finalize" ? "Invoice finalized, saved and downloaded." : action === "share" ? "Direct sharing is not supported here, so the PDF was downloaded for sharing." : "Invoice PDF downloaded.", kind: "success" });
-      }
+      downloadFile(file);
+      setStatus({ text: action === "finalize" ? "Invoice finalized, saved and downloaded." : "Invoice PDF downloaded.", kind: "success" });
       if (action === "finalize" && typeof onSaved === "function") onSaved(result?.invoice || null);
     } catch (error) {
       if (String(error?.name || "") !== "AbortError") setStatus({ text: error.message || String(error), kind: "error" });
@@ -216,7 +211,6 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
         <div className="button-row">
           <button disabled={working} onClick={() => void generate("finalize")}>{working ? "Saving..." : "Finalize, Save & Download"}</button>
           <button className="ghost-btn" disabled={working} onClick={() => void generate("download")}>Preview PDF</button>
-          <button className="ghost-btn" disabled={working} onClick={() => void generate("share")}>Share invoice</button>
         </div>
       </div>
       {status.text ? <div className={`status ${status.kind || ""}`}>{status.text}</div> : null}

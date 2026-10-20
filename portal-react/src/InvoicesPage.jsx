@@ -72,16 +72,12 @@ export default function InvoicesPage({ token, api, clients = [] }) {
 
   useEffect(() => { if (tab === "register" || tab === "analytics") void loadInvoices(); }, [tab, loadInvoices]);
 
-  const downloadStoredInvoice = async (invoice, share = false) => {
+  const downloadStoredInvoice = async (invoice) => {
     try {
       const response = await fetch(`/company/invoices/${encodeURIComponent(invoice.id)}/pdf?download=1`, { headers: { Authorization: `Bearer ${token}` } });
       if (!response.ok) throw new Error((await response.json().catch(() => ({})))?.error || "Could not download invoice.");
       const blob = await response.blob();
       const file = new File([blob], invoice.filename || `${invoice.invoiceNumber}.pdf`, { type: "application/pdf" });
-      if (share && navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
-        await navigator.share({ title: `Invoice ${invoice.invoiceNumber}`, files: [file] });
-        return;
-      }
       const url = URL.createObjectURL(file);
       const anchor = document.createElement("a"); anchor.href = url; anchor.download = file.name; anchor.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -123,7 +119,7 @@ export default function InvoicesPage({ token, api, clients = [] }) {
         <div className="button-row"><button className="ghost-btn" disabled={loading} onClick={() => void loadInvoices()}>{loading ? "Loading..." : "Refresh"}</button><button disabled={!data.invoices.length} onClick={() => downloadInvoiceExcel(financialYear, data.invoices)}>Download Excel</button></div>
       </div>
       <div className="table-wrap"><table className="dashboard-table"><thead><tr><th>Invoice</th><th>Date</th><th>Client</th><th>Candidate</th><th>Source</th><th>Taxable</th><th>GST</th><th>Total</th><th>PDF</th></tr></thead><tbody>
-        {data.invoices.length ? data.invoices.map((item) => <tr key={item.id}><td>{item.invoiceNumber}</td><td>{item.invoiceDate}</td><td>{item.clientName}</td><td>{item.candidateName || "-"}</td><td>{item.source}</td><td>{money(item.taxableAmount)}</td><td>{money(Number(item.cgst || 0) + Number(item.sgst || 0) + Number(item.igst || 0))}</td><td><strong>{money(item.total)}</strong></td><td><div className="button-row tight"><button className="ghost-btn" onClick={() => void downloadStoredInvoice(item)}>Download</button><button className="ghost-btn" onClick={() => void downloadStoredInvoice(item, true)}>Share</button></div></td></tr>) : <tr><td colSpan="9">{loading ? "Loading invoices..." : "No finalized invoices in this financial year."}</td></tr>}
+        {data.invoices.length ? data.invoices.map((item) => <tr key={item.id}><td>{item.invoiceNumber}</td><td>{item.invoiceDate}</td><td>{item.clientName}</td><td>{item.candidateName || "-"}</td><td>{item.source}</td><td>{money(item.taxableAmount)}</td><td>{money(Number(item.cgst || 0) + Number(item.sgst || 0) + Number(item.igst || 0))}</td><td><strong>{money(item.total)}</strong></td><td><button className="ghost-btn" onClick={() => void downloadStoredInvoice(item)}>Download</button></td></tr>) : <tr><td colSpan="9">{loading ? "Loading invoices..." : "No finalized invoices in this financial year."}</td></tr>}
       </tbody></table></div>
     </section> : null}
 
