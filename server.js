@@ -13261,8 +13261,8 @@ function buildInvoiceAnalytics(rows = [], creditNotes = []) {
     const igst = Number(row.igst ?? row.igst_amount ?? 0) || 0;
     const gst = cgst + sgst + igst;
     const total = Number(row.total ?? row.total_amount ?? 0) || 0;
-    byMonth.set(month, (byMonth.get(month) || 0) + total);
-    byClient.set(client, (byClient.get(client) || 0) + total);
+    byMonth.set(month, (byMonth.get(month) || 0) + taxable);
+    byClient.set(client, (byClient.get(client) || 0) + taxable);
     sum.taxableAmount += taxable;
     sum.cgstAmount += cgst;
     sum.sgstAmount += sgst;
@@ -13279,8 +13279,8 @@ function buildInvoiceAnalytics(rows = [], creditNotes = []) {
     const sgst = Number(row.sgst ?? row.sgst_amount ?? 0) || 0;
     const igst = Number(row.igst ?? row.igst_amount ?? 0) || 0;
     const total = Number(row.total ?? row.total_amount ?? 0) || 0;
-    byMonth.set(month, (byMonth.get(month) || 0) - total);
-    byClient.set(client, (byClient.get(client) || 0) - total);
+    byMonth.set(month, (byMonth.get(month) || 0) - taxable);
+    byClient.set(client, (byClient.get(client) || 0) - taxable);
     totals.creditNoteCount += 1;
     totals.creditAmount += total;
     totals.taxableAmount -= taxable;
@@ -13292,8 +13292,8 @@ function buildInvoiceAnalytics(rows = [], creditNotes = []) {
   });
   return {
     ...totals,
-    byMonth: Array.from(byMonth, ([month, totalAmount]) => ({ month, totalAmount })).sort((a, b) => a.month.localeCompare(b.month)),
-    byClient: Array.from(byClient, ([clientName, totalAmount]) => ({ clientName, totalAmount })).sort((a, b) => b.totalAmount - a.totalAmount)
+    byMonth: Array.from(byMonth, ([month, taxableAmount]) => ({ month, taxableAmount })).sort((a, b) => a.month.localeCompare(b.month)),
+    byClient: Array.from(byClient, ([clientName, taxableAmount]) => ({ clientName, taxableAmount })).sort((a, b) => b.taxableAmount - a.taxableAmount)
   };
 }
 
