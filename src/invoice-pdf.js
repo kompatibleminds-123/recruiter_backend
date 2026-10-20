@@ -381,33 +381,42 @@ async function generateCreditNotePdf(input = {}, savedSettings = {}) {
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const logo = await embedDataUrlImage(doc, profile.logoDataUrl);
   const signature = await embedDataUrlImage(doc, profile.signatureDataUrl);
-  const left = 38; const width = 536;
+  const left = 34; const width = 544;
   page.drawText("CREDIT NOTE", { x: left, y: 790, font: bold, size: 19, color: NAVY });
-  page.drawText(`Credit Note ${noteNumber}`, { x: left, y: 770, font: regular, size: 9, color: MUTED });
+  page.drawText(`Credit Note ${noteNumber}`, { x: left, y: 778, font: regular, size: 9, color: MUTED });
   if (logo) {
     const scale = Math.min(130 / logo.width, 68 / logo.height);
     const logoWidth = logo.width * scale;
     const logoHeight = logo.height * scale;
-    page.drawImage(logo, { x: 574 - logoWidth, y: 754, width: logoWidth, height: logoHeight });
+    page.drawImage(logo, { x: 568 - logoWidth, y: 754, width: logoWidth, height: logoHeight });
   } else {
-    drawLines(page, wrapText(profile.tradeName || profile.legalName, bold, 8, 130, 2), { x: 444, y: 792, font: bold, size: 8, color: NAVY, lineHeight: 10, maxLines: 2 });
+    drawLines(page, wrapText(profile.tradeName || profile.legalName, bold, 8, 130, 2), { x: 438, y: 792, font: bold, size: 8, color: NAVY, lineHeight: 10, maxLines: 2 });
   }
-  drawCell(page, { x: left, y: 635, width, height: 110 });
-  page.drawRectangle({ x: left, y: 725, width, height: 20, color: NAVY });
-  page.drawText("SUPPLIER / ISSUER", { x: left + 8, y: 731, font: bold, size: 8, color: rgb(1, 1, 1) });
-  page.drawText(text(profile.legalName), { x: left + 10, y: 706, font: bold, size: 9, color: TEXT });
-  drawLines(page, wrapText(profile.address, regular, 8.5, 290, 4), { x: left + 10, y: 690, font: regular, size: 8.5, lineHeight: 11, maxLines: 4 });
-  page.drawLine({ start: { x: left + 320, y: 635 }, end: { x: left + 320, y: 725 }, thickness: 0.6, color: BORDER });
-  drawLines(page, [`Credit Note No: ${noteNumber}`, `Date: ${formatInvoiceDate(noteDate)}`, `Against Invoice: ${originalInvoiceNumber}`], { x: left + 334, y: 704, font: regular, size: 8.5, lineHeight: 19 });
-  drawCell(page, { x: left, y: 510, width, height: 92 });
-  page.drawRectangle({ x: left, y: 582, width, height: 20, color: NAVY });
-  page.drawText("BILLED TO", { x: left + 8, y: 588, font: bold, size: 8, color: rgb(1, 1, 1) });
-  page.drawText(text(client.legalName || clientName), { x: left + 10, y: 562, font: bold, size: 9, color: TEXT });
-  drawLines(page, wrapText(client.address, regular, 8.5, 500, 4), { x: left + 10, y: 546, font: regular, size: 8.5, lineHeight: 11, maxLines: 4 });
+  drawCell(page, { x: left, y: 610, width, height: 138 });
+  page.drawRectangle({ x: left, y: 728, width, height: 20, color: NAVY });
+  page.drawText("DETAILS OF SUPPLIER / BILLED BY", { x: left + 8, y: 734, font: bold, size: 8, color: rgb(1, 1, 1) });
+  page.drawLine({ start: { x: left + 325, y: 610 }, end: { x: left + 325, y: 728 }, thickness: 0.6, color: BORDER });
+  let supplierY = 710;
+  page.drawText(text(profile.legalName), { x: left + 10, y: supplierY, font: bold, size: 9, color: TEXT });
+  supplierY -= 14;
+  supplierY = drawLines(page, wrapText(profile.address, regular, 8.5, 300, 3), { x: left + 10, y: supplierY, font: regular, size: 8.5, lineHeight: 12, maxLines: 3 });
+  const supplierMeta = [profile.cin ? `CIN: ${text(profile.cin)}` : "", profile.pan ? `PAN: ${text(profile.pan)}` : "", profile.gstin ? `GSTIN: ${text(profile.gstin)}` : "", `State: ${text(profile.state) || "-"}`, `State Code: ${text(profile.stateCode) || "-"}`].filter(Boolean);
+  drawLines(page, supplierMeta, { x: left + 10, y: supplierY - 2, font: regular, size: 8.5, lineHeight: 12 });
+  page.drawText(`Credit Note No: ${noteNumber}`, { x: left + 337, y: 710, font: bold, size: 9, color: TEXT });
+  page.drawText(`Credit Note Date: ${formatInvoiceDate(noteDate)}`, { x: left + 337, y: 692, font: regular, size: 8.5, color: TEXT });
+  page.drawText(`Against Invoice: ${originalInvoiceNumber}`, { x: left + 337, y: 674, font: regular, size: 8.5, color: TEXT });
+
+  drawCell(page, { x: left, y: 440, width, height: 152 });
+  page.drawRectangle({ x: left, y: 572, width, height: 20, color: NAVY });
+  page.drawText("DETAILS OF RECEIVER / BILLED TO", { x: left + 8, y: 578, font: bold, size: 8, color: rgb(1, 1, 1) });
+  page.drawText(text(client.legalName || clientName), { x: left + 10, y: 556, font: bold, size: 9, color: TEXT });
+  drawLines(page, wrapText(client.address, regular, 8.5, 310, 8), { x: left + 10, y: 542, font: regular, size: 8.5, lineHeight: 12, maxLines: 8 });
+  const clientMeta = [client.gstin ? `GSTIN: ${text(client.gstin)}` : "GSTIN: -", `State: ${text(client.state) || "-"}`, `State Code: ${text(client.stateCode) || "-"}`];
+  drawLines(page, clientMeta, { x: left + 330, y: 542, font: regular, size: 8.5, lineHeight: 15 });
   const rows = [["Reason", text(input.reason) || "Billing adjustment"], ["Taxable adjustment", `Rs. ${money(taxableAmount)}`], ["GST adjustment", taxMode === "cgst_sgst" ? `CGST Rs. ${money(cgst)} + SGST Rs. ${money(sgst)}` : taxMode === "igst" ? `IGST Rs. ${money(igst)}` : "Nil"], ["Total credit", `Rs. ${money(total)}`]];
-  let y = 430;
-  rows.forEach(([label, value]) => { drawCell(page, { x: left, y, width: 180, height: 35, fill: PALE }); drawCell(page, { x: left + 180, y, width: 356, height: 35 }); page.drawText(label, { x: left + 9, y: y + 13, font: bold, size: 8.5, color: TEXT }); drawLines(page, wrapText(value, regular, 8.5, 336, 2), { x: left + 190, y: y + 13, font: regular, size: 8.5, lineHeight: 10, maxLines: 2 }); y -= 35; });
-  page.drawText("This credit note adjusts the above referenced invoice.", { x: left, y: 230, font: regular, size: 8.5, color: MUTED });
+  let y = 382;
+  rows.forEach(([label, value]) => { drawCell(page, { x: left, y, width: 180, height: 38, fill: PALE }); drawCell(page, { x: left + 180, y, width: 364, height: 38 }); page.drawText(label, { x: left + 9, y: y + 14, font: bold, size: 8.5, color: TEXT }); drawLines(page, wrapText(value, regular, 8.5, 344, 2), { x: left + 190, y: y + 14, font: regular, size: 8.5, lineHeight: 10, maxLines: 2 }); y -= 38; });
+  page.drawText("This credit note adjusts the above referenced invoice.", { x: left, y: 205, font: regular, size: 8.5, color: MUTED });
   drawLines(page, wrapText(profile.legalName, bold, 8, 180, 2), { x: 356, y: 166, font: bold, size: 8, color: TEXT, lineHeight: 10, maxLines: 2 });
   if (signature) {
     const scale = Math.min(160 / signature.width, 65 / signature.height);
