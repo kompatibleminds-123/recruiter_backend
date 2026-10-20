@@ -89,14 +89,16 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
   }, [api, token]);
 
   useEffect(() => {
-    if (!editingInvoice) return;
+    // Wait for saved client profiles so historical invoices automatically load
+    // the already-saved client address/GST/state details on opening Edit.
+    if (!editingInvoice || loading) return;
     const next = editingInvoice.input || {};
     setClientName(next.clientName || editingInvoice.invoice?.clientName || "");
     const editClientName = next.clientName || editingInvoice.invoice?.clientName || "";
     setClient({ ...EMPTY_CLIENT, ...(clientProfiles[editClientName] || {}), ...(next.clientDetails || {}), legalName: next.clientDetails?.legalName || clientProfiles[editClientName]?.legalName || editClientName });
     setInvoice((current) => ({ ...current, ...next, invoiceNumber: editingInvoice.invoice?.invoiceNumber || next.invoiceNumber || "", items: Array.isArray(editingInvoice.items) && editingInvoice.items.length ? editingInvoice.items : (next.items || current.items) }));
     setReviewed(false);
-  }, [editingInvoice]);
+  }, [editingInvoice, loading]);
 
   const clientOptions = useMemo(() => Array.from(new Set([
     ...clients.map((item) => String(item?.name || item || "").trim()),
