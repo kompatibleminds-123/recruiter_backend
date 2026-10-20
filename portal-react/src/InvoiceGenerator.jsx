@@ -52,7 +52,7 @@ function readImage(file, setter, setStatus) {
   reader.readAsDataURL(file);
 }
 
-export default function InvoiceGenerator({ token, api, clients = [], onSaved = null }) {
+export default function InvoiceGenerator({ token, api, clients = [], onSaved = null, editingInvoice = null, onCancelEdit = null }) {
   const [profile, setProfile] = useState(EMPTY_PROFILE);
   const [clientProfiles, setClientProfiles] = useState({});
   const [billingRules, setBillingRules] = useState({});
@@ -65,6 +65,7 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
   const [status, setStatus] = useState({ text: "", kind: "" });
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
+  const [reviewed, setReviewed] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -86,6 +87,16 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
       .finally(() => active && setLoading(false));
     return () => { active = false; };
   }, [api, token]);
+
+  useEffect(() => {
+    if (!editingInvoice) return;
+    const next = editingInvoice.input || {};
+    setClientName(next.clientName || editingInvoice.invoice?.clientName || "");
+    const editClientName = next.clientName || editingInvoice.invoice?.clientName || "";
+    setClient({ ...EMPTY_CLIENT, ...(clientProfiles[editClientName] || {}), legalName: clientProfiles[editClientName]?.legalName || editClientName });
+    setInvoice((current) => ({ ...current, ...next, invoiceNumber: editingInvoice.invoice?.invoiceNumber || next.invoiceNumber || "", items: Array.isArray(editingInvoice.items) && editingInvoice.items.length ? editingInvoice.items : (next.items || current.items) }));
+    setReviewed(false);
+  }, [editingInvoice, clientProfiles]);
 
   const clientOptions = useMemo(() => Array.from(new Set([
     ...clients.map((item) => String(item?.name || item || "").trim()),
@@ -131,7 +142,8 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
     setWorking(true);
     try {
       await saveSettings({ quiet: true });
-      const result = await api(action === "finalize" ? "/company/invoices/finalize" : "/company/reports/invoice/pdf", token, "POST", {
+      const endpoint = action === "finalize" ? (editingInvoice?.invoice?.id ? `/company/invoices/${encodeURIComponent(editingInvoice.invoice.id)}` : "/company/invoices/finalize") : "/company/reports/invoice/pdf";
+      const result = await api(endpoint, token, action === "finalize" && editingInvoice?.invoice?.id ? "PUT" : "POST", {
         invoice: { ...invoice, clientName }
       });
       const file = dataUrlToFile(`data:${result.mimeType};base64,${result.fileData}`, result.filename || "invoice.pdf");
@@ -179,7 +191,8 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
       </div>
 
       <div className="item-card">
-        <h3>Create invoice</h3>
+        <h3>{editingInvoice ? `Edit invoice ${editingInvoice.invoice?.invoiceNumber || ""}` : "Create invoice"}</h3>
+        {editingInvoice ? <p className="muted">Check the revised figures, review the PDF, then save the corrected invoice.</p> : null}
         <div className="form-grid three-col">
           <label><span>Client *</span><select value={clientName} onChange={(e) => selectClient(e.target.value)}><option value="">Select client</option>{clientOptions.map((name) => <option key={name} value={name}>{name}</option>)}</select></label>
           <label><span>Invoice number *</span><input value={invoice.invoiceNumber} onChange={(e) => updateInvoice("invoiceNumber", e.target.value)} placeholder="KM/26-27/00021" /></label>
@@ -209,8 +222,9 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
         </div>
         <div className="invoice-total-preview"><span>Taxable amount</span><strong>Rs. {computedTaxable.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
         <div className="button-row">
-          <button disabled={working} onClick={() => void generate("finalize")}>{working ? "Saving..." : "Finalize, Save & Download"}</button>
-          <button className="ghost-btn" disabled={working} onClick={() => void generate("download")}>Preview PDF</button>
+          <button className="ghost-btn" disabled={working} onClick={() => { setReviewed(true); void generate("download"); }}>{working ? "Generating..." : "Review PDF"}</button>
+          <button disabled={working || !reviewed} onClick={() => void generate("finalize")}>{working ? "Saving..." : editingInvoice ? "Save corrected invoice" : "Finalize, Save & Download"}</button>
+          {editingInvoice ? <button className="ghost-btn" disabled={working} onClick={onCancelEdit}>Cancel edit</button> : null}
         </div>
       </div>
       {status.text ? <div className={`status ${status.kind || ""}`}>{status.text}</div> : null}

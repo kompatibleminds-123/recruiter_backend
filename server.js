@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { buildRecruiterIncentives } = require("./src/recruiter-incentives");
-const { generateInvoicePdf, normalizeInvoiceInput } = require("./src/invoice-pdf");
+const { generateInvoicePdf, normalizeInvoiceInput, generateCreditNotePdf } = require("./src/invoice-pdf");
 const { extractHistoricalInvoice } = require("./src/invoice-import");
 const { buildJobBooleanFingerprint, generateJobBooleanOptions, getCachedJobBooleanState } = require("./src/job-boolean");
 const { parseCandidatePayload } = require("./src/parser");
@@ -13237,6 +13237,17 @@ function sanitizeInvoiceRecord(row = {}) {
   };
 }
 
+function sanitizeCreditNoteRecord(row = {}) {
+  return {
+    id: String(row.id || ""), financialYear: String(row.financial_year || ""), creditNoteNumber: String(row.credit_note_number || ""),
+    creditNoteDate: String(row.credit_note_date || ""), invoiceId: String(row.invoice_id || ""), invoiceNumber: String(row.invoice_number || ""),
+    clientName: String(row.client_name || ""), reason: String(row.reason || ""), taxableAmount: Number(row.taxable_amount || 0),
+    gstRate: Number(row.gst_rate || 0), taxMode: String(row.tax_mode || "none"), cgst: Number(row.cgst_amount || 0),
+    sgst: Number(row.sgst_amount || 0), igst: Number(row.igst_amount || 0), total: Number(row.total_amount || 0),
+    filename: String(row.file_name || "credit-note.pdf"), createdAt: String(row.created_at || "")
+  };
+}
+
 function buildInvoiceAnalytics(rows = []) {
   const issued = (Array.isArray(rows) ? rows : []).filter((row) => String(row?.status || "").toLowerCase() === "finalized");
   const byMonth = new Map();
@@ -18461,6 +18472,94 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && /^\/company\/invoices\/[^/]+$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (String(actor?.role || "").trim().toLowerCase() !== "admin") throw new Error("Only admin can view invoices.");
+      const invoiceId = String(requestUrl.pathname.match(/^\/company\/invoices\/([^/]+)$/)?.[1] || "").trim();
+      const rows = await supabaseTableFetch("invoices", `?select=*&id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&limit=1`);
+      const row = rows?.[0];
+      if (!row?.id) throw new Error("Invoice not found.");
+      const items = await supabaseTableFetchAll("invoice_items", `?select=*&invoice_id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&order=created_at.asc`, { pageSize: 20, maxPages: 1 });
+      sendJson(res, 200, { ok: true, result: { invoice: sanitizeInvoiceRecord(row), input: row.invoice_snapshot || {}, items: (items || []).map((item) => ({ candidateName: item.candidate_name, annualCtc: Number(item.annual_ctc || 0), feePercent: Number(item.fee_percent || 0), taxableAmount: Number(item.taxable_amount || 0), serviceDescription: item.description || "HR Consulting Services" })) } });
+    } catch (error) { sendJson(res, 400, { ok: false, error: String(error?.message || error) }); }
+    return;
+  }
+
+  if (req.method === "PUT" && /^\/company\/invoices\/[^/]+$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (String(actor?.role || "").trim().toLowerCase() !== "admin") throw new Error("Only admin can edit invoices.");
+      const invoiceId = String(requestUrl.pathname.match(/^\/company\/invoices\/([^/]+)$/)?.[1] || "").trim();
+      const rows = await supabaseTableFetch("invoices", `?select=*&id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&limit=1`);
+      const existing = rows?.[0];
+      if (!existing?.id) throw new Error("Invoice not found.");
+      const body = await readJsonBody(req); const input = { ...(body?.invoice || body || {}), invoiceNumber: existing.invoice_number };
+      const settings = await getCompanySharedExportPresets(actor.companyId).catch(() => ({}));
+      const normalized = normalizeInvoiceInput(input, settings); const generated = await generateInvoicePdf(input, settings);
+      const clients = await getCompanyClients(actor.companyId).catch(() => []);
+      const matchedClient = clients.find((item) => String(item?.name || "").trim().toLowerCase() === normalized.clientName.toLowerCase()) || null;
+      const stored = await storeUploadedFile({ filename: generated.filename, mimeType: generated.mimeType, fileData: generated.fileData }, { objectPrefix: `companies/${actor.companyId}/invoices/FY-${existing.financial_year}/${invoiceId}` });
+      const now = new Date().toISOString();
+      const patch = { client_id: matchedClient?.id || null, client_name: normalized.clientName, candidate_name: normalized.candidateName, service_description: normalized.serviceDescription, annual_ctc: normalized.annualCtc, fee_percent: normalized.feePercent, taxable_amount: normalized.taxableAmount, gst_rate: normalized.gstRate, tax_mode: normalized.taxMode, cgst_amount: normalized.cgst, sgst_amount: normalized.sgst, igst_amount: normalized.igst, total_amount: normalized.total, rounded_total: normalized.roundedTotal, client_snapshot: normalized.client || {}, invoice_snapshot: { ...input, totals: generated.totals }, file_provider: stored.provider, file_key: stored.key, file_url: stored.url, file_name: stored.filename, file_mime_type: stored.mimeType, file_size_bytes: stored.sizeBytes, file_sha256: sha256Hex(Buffer.from(generated.fileData, "base64")), revision_count: Number(existing.revision_count || 0) + 1, updated_by: actor.id, updated_at: now };
+      const savedRows = await supabaseTableFetch("invoices", `?id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}`, { method: "PATCH", body: patch, prefer: "return=representation" });
+      await supabaseTableFetch("invoice_items", `?invoice_id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}`, { method: "DELETE", prefer: "return=minimal" });
+      await supabaseTableFetch("invoice_items", "?select=id", { method: "POST", body: normalized.items.map((item) => ({ id: crypto.randomUUID(), invoice_id: invoiceId, company_id: actor.companyId, assessment_id: item.assessmentId || null, candidate_id: item.candidateId || null, candidate_name: item.candidateName, description: item.serviceDescription, annual_ctc: item.annualCtc, fee_percent: item.feePercent, taxable_amount: item.taxableAmount, created_at: now })), prefer: "return=minimal" });
+      await deleteStoredFile({ provider: existing.file_provider, key: existing.file_key, url: existing.file_url }).catch(() => null);
+      sendJson(res, 200, { ok: true, result: { invoice: sanitizeInvoiceRecord(savedRows?.[0] || { ...existing, ...patch }), fileData: generated.fileData, mimeType: generated.mimeType, filename: generated.filename } });
+    } catch (error) { sendJson(res, 400, { ok: false, error: String(error?.message || error) }); }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/credit-notes") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req)); if (String(actor?.role || "").trim().toLowerCase() !== "admin") throw new Error("Only admin can access credit notes.");
+      const requestedFy = String(requestUrl.searchParams.get("financialYear") || "").trim(); const financialYear = /^\d{4}-\d{2}$/.test(requestedFy) ? requestedFy : getIndiaFinancialYear(new Date().toISOString());
+      const rows = await supabaseTableFetchAll("credit_notes", `?select=*&company_id=eq.${encodeURIComponent(actor.companyId)}&financial_year=eq.${encodeURIComponent(financialYear)}&order=credit_note_date.desc`, { pageSize: 1000, maxPages: 10 });
+      sendJson(res, 200, { ok: true, result: { creditNotes: (rows || []).map(sanitizeCreditNoteRecord) } });
+    } catch (error) { sendJson(res, 400, { ok: false, error: String(error?.message || error) }); }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/credit-notes/finalize") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req)); if (String(actor?.role || "").trim().toLowerCase() !== "admin") throw new Error("Only admin can create credit notes.");
+      const body = await readJsonBody(req); const input = body?.creditNote || body || {}; const invoiceId = String(input.invoiceId || "").trim();
+      const invoiceRows = await supabaseTableFetch("invoices", `?select=*&id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&limit=1`); const invoice = invoiceRows?.[0]; if (!invoice?.id) throw new Error("Select a valid invoice.");
+      const settings = await getCompanySharedExportPresets(actor.companyId).catch(() => ({})); const noteInput = { ...input, clientName: invoice.client_name, originalInvoiceNumber: invoice.invoice_number };
+      const generated = await generateCreditNotePdf(noteInput, settings); const financialYear = getIndiaFinancialYear(noteInput.creditNoteDate);
+      const duplicate = await supabaseTableFetch("credit_notes", `?select=id&company_id=eq.${encodeURIComponent(actor.companyId)}&financial_year=eq.${encodeURIComponent(financialYear)}&credit_note_number=eq.${encodeURIComponent(noteInput.creditNoteNumber)}&limit=1`); if (duplicate?.length) throw new Error("This credit note number already exists in the selected financial year.");
+      const totalCredit = Number(generated.totals.total || 0); const alreadyRows = await supabaseTableFetchAll("credit_notes", `?select=total_amount&invoice_id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}`, { pageSize: 100, maxPages: 2 }); const alreadyCredited = (alreadyRows || []).reduce((sum, row) => sum + Number(row.total_amount || 0), 0); if (alreadyCredited + totalCredit > Number(invoice.total_amount || 0) + 0.01) throw new Error("Credit total cannot exceed the original invoice total.");
+      const noteId = crypto.randomUUID(); const stored = await storeUploadedFile({ filename: generated.filename, mimeType: generated.mimeType, fileData: generated.fileData }, { objectPrefix: `companies/${actor.companyId}/credit-notes/FY-${financialYear}/${noteId}` }); const now = new Date().toISOString();
+      const row = { id: noteId, company_id: actor.companyId, financial_year: financialYear, credit_note_number: noteInput.creditNoteNumber, credit_note_date: noteInput.creditNoteDate, invoice_id: invoiceId, invoice_number: invoice.invoice_number, client_id: invoice.client_id || null, client_name: invoice.client_name, reason: String(noteInput.reason || ""), taxable_amount: generated.totals.taxableAmount, gst_rate: Number(noteInput.gstRate || 0), tax_mode: generated.totals.taxMode, cgst_amount: generated.totals.cgst, sgst_amount: generated.totals.sgst, igst_amount: generated.totals.igst, total_amount: generated.totals.total, snapshot: noteInput, file_provider: stored.provider, file_key: stored.key, file_url: stored.url, file_name: stored.filename, file_mime_type: stored.mimeType, file_size_bytes: stored.sizeBytes, created_by: actor.id, created_at: now, updated_at: now };
+      const saved = await supabaseTableFetch("credit_notes", "?select=*", { method: "POST", body: row, prefer: "return=representation" }); sendJson(res, 200, { ok: true, result: { creditNote: sanitizeCreditNoteRecord(saved?.[0] || row), fileData: generated.fileData, mimeType: generated.mimeType, filename: generated.filename } });
+    } catch (error) { sendJson(res, 400, { ok: false, error: String(error?.message || error) }); }
+    return;
+  }
+
+  if (req.method === "GET" && /^\/company\/credit-notes\/[^/]+\/pdf$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerTokenFromRequest(req, requestUrl)); if (String(actor?.role || "").trim().toLowerCase() !== "admin") throw new Error("Only admin can download credit notes.");
+      const noteId = String(requestUrl.pathname.match(/^\/company\/credit-notes\/([^/]+)\/pdf$/)?.[1] || "").trim();
+      const rows = await supabaseTableFetch("credit_notes", `?select=*&id=eq.${encodeURIComponent(noteId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&limit=1`); const row = rows?.[0]; if (!row?.id) throw new Error("Credit note not found.");
+      const file = await loadStoredFile({ provider: row.file_provider, key: row.file_key, url: row.file_url, filename: row.file_name, mimeType: row.file_mime_type });
+      sendConditionalBuffer(req, res, 200, file.buffer, { "Content-Type": file.mimeType || "application/pdf", "Content-Disposition": `attachment; filename="${String(file.filename || "credit-note.pdf").replace(/"/g, "")}"`, "Cache-Control": "private, max-age=0, must-revalidate", "ETag": `"${sha256Hex(file.buffer)}"` });
+    } catch (error) { sendJson(res, 400, { ok: false, error: String(error?.message || error) }); }
+    return;
+  }
+
+  if (req.method === "DELETE" && /^\/company\/credit-notes\/[^/]+$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req)); if (String(actor?.role || "").trim().toLowerCase() !== "admin") throw new Error("Only admin can delete credit notes.");
+      const noteId = String(requestUrl.pathname.match(/^\/company\/credit-notes\/([^/]+)$/)?.[1] || "").trim();
+      const rows = await supabaseTableFetch("credit_notes", `?select=*&id=eq.${encodeURIComponent(noteId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&limit=1`); const row = rows?.[0]; if (!row?.id) throw new Error("Credit note not found.");
+      await deleteStoredFile({ provider: row.file_provider, key: row.file_key, url: row.file_url });
+      await supabaseTableFetch("credit_notes", `?id=eq.${encodeURIComponent(noteId)}&company_id=eq.${encodeURIComponent(actor.companyId)}`, { method: "DELETE", prefer: "return=minimal" });
+      sendJson(res, 200, { ok: true, result: { id: noteId } });
+    } catch (error) { sendJson(res, 400, { ok: false, error: String(error?.message || error) }); }
+    return;
+  }
+
   if (req.method === "DELETE" && /^\/company\/invoices\/[^/]+$/.test(requestUrl.pathname)) {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
@@ -18472,6 +18571,8 @@ const server = http.createServer(async (req, res) => {
       const rows = await supabaseTableFetch("invoices", `?select=*&id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&limit=1`);
       const row = rows?.[0];
       if (!row?.id) throw new Error("Invoice not found.");
+      const linkedCreditNotes = await supabaseTableFetch("credit_notes", `?select=id&invoice_id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&limit=1`).catch(() => []);
+      if (linkedCreditNotes?.length) throw new Error("This invoice has a credit note and cannot be deleted.");
       await deleteStoredFile({ provider: row.file_provider, key: row.file_key, url: row.file_url });
       await supabaseTableFetch("invoices", `?id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}`, { method: "DELETE", prefer: "return=minimal" });
       sendJson(res, 200, { ok: true, result: { id: invoiceId } });

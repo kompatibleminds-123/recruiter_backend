@@ -353,9 +353,56 @@ async function generateInvoicePdf(input = {}, savedSettings = {}) {
   };
 }
 
+async function generateCreditNotePdf(input = {}, savedSettings = {}) {
+  const profile = savedSettings?.invoiceProfile || {};
+  const clientProfiles = savedSettings?.invoiceClientProfiles || {};
+  const clientName = text(input.clientName);
+  const client = clientProfiles[clientName] || {};
+  const noteNumber = text(input.creditNoteNumber);
+  const noteDate = text(input.creditNoteDate);
+  const originalInvoiceNumber = text(input.originalInvoiceNumber);
+  const taxableAmount = Math.max(0, number(input.taxableAmount));
+  const gstRate = Math.max(0, number(input.gstRate || profile.defaultGstRate || 18));
+  const taxMode = ["igst", "cgst_sgst", "none"].includes(text(input.taxMode)) ? text(input.taxMode) : "igst";
+  if (!noteNumber || !noteDate || !clientName || !originalInvoiceNumber || !(taxableAmount > 0)) throw new Error("Credit note number, date, client, original invoice and taxable amount are required.");
+  const tax = taxMode === "none" ? 0 : taxableAmount * gstRate / 100;
+  const cgst = taxMode === "cgst_sgst" ? tax / 2 : 0;
+  const sgst = taxMode === "cgst_sgst" ? tax / 2 : 0;
+  const igst = taxMode === "igst" ? tax : 0;
+  const total = taxableAmount + tax;
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([612, 842]);
+  const regular = await doc.embedFont(StandardFonts.Helvetica);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const left = 38; const width = 536;
+  page.drawText("CREDIT NOTE", { x: left, y: 790, font: bold, size: 19, color: NAVY });
+  page.drawText(`Credit Note ${noteNumber}`, { x: left, y: 770, font: regular, size: 9, color: MUTED });
+  drawCell(page, { x: left, y: 635, width, height: 110 });
+  page.drawRectangle({ x: left, y: 725, width, height: 20, color: NAVY });
+  page.drawText("SUPPLIER / ISSUER", { x: left + 8, y: 731, font: bold, size: 8, color: rgb(1, 1, 1) });
+  page.drawText(text(profile.legalName), { x: left + 10, y: 706, font: bold, size: 9, color: TEXT });
+  drawLines(page, wrapText(profile.address, regular, 8.5, 290, 4), { x: left + 10, y: 690, font: regular, size: 8.5, lineHeight: 11, maxLines: 4 });
+  page.drawLine({ start: { x: left + 320, y: 635 }, end: { x: left + 320, y: 725 }, thickness: 0.6, color: BORDER });
+  drawLines(page, [`Credit Note No: ${noteNumber}`, `Date: ${formatInvoiceDate(noteDate)}`, `Against Invoice: ${originalInvoiceNumber}`], { x: left + 334, y: 704, font: regular, size: 8.5, lineHeight: 19 });
+  drawCell(page, { x: left, y: 510, width, height: 92 });
+  page.drawRectangle({ x: left, y: 582, width, height: 20, color: NAVY });
+  page.drawText("BILLED TO", { x: left + 8, y: 588, font: bold, size: 8, color: rgb(1, 1, 1) });
+  page.drawText(text(client.legalName || clientName), { x: left + 10, y: 562, font: bold, size: 9, color: TEXT });
+  drawLines(page, wrapText(client.address, regular, 8.5, 500, 4), { x: left + 10, y: 546, font: regular, size: 8.5, lineHeight: 11, maxLines: 4 });
+  const rows = [["Reason", text(input.reason) || "Billing adjustment"], ["Taxable adjustment", `Rs. ${money(taxableAmount)}`], ["GST adjustment", taxMode === "cgst_sgst" ? `CGST Rs. ${money(cgst)} + SGST Rs. ${money(sgst)}` : taxMode === "igst" ? `IGST Rs. ${money(igst)}` : "Nil"], ["Total credit", `Rs. ${money(total)}`]];
+  let y = 430;
+  rows.forEach(([label, value]) => { drawCell(page, { x: left, y, width: 180, height: 35, fill: PALE }); drawCell(page, { x: left + 180, y, width: 356, height: 35 }); page.drawText(label, { x: left + 9, y: y + 13, font: bold, size: 8.5, color: TEXT }); drawLines(page, wrapText(value, regular, 8.5, 336, 2), { x: left + 190, y: y + 13, font: regular, size: 8.5, lineHeight: 10, maxLines: 2 }); y -= 35; });
+  page.drawText("This credit note adjusts the above referenced invoice.", { x: left, y: 230, font: regular, size: 8.5, color: MUTED });
+  page.drawText(text(profile.legalName), { x: 370, y: 115, font: bold, size: 8, color: TEXT });
+  page.drawText("Authorized Signatory", { x: 400, y: 70, font: regular, size: 8, color: TEXT });
+  const bytes = await doc.save();
+  return { filename: `${safeFilename(noteNumber)}.pdf`, mimeType: "application/pdf", fileData: Buffer.from(bytes).toString("base64"), totals: { taxableAmount, cgst, sgst, igst, total, taxMode } };
+}
+
 module.exports = {
   generateInvoicePdf,
   formatInvoiceDate,
   indianNumberWords,
-  normalizeInvoiceInput
+  normalizeInvoiceInput,
+  generateCreditNotePdf
 };
