@@ -224,23 +224,25 @@ async function generateInvoicePdf(input = {}, savedSettings = {}) {
     drawLines(page, wrapText(invoice.profile.tradeName || invoice.profile.legalName, bold, 8, 130, 2), { x: 438, y: 792, font: bold, size: 8, color: NAVY, lineHeight: 10, maxLines: 2 });
   }
 
-  drawCell(page, { x: left, y: 610, width: 325, height: 128, fill: PALE });
-  drawCell(page, { x: left + 325, y: 610, width: 219, height: 128 });
-  let y = 720;
-  page.drawText(text(invoice.profile.legalName), { x: left + 10, y, font: bold, size: 8, color: TEXT });
+  drawCell(page, { x: left, y: 610, width, height: 138 });
+  page.drawRectangle({ x: left, y: 728, width, height: 20, color: NAVY });
+  page.drawText("DETAILS OF SUPPLIER / BILLED BY", { x: left + 8, y: 734, font: bold, size: 8, color: rgb(1, 1, 1) });
+  page.drawLine({ start: { x: left + 325, y: 610 }, end: { x: left + 325, y: 728 }, thickness: 0.6, color: BORDER });
+  let y = 710;
+  page.drawText(text(invoice.profile.legalName), { x: left + 10, y, font: bold, size: 9, color: TEXT });
   y -= 14;
-  y = drawLines(page, wrapText(invoice.profile.address, regular, 8, 300, 3), { x: left + 10, y, font: regular, size: 8, lineHeight: 11, maxLines: 3 });
+  y = drawLines(page, wrapText(invoice.profile.address, regular, 8.5, 300, 3), { x: left + 10, y, font: regular, size: 8.5, lineHeight: 12, maxLines: 3 });
   const sellerIds = [
     invoice.profile.cin ? `CIN: ${text(invoice.profile.cin)}` : "",
     invoice.profile.pan ? `PAN: ${text(invoice.profile.pan)}` : "",
-    invoice.profile.gstin ? `GSTIN: ${text(invoice.profile.gstin)}` : ""
+    invoice.profile.gstin ? `GSTIN: ${text(invoice.profile.gstin)}` : "",
+    `State: ${text(invoice.profile.state) || "-"}`,
+    `State Code: ${text(invoice.profile.stateCode) || "-"}`
   ].filter(Boolean);
-  drawLines(page, sellerIds, { x: left + 10, y: y - 2, font: regular, size: 7.5, lineHeight: 10 });
-  page.drawText(`Invoice No: ${invoice.invoiceNumber}`, { x: left + 337, y: 718, font: bold, size: 9, color: TEXT });
-  page.drawText(`Invoice Date: ${formatInvoiceDate(invoice.invoiceDate)}`, { x: left + 337, y: 700, font: regular, size: 8, color: TEXT });
-  page.drawText(`Reverse Charge: ${invoice.reverseCharge}`, { x: left + 337, y: 682, font: regular, size: 8, color: TEXT });
-  page.drawText(`State: ${text(invoice.profile.state) || "-"}`, { x: left + 337, y: 654, font: regular, size: 8, color: TEXT });
-  page.drawText(`State Code: ${text(invoice.profile.stateCode) || "-"}`, { x: left + 337, y: 636, font: regular, size: 8, color: TEXT });
+  drawLines(page, sellerIds, { x: left + 10, y: y - 2, font: regular, size: 8.5, lineHeight: 12 });
+  page.drawText(`Invoice No: ${invoice.invoiceNumber}`, { x: left + 337, y: 710, font: bold, size: 9, color: TEXT });
+  page.drawText(`Invoice Date: ${formatInvoiceDate(invoice.invoiceDate)}`, { x: left + 337, y: 692, font: regular, size: 8.5, color: TEXT });
+  page.drawText(`Reverse Charge: ${invoice.reverseCharge}`, { x: left + 337, y: 674, font: regular, size: 8.5, color: TEXT });
 
   drawCell(page, { x: left, y: 440, width, height: 152 });
   page.drawRectangle({ x: left, y: 572, width, height: 20, color: NAVY });
