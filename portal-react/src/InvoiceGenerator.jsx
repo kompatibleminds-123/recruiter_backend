@@ -52,6 +52,10 @@ function readImage(file, setter, setStatus) {
   reader.readAsDataURL(file);
 }
 
+function filledClientFields(value) {
+  return Object.fromEntries(Object.entries(value && typeof value === "object" ? value : {}).filter(([, field]) => String(field || "").trim()));
+}
+
 export default function InvoiceGenerator({ token, api, clients = [], bootstrap = null, onSaved = null, editingInvoice = null, onCancelEdit = null }) {
   const [profile, setProfile] = useState(EMPTY_PROFILE);
   const [clientProfiles, setClientProfiles] = useState({});
@@ -108,10 +112,12 @@ export default function InvoiceGenerator({ token, api, clients = [], bootstrap =
     const next = editingInvoice.input || {};
     setClientName(next.clientName || editingInvoice.invoice?.clientName || "");
     const editClientName = next.clientName || editingInvoice.invoice?.clientName || "";
-    setClient({ ...EMPTY_CLIENT, ...(clientProfiles[editClientName] || {}), ...(next.clientDetails || {}), legalName: next.clientDetails?.legalName || clientProfiles[editClientName]?.legalName || editClientName });
+    const masterClient = clientProfiles[editClientName] || {};
+    const savedClient = filledClientFields(next.clientDetails);
+    setClient({ ...EMPTY_CLIENT, ...masterClient, ...savedClient, legalName: savedClient.legalName || masterClient.legalName || editClientName });
     setInvoice((current) => ({ ...current, ...next, invoiceNumber: editingInvoice.invoice?.invoiceNumber || next.invoiceNumber || "", items: Array.isArray(editingInvoice.items) && editingInvoice.items.length ? editingInvoice.items : (next.items || current.items) }));
     setReviewed(false);
-  }, [editingInvoice, loading]);
+  }, [editingInvoice, loading, clientProfiles]);
 
   const clientOptions = useMemo(() => Array.from(new Set([
     ...clients.map((item) => String(item?.name || item || "").trim()),

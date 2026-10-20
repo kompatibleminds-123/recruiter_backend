@@ -233,6 +233,7 @@ export default function InvoicesPage({ token, api, clients = [] }) {
       if (!historyReviewed) throw new Error("Review the historical invoice before saving.");
       if (!historyFile) throw new Error("Please select the original invoice PDF.");
       await api("/company/invoices/historical", token, "POST", { invoice: history, file: historyFile });
+      setInvoiceBootstrap(null);
       setStatus({ text: "Historical invoice saved.", kind: "success" });
       setHistory({ invoiceNumber: "", invoiceDate: "", clientName: "", candidateName: "", annualCtc: "", feePercent: "", taxableAmount: "", gstRate: "18", taxMode: "auto" });
       setHistoryFile(null);
@@ -253,7 +254,7 @@ export default function InvoicesPage({ token, api, clients = [] }) {
       </div>
     </section>
 
-    {tab === "create" ? <InvoiceGenerator token={token} api={api} clients={clients} bootstrap={invoiceBootstrap} editingInvoice={editingInvoice} onCancelEdit={() => { setEditingInvoice(null); setTab("register"); }} onSaved={() => { setEditingInvoice(null); setTab("register"); }} /> : null}
+    {tab === "create" ? <InvoiceGenerator token={token} api={api} clients={clients} bootstrap={invoiceBootstrap} editingInvoice={editingInvoice} onCancelEdit={() => { setEditingInvoice(null); setTab("register"); }} onSaved={() => { setInvoiceBootstrap(null); setEditingInvoice(null); setTab("register"); }} /> : null}
 
     {tab === "register" ? <section className="panel">
       <div className="invoice-register-toolbar">
