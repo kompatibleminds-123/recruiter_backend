@@ -43,7 +43,7 @@ function readImage(file, setter, setStatus) {
   reader.readAsDataURL(file);
 }
 
-export default function InvoiceGenerator({ token, api, clients = [] }) {
+export default function InvoiceGenerator({ token, api, clients = [], onSaved = null }) {
   const [profile, setProfile] = useState(EMPTY_PROFILE);
   const [clientProfiles, setClientProfiles] = useState({});
   const [billingRules, setBillingRules] = useState({});
@@ -126,7 +126,7 @@ export default function InvoiceGenerator({ token, api, clients = [] }) {
     setWorking(true);
     try {
       await saveSettings({ quiet: true });
-      const result = await api("/company/reports/invoice/pdf", token, "POST", {
+      const result = await api(action === "finalize" ? "/company/invoices/finalize" : "/company/reports/invoice/pdf", token, "POST", {
         invoice: { ...invoice, clientName, taxableAmount: computedTaxable }
       });
       const file = dataUrlToFile(`data:${result.mimeType};base64,${result.fileData}`, result.filename || "invoice.pdf");
@@ -135,8 +135,9 @@ export default function InvoiceGenerator({ token, api, clients = [] }) {
         setStatus({ text: "Invoice shared.", kind: "success" });
       } else {
         downloadFile(file);
-        setStatus({ text: action === "share" ? "Direct sharing is not supported here, so the PDF was downloaded for sharing." : "Invoice PDF downloaded.", kind: "success" });
+        setStatus({ text: action === "finalize" ? "Invoice finalized, saved and downloaded." : action === "share" ? "Direct sharing is not supported here, so the PDF was downloaded for sharing." : "Invoice PDF downloaded.", kind: "success" });
       }
+      if (action === "finalize" && typeof onSaved === "function") onSaved(result?.invoice || null);
     } catch (error) {
       if (String(error?.name || "") !== "AbortError") setStatus({ text: error.message || String(error), kind: "error" });
     } finally {
@@ -198,7 +199,8 @@ export default function InvoiceGenerator({ token, api, clients = [] }) {
         </div>
         <div className="invoice-total-preview"><span>Taxable amount</span><strong>Rs. {computedTaxable.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
         <div className="button-row">
-          <button disabled={working} onClick={() => void generate("download")}>{working ? "Generating..." : "Generate & Download PDF"}</button>
+          <button disabled={working} onClick={() => void generate("finalize")}>{working ? "Saving..." : "Finalize, Save & Download"}</button>
+          <button className="ghost-btn" disabled={working} onClick={() => void generate("download")}>Preview PDF</button>
           <button className="ghost-btn" disabled={working} onClick={() => void generate("share")}>Share invoice</button>
         </div>
       </div>

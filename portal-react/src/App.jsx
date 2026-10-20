@@ -12,7 +12,7 @@ import {
 } from "./components/branding/brandConfig";
 import PayrollSettingsSection from "./payroll/PayrollSettingsSection";
 import RecruiterIncentiveReport from "./RecruiterIncentiveReport";
-import InvoiceGenerator from "./InvoiceGenerator";
+import InvoicesPage from "./InvoicesPage";
 import PayrollCompensationSection from "./payroll/PayrollCompensationSection";
 import PayrollRunsSection from "./payroll/PayrollRunsSection";
 import PayrollFbpSection from "./payroll/PayrollFbpSection";
@@ -71,7 +71,8 @@ const BASE_NAV_SECTIONS = [
 
 const STANDALONE_NAV_ITEMS = [
   { to: "/candidates", label: "Database" },
-  { to: "/reports", label: "Reports & Analytics" }
+  { to: "/reports", label: "Reports & Analytics" },
+  { to: "/invoices", label: "Invoices" }
 ];
 const PAYROLL_NAV_ITEMS = [
   { to: "/payroll/dashboard", label: "Dashboard" },
@@ -101,6 +102,7 @@ const NAV_ICON_MAP = {
   "/settings": "settings",
   "/candidates": "database",
   "/reports": "chart",
+  "/invoices": "coins",
   "/marketing/prospects": "users",
   "/marketing/templates": "template",
   "/marketing/campaigns": "mail",
@@ -11694,7 +11696,7 @@ function PortalApp({ token, onLogout }) {
   const standaloneNavItems = useMemo(() => (
     STANDALONE_NAV_ITEMS.filter((item) => {
       if (!hasSaasUnlimitedAccess && item.to === "/reports") return false;
-      if (item.to === "/reports") return isSettingsAdmin;
+      if (item.to === "/reports" || item.to === "/invoices") return isSettingsAdmin;
       if (item.to === "/candidates" && !hasSaasUnlimitedAccess) return false;
       return true;
     })
@@ -26654,7 +26656,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     { id: "role", label: "Role / JD wise report" },
     { id: "joinings", label: "Joinings report" },
     { id: "interviews", label: "Interviews report" },
-    ...(isSettingsAdmin ? [{ id: "commercial", label: "Commercial Billing" }, { id: "invoices", label: "Invoices" }, { id: "incentives", label: "Recruiter Incentives" }] : [])
+    ...(isSettingsAdmin ? [{ id: "commercial", label: "Commercial Billing" }, { id: "incentives", label: "Recruiter Incentives" }] : [])
   ];
   const getReportMetrics = (row = {}) => {
     const source = row?.metrics && typeof row.metrics === "object" ? row.metrics : row;
@@ -27304,11 +27306,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         <div className="workspace-body">
           <RouteErrorBoundary routeKey={location.pathname}>
             <Routes>
+          <Route path="/invoices" element={
+            !isSettingsAdmin ? <Navigate to="/dashboard" replace /> : <InvoicesPage token={token} api={api} clients={Array.from(new Set([...(state.clientDirectory || []).map((item) => item?.name || item), ...reportsClientOptions].map((item) => String(item || "").trim()).filter(Boolean)))} />
+          } />
           <Route path="/reports" element={
             !isSettingsAdmin ? <Navigate to="/dashboard" replace /> : <div className="page-grid">
-              <Section kicker="Reports & Analytics" title={reportsPageTab === "invoices" ? "Invoice generator" : "Download reports"}>
-                <p className="muted">{reportsPageTab === "invoices" ? "Create a client invoice with your saved company details and signature, then download or share the PDF." : "Choose filters, select a report type, then download Excel or PDF. This page is separate from Dashboard and does not show agenda/update actions."}</p>
-                {!['incentives', 'invoices'].includes(reportsPageTab) ? <div className="form-grid three-col dashboard-funnel-filters">
+              <Section kicker="Reports & Analytics" title="Download reports">
+                <p className="muted">Choose filters, select a report type, then download Excel or PDF. This page is separate from Dashboard and does not show agenda/update actions.</p>
+                {reportsPageTab !== "incentives" ? <div className="form-grid three-col dashboard-funnel-filters">
                   <label><span>Date from</span><input type="date" value={reportsFilters.dateFrom} onChange={(e) => setReportsFilters((current) => ({ ...current, dateFrom: e.target.value }))} /></label>
                   <label><span>Date to</span><input type="date" value={reportsFilters.dateTo} onChange={(e) => setReportsFilters((current) => ({ ...current, dateTo: e.target.value }))} /></label>
                   <label><span>Recruiter</span><select value={reportsFilters.recruiter} onChange={(e) => setReportsFilters((current) => ({ ...current, recruiter: e.target.value }))}><option value="">All recruiters</option>{reportsRecruiterOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
@@ -27335,11 +27340,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <button key={tab.id} className={reportsPageTab === tab.id ? "active" : ""} onClick={() => setReportsPageTab(tab.id)}>{tab.label}</button>
                   ))}
                 </div>
-                {!['incentives', 'invoices'].includes(reportsPageTab) ? <div className="button-row">
+                {reportsPageTab !== "incentives" ? <div className="button-row">
                   <button onClick={() => downloadActiveReportExcel()}>Download Excel</button>
                   <button className="ghost-btn" onClick={() => downloadActiveReportPdf()}>Download PDF</button>
                 </div> : null}
-                {reportsPageTab === "invoices" && isSettingsAdmin ? <InvoiceGenerator token={token} api={api} clients={Array.from(new Set([...(state.clientDirectory || []).map((item) => item?.name || item), ...reportsClientOptions].map((item) => String(item || "").trim()).filter(Boolean)))} /> : reportsPageTab === "incentives" && isSettingsAdmin ? <RecruiterIncentiveReport token={token} api={api} onExport={(type, config) => {
+                {reportsPageTab === "incentives" && isSettingsAdmin ? <RecruiterIncentiveReport token={token} api={api} onExport={(type, config) => {
                   const name = `recruiter-incentives-${new Date().toISOString().slice(0, 10)}`;
                   if (type === "excel") downloadTextFile(`${name}.xls`, buildExcelHtmlFromTable(config), "application/vnd.ms-excel;charset=utf-8");
                   else downloadSimplePdfFile(`${name}.pdf`, config);

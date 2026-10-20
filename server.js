@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { buildRecruiterIncentives } = require("./src/recruiter-incentives");
-const { generateInvoicePdf } = require("./src/invoice-pdf");
+const { generateInvoicePdf, normalizeInvoiceInput } = require("./src/invoice-pdf");
 const { buildJobBooleanFingerprint, generateJobBooleanOptions, getCachedJobBooleanState } = require("./src/job-boolean");
 const { parseCandidatePayload } = require("./src/parser");
 const { callOpenAiJsonSchema, callOpenAiQuestions, normalizeCandidateFileWithAi, normalizeCandidateWithAi, extractLinkedInAssistFromScreenshotWithAi } = require("./src/ai");
@@ -13199,6 +13199,67 @@ function findCommercialExpectedDoj(assessment = {}, candidate = null) {
   ).trim();
 }
 
+function getIndiaFinancialYear(dateValue = "") {
+  const raw = String(dateValue || "").trim();
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? new Date(`${raw}T00:00:00Z`) : new Date(raw || Date.now());
+  if (Number.isNaN(date.getTime())) throw new Error("A valid invoice date is required.");
+  const year = date.getUTCFullYear();
+  const startYear = date.getUTCMonth() >= 3 ? year : year - 1;
+  return `${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`;
+}
+
+function sanitizeInvoiceRecord(row = {}) {
+  return {
+    id: String(row.id || ""),
+    financialYear: String(row.financial_year || ""),
+    invoiceNumber: String(row.invoice_number || ""),
+    invoiceDate: String(row.invoice_date || ""),
+    clientId: String(row.client_id || ""),
+    clientName: String(row.client_name || ""),
+    candidateName: String(row.candidate_name || ""),
+    source: String(row.source || "generated"),
+    status: String(row.status || "finalized"),
+    serviceDescription: String(row.service_description || ""),
+    annualCtc: Number(row.annual_ctc || 0),
+    feePercent: Number(row.fee_percent || 0),
+    taxableAmount: Number(row.taxable_amount || 0),
+    gstRate: Number(row.gst_rate || 0),
+    taxMode: String(row.tax_mode || "none"),
+    cgst: Number(row.cgst_amount || 0),
+    sgst: Number(row.sgst_amount || 0),
+    igst: Number(row.igst_amount || 0),
+    total: Number(row.total_amount || 0),
+    roundedTotal: Number(row.rounded_total || row.total_amount || 0),
+    filename: String(row.file_name || "invoice.pdf"),
+    sizeBytes: Number(row.file_size_bytes || 0),
+    createdAt: String(row.created_at || "")
+  };
+}
+
+function buildInvoiceAnalytics(rows = []) {
+  const issued = (Array.isArray(rows) ? rows : []).filter((row) => String(row?.status || "").toLowerCase() === "finalized");
+  const byMonth = new Map();
+  const byClient = new Map();
+  const totals = issued.reduce((sum, row) => {
+    const month = String(row.invoiceDate || row.invoice_date || "").slice(0, 7) || "Unknown";
+    const client = String(row.clientName || row.client_name || "Unassigned").trim() || "Unassigned";
+    const taxable = Number(row.taxableAmount ?? row.taxable_amount ?? 0) || 0;
+    const gst = (Number(row.cgst ?? row.cgst_amount ?? 0) || 0) + (Number(row.sgst ?? row.sgst_amount ?? 0) || 0) + (Number(row.igst ?? row.igst_amount ?? 0) || 0);
+    const total = Number(row.total ?? row.total_amount ?? 0) || 0;
+    byMonth.set(month, (byMonth.get(month) || 0) + total);
+    byClient.set(client, (byClient.get(client) || 0) + total);
+    sum.taxableAmount += taxable;
+    sum.gstAmount += gst;
+    sum.totalAmount += total;
+    return sum;
+  }, { invoiceCount: issued.length, taxableAmount: 0, gstAmount: 0, totalAmount: 0 });
+  return {
+    ...totals,
+    byMonth: Array.from(byMonth, ([month, totalAmount]) => ({ month, totalAmount })).sort((a, b) => a.month.localeCompare(b.month)),
+    byClient: Array.from(byClient, ([clientName, totalAmount]) => ({ clientName, totalAmount })).sort((a, b) => b.totalAmount - a.totalAmount)
+  };
+}
+
 function normalizeCommercialBillingMonth(value = "") {
   const text = String(value || "").trim();
   return /^\d{4}-\d{2}$/.test(text) ? text : "";
@@ -18198,6 +18259,193 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/invoices") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (String(actor?.role || "").trim().toLowerCase() !== "admin") {
+        sendJson(res, 403, { ok: false, error: "Only admin can access invoices." });
+        return;
+      }
+      const requestedFy = String(requestUrl.searchParams.get("financialYear") || "").trim();
+      const financialYear = /^\d{4}-\d{2}$/.test(requestedFy) ? requestedFy : getIndiaFinancialYear(new Date().toISOString());
+      const rows = await supabaseTableFetchAll(
+        "invoices",
+        `?select=*&company_id=eq.${encodeURIComponent(actor.companyId)}&financial_year=eq.${encodeURIComponent(financialYear)}&order=invoice_date.desc,created_at.desc`,
+        { pageSize: 1000, maxPages: 20 }
+      );
+      const invoices = (rows || []).map(sanitizeInvoiceRecord);
+      sendJson(res, 200, { ok: true, result: { financialYear, invoices, analytics: buildInvoiceAnalytics(invoices) } });
+    } catch (error) {
+      const message = String(error?.message || error);
+      sendJson(res, 400, { ok: false, error: /invoices|relation/i.test(message) ? "Invoice database is not ready. Run sql/2026-10-20-invoices.sql in Supabase first." : message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/invoices/finalize") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (String(actor?.role || "").trim().toLowerCase() !== "admin") {
+        sendJson(res, 403, { ok: false, error: "Only admin can finalize invoices." });
+        return;
+      }
+      const body = await readJsonBody(req);
+      const input = body?.invoice || body || {};
+      const settings = await getCompanySharedExportPresets(actor.companyId).catch(() => ({}));
+      const normalized = normalizeInvoiceInput(input, settings);
+      const generated = await generateInvoicePdf(input, settings);
+      const financialYear = getIndiaFinancialYear(normalized.invoiceDate);
+      const duplicate = await supabaseTableFetch(
+        "invoices",
+        `?select=id&company_id=eq.${encodeURIComponent(actor.companyId)}&financial_year=eq.${encodeURIComponent(financialYear)}&invoice_number=eq.${encodeURIComponent(normalized.invoiceNumber)}&limit=1`
+      );
+      if (Array.isArray(duplicate) && duplicate.length) throw new Error("This invoice number already exists in the selected financial year.");
+      const clients = await getCompanyClients(actor.companyId).catch(() => []);
+      const matchedClient = clients.find((item) => String(item?.name || "").trim().toLowerCase() === normalized.clientName.toLowerCase()) || null;
+      const invoiceId = crypto.randomUUID();
+      const pdfBuffer = Buffer.from(generated.fileData, "base64");
+      const stored = await storeUploadedFile({ filename: generated.filename, mimeType: generated.mimeType, fileData: generated.fileData }, {
+        objectPrefix: `companies/${actor.companyId}/invoices/FY-${financialYear}/${invoiceId}`
+      });
+      const { logoDataUrl: _logo, signatureDataUrl: _signature, ...companySnapshot } = normalized.profile || {};
+      const now = new Date().toISOString();
+      const invoiceRow = {
+        id: invoiceId,
+        company_id: actor.companyId,
+        financial_year: financialYear,
+        invoice_number: normalized.invoiceNumber,
+        invoice_date: normalized.invoiceDate,
+        client_id: matchedClient?.id || null,
+        client_name: normalized.clientName,
+        candidate_name: normalized.candidateName,
+        source: "generated",
+        status: "finalized",
+        service_description: normalized.serviceDescription,
+        annual_ctc: normalized.annualCtc,
+        fee_percent: normalized.feePercent,
+        taxable_amount: normalized.taxableAmount,
+        gst_rate: normalized.gstRate,
+        tax_mode: normalized.taxMode,
+        cgst_amount: normalized.cgst,
+        sgst_amount: normalized.sgst,
+        igst_amount: normalized.igst,
+        total_amount: normalized.total,
+        rounded_total: normalized.roundedTotal,
+        company_snapshot: companySnapshot,
+        client_snapshot: normalized.client || {},
+        invoice_snapshot: { ...input, totals: generated.totals },
+        file_provider: stored.provider,
+        file_key: stored.key,
+        file_url: stored.url,
+        file_name: stored.filename,
+        file_mime_type: stored.mimeType,
+        file_size_bytes: stored.sizeBytes,
+        file_sha256: sha256Hex(pdfBuffer),
+        created_by: actor.id,
+        created_at: now,
+        updated_at: now
+      };
+      const savedRows = await supabaseTableFetch("invoices", "?select=*", { method: "POST", body: invoiceRow, prefer: "return=representation" });
+      await supabaseTableFetch("invoice_items", "?select=id", {
+        method: "POST",
+        body: {
+          id: crypto.randomUUID(), invoice_id: invoiceId, company_id: actor.companyId,
+          assessment_id: String(input.assessmentId || "").trim() || null,
+          candidate_id: String(input.candidateId || "").trim() || null,
+          candidate_name: normalized.candidateName,
+          description: normalized.serviceDescription,
+          annual_ctc: normalized.annualCtc,
+          fee_percent: normalized.feePercent,
+          taxable_amount: normalized.taxableAmount,
+          created_at: now
+        },
+        prefer: "return=minimal"
+      }).catch(() => null);
+      sendJson(res, 200, { ok: true, result: { invoice: sanitizeInvoiceRecord(savedRows?.[0] || invoiceRow), fileData: generated.fileData, mimeType: generated.mimeType, filename: generated.filename } });
+    } catch (error) {
+      const message = String(error?.message || error);
+      sendJson(res, 400, { ok: false, error: /invoices|relation/i.test(message) ? "Invoice database is not ready. Run sql/2026-10-20-invoices.sql in Supabase first." : message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/invoices/historical") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (String(actor?.role || "").trim().toLowerCase() !== "admin") {
+        sendJson(res, 403, { ok: false, error: "Only admin can add historical invoices." });
+        return;
+      }
+      const body = await readJsonBody(req);
+      const file = body?.file || {};
+      const pdfBuffer = Buffer.from(String(file.fileData || ""), "base64");
+      if (!pdfBuffer.length || pdfBuffer.length > 12 * 1024 * 1024 || pdfBuffer.subarray(0, 4).toString() !== "%PDF") {
+        throw new Error("Please upload a valid PDF smaller than 12 MB.");
+      }
+      const input = body?.invoice || {};
+      const invoiceNumber = String(input.invoiceNumber || "").trim();
+      const invoiceDate = String(input.invoiceDate || "").trim();
+      const clientName = String(input.clientName || "").trim();
+      if (!invoiceNumber || !invoiceDate || !clientName) throw new Error("Invoice number, date and client are required.");
+      const financialYear = getIndiaFinancialYear(invoiceDate);
+      const duplicate = await supabaseTableFetch("invoices", `?select=id&company_id=eq.${encodeURIComponent(actor.companyId)}&financial_year=eq.${encodeURIComponent(financialYear)}&invoice_number=eq.${encodeURIComponent(invoiceNumber)}&limit=1`);
+      if (Array.isArray(duplicate) && duplicate.length) throw new Error("This invoice number already exists in the selected financial year.");
+      const clients = await getCompanyClients(actor.companyId).catch(() => []);
+      const matchedClient = clients.find((item) => String(item?.name || "").trim().toLowerCase() === clientName.toLowerCase()) || null;
+      const settings = await getCompanySharedExportPresets(actor.companyId).catch(() => ({}));
+      const normalized = normalizeInvoiceInput({ ...input, clientName }, settings);
+      const invoiceId = crypto.randomUUID();
+      const safeFilename = String(file.filename || `${invoiceNumber}.pdf`).trim();
+      const stored = await storeUploadedFile({ filename: safeFilename, mimeType: "application/pdf", fileData: file.fileData }, {
+        objectPrefix: `companies/${actor.companyId}/invoices/FY-${financialYear}/${invoiceId}`
+      });
+      const now = new Date().toISOString();
+      const row = {
+        id: invoiceId, company_id: actor.companyId, financial_year: financialYear,
+        invoice_number: invoiceNumber, invoice_date: invoiceDate,
+        client_id: matchedClient?.id || null, client_name: clientName,
+        candidate_name: normalized.candidateName, source: "historical", status: "finalized",
+        service_description: normalized.serviceDescription, annual_ctc: normalized.annualCtc,
+        fee_percent: normalized.feePercent, taxable_amount: normalized.taxableAmount,
+        gst_rate: normalized.gstRate, tax_mode: normalized.taxMode,
+        cgst_amount: normalized.cgst, sgst_amount: normalized.sgst, igst_amount: normalized.igst,
+        total_amount: normalized.total, rounded_total: normalized.roundedTotal,
+        company_snapshot: {}, client_snapshot: normalized.client || {}, invoice_snapshot: input,
+        file_provider: stored.provider, file_key: stored.key, file_url: stored.url,
+        file_name: stored.filename, file_mime_type: stored.mimeType, file_size_bytes: stored.sizeBytes,
+        file_sha256: sha256Hex(pdfBuffer), created_by: actor.id, created_at: now, updated_at: now
+      };
+      const savedRows = await supabaseTableFetch("invoices", "?select=*", { method: "POST", body: row, prefer: "return=representation" });
+      sendJson(res, 200, { ok: true, result: sanitizeInvoiceRecord(savedRows?.[0] || row) });
+    } catch (error) {
+      const message = String(error?.message || error);
+      sendJson(res, 400, { ok: false, error: /invoices|relation/i.test(message) ? "Invoice database is not ready. Run sql/2026-10-20-invoices.sql in Supabase first." : message });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && /^\/company\/invoices\/[^/]+\/pdf$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerTokenFromRequest(req, requestUrl));
+      if (String(actor?.role || "").trim().toLowerCase() !== "admin") throw new Error("Only admin can download invoices.");
+      const invoiceId = String(requestUrl.pathname.match(/^\/company\/invoices\/([^/]+)\/pdf$/)?.[1] || "").trim();
+      const rows = await supabaseTableFetch("invoices", `?select=*&id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&limit=1`);
+      const row = rows?.[0];
+      if (!row?.id) throw new Error("Invoice not found.");
+      const file = await loadStoredFile({ provider: row.file_provider, key: row.file_key, url: row.file_url, filename: row.file_name, mimeType: row.file_mime_type });
+      const forceDownload = ["1", "true", "download"].includes(String(requestUrl.searchParams.get("download") || "").toLowerCase());
+      sendConditionalBuffer(req, res, 200, file.buffer, {
+        "Content-Type": file.mimeType || "application/pdf",
+        "Content-Disposition": `${forceDownload ? "attachment" : "inline"}; filename="${String(file.filename || "invoice.pdf").replace(/"/g, "")}"`,
+        "Cache-Control": "private, max-age=0, must-revalidate",
+        "ETag": `"${sha256Hex(file.buffer)}"`
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
     return;
   }
