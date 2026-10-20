@@ -13274,7 +13274,8 @@ function invoiceTaxBreakup(row = {}, { companyStateCode = "06", clientProfiles =
   const client = { ...(clientProfiles[clientName] || {}), ...snapshotClient, ...snapshot };
   const clientStateCode = stateCode(client.stateCode || client.state_code);
   const issuerStateCode = stateCode(companyStateCode) || "06";
-  if (!clientStateCode) return { taxableAmount, cgst: storedCgst, sgst: storedSgst, igst: storedIgst, gstAmount: taxAmount };
+  // Missing client state is treated as inter-state for reporting, as agreed.
+  if (!clientStateCode) return { taxableAmount, cgst: 0, sgst: 0, igst: taxAmount, gstAmount: taxAmount };
   return clientStateCode === issuerStateCode
     ? { taxableAmount, cgst: taxAmount / 2, sgst: taxAmount / 2, igst: 0, gstAmount: taxAmount }
     : { taxableAmount, cgst: 0, sgst: 0, igst: taxAmount, gstAmount: taxAmount };
