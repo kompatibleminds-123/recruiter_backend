@@ -68,6 +68,7 @@ export default function InvoicesPage({ token, api, clients = [] }) {
   const [historyReviewed, setHistoryReviewed] = useState(false);
   const [bulkRows, setBulkRows] = useState([]);
   const [editingInvoice, setEditingInvoice] = useState(null);
+  const [invoiceBootstrap, setInvoiceBootstrap] = useState(null);
   const [creditNotes, setCreditNotes] = useState([]);
   const [credit, setCredit] = useState({ creditNoteNumber: "", creditNoteDate: new Date().toISOString().slice(0, 10), invoiceId: "", reason: "", taxableAmount: "", gstRate: "18", taxMode: "auto" });
   const [creditReviewed, setCreditReviewed] = useState(false);
@@ -97,6 +98,20 @@ export default function InvoicesPage({ token, api, clients = [] }) {
     try { const result = await api(`/company/credit-notes?financialYear=${encodeURIComponent(financialYear)}`, token); setCreditNotes(result?.creditNotes || []); }
     catch (error) { setStatus({ text: error.message, kind: "error" }); }
   }, [api, financialYear, token]);
+
+  // These values are needed whenever the invoice editor opens.  Fetch them
+  // while the Invoices page is already on screen, rather than after Edit is
+  // clicked, so saved client details are ready immediately.
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      api("/company/reports/invoice/settings", token),
+      api("/company/clients", token).catch(() => ({ clients: [] }))
+    ]).then(([settings, clientResult]) => {
+      if (active) setInvoiceBootstrap({ settings, clients: clientResult?.clients || [] });
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [api, token]);
 
   useEffect(() => { if (tab === "register" || tab === "analytics" || tab === "credit-notes") void loadInvoices(); if (tab === "credit-notes") void loadCreditNotes(); }, [tab, loadInvoices, loadCreditNotes]);
 
@@ -128,8 +143,9 @@ export default function InvoicesPage({ token, api, clients = [] }) {
   const editInvoice = async (invoice) => {
     try {
       setLoading(true);
+      setTab("create");
       const result = await api(`/company/invoices/${encodeURIComponent(invoice.id)}`, token);
-      setEditingInvoice(result); setTab("create"); setStatus({ text: "Edit the figures, review the PDF, then save the corrected invoice.", kind: "" });
+      setEditingInvoice(result); setStatus({ text: "Edit the figures, review the PDF, then save the corrected invoice.", kind: "" });
     } catch (error) { setStatus({ text: error.message, kind: "error" }); } finally { setLoading(false); }
   };
 
@@ -237,7 +253,7 @@ export default function InvoicesPage({ token, api, clients = [] }) {
       </div>
     </section>
 
-    {tab === "create" ? <InvoiceGenerator token={token} api={api} clients={clients} editingInvoice={editingInvoice} onCancelEdit={() => { setEditingInvoice(null); setTab("register"); }} onSaved={() => { setEditingInvoice(null); setTab("register"); }} /> : null}
+    {tab === "create" ? <InvoiceGenerator token={token} api={api} clients={clients} bootstrap={invoiceBootstrap} editingInvoice={editingInvoice} onCancelEdit={() => { setEditingInvoice(null); setTab("register"); }} onSaved={() => { setEditingInvoice(null); setTab("register"); }} /> : null}
 
     {tab === "register" ? <section className="panel">
       <div className="invoice-register-toolbar">

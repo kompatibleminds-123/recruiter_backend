@@ -52,7 +52,7 @@ function readImage(file, setter, setStatus) {
   reader.readAsDataURL(file);
 }
 
-export default function InvoiceGenerator({ token, api, clients = [], onSaved = null, editingInvoice = null, onCancelEdit = null }) {
+export default function InvoiceGenerator({ token, api, clients = [], bootstrap = null, onSaved = null, editingInvoice = null, onCancelEdit = null }) {
   const [profile, setProfile] = useState(EMPTY_PROFILE);
   const [clientProfiles, setClientProfiles] = useState({});
   const [billingRules, setBillingRules] = useState({});
@@ -70,10 +70,13 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
   useEffect(() => {
     let active = true;
     setLoading(true);
-    Promise.all([
-      api("/company/reports/invoice/settings", token),
-      api("/company/clients", token).catch(() => ({ clients: [] }))
-    ])
+    const source = bootstrap
+      ? Promise.resolve([bootstrap.settings || {}, { clients: bootstrap.clients || [] }])
+      : Promise.all([
+        api("/company/reports/invoice/settings", token),
+        api("/company/clients", token).catch(() => ({ clients: [] }))
+      ]);
+    source
       .then(([result, clientResult]) => {
         if (!active) return;
         const nextProfile = { ...EMPTY_PROFILE, ...(result?.invoiceProfile || {}) };
@@ -96,7 +99,7 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
       .catch((error) => active && setStatus({ text: error.message, kind: "error" }))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [api, token]);
+  }, [api, token, bootstrap]);
 
   useEffect(() => {
     // Wait for saved client profiles so historical invoices automatically load

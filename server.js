@@ -18615,10 +18615,12 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       if (String(actor?.role || "").trim().toLowerCase() !== "admin") throw new Error("Only admin can view invoices.");
       const invoiceId = String(requestUrl.pathname.match(/^\/company\/invoices\/([^/]+)$/)?.[1] || "").trim();
-      const rows = await supabaseTableFetch("invoices", `?select=*&id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&limit=1`);
+      const [rows, items] = await Promise.all([
+        supabaseTableFetch("invoices", `?select=*&id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&limit=1`),
+        supabaseTableFetchAll("invoice_items", `?select=*&invoice_id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&order=created_at.asc`, { pageSize: 20, maxPages: 1 })
+      ]);
       const row = rows?.[0];
       if (!row?.id) throw new Error("Invoice not found.");
-      const items = await supabaseTableFetchAll("invoice_items", `?select=*&invoice_id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&order=created_at.asc`, { pageSize: 20, maxPages: 1 });
       sendJson(res, 200, { ok: true, result: { invoice: sanitizeInvoiceRecord(row), input: row.invoice_snapshot || {}, items: (items || []).map((item) => ({ candidateName: item.candidate_name, annualCtc: Number(item.annual_ctc || 0), feePercent: Number(item.fee_percent || 0), taxableAmount: Number(item.taxable_amount || 0), serviceDescription: item.description || "HR Consulting Services" })) } });
     } catch (error) { sendJson(res, 400, { ok: false, error: String(error?.message || error) }); }
     return;
