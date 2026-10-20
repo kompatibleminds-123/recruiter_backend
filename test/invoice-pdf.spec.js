@@ -49,6 +49,9 @@ async function run() {
   assert.strictEqual(extracted.invoice.taxableAmount, normalized.taxableAmount);
   assert.strictEqual(extracted.invoice.taxMode, normalized.taxMode);
   assert.strictEqual(extracted.invoice.feePercent, 10);
+  const editedClient = normalizeInvoiceInput({ ...input, clientDetails: { legalName: "Corrected Client Limited", address: "Corrected billing address", stateCode: "06" } }, settings);
+  assert.strictEqual(editedClient.client.name, "Corrected Client Limited");
+  assert.strictEqual(editedClient.client.address, "Corrected billing address");
 
   const multi = normalizeInvoiceInput({
     ...input,

@@ -148,7 +148,9 @@ function normalizeInvoiceInput(input = {}, savedSettings = {}) {
   const clients = savedSettings?.invoiceClientProfiles && typeof savedSettings.invoiceClientProfiles === "object"
     ? savedSettings.invoiceClientProfiles : {};
   const clientName = text(input.clientName);
-  const client = clients[clientName] && typeof clients[clientName] === "object" ? clients[clientName] : {};
+  const savedClient = clients[clientName] && typeof clients[clientName] === "object" ? clients[clientName] : {};
+  const submittedClient = input.clientDetails && typeof input.clientDetails === "object" ? input.clientDetails : {};
+  const client = { ...savedClient, ...submittedClient };
   const rawItems = Array.isArray(input.items) && input.items.length ? input.items : [input];
   const items = rawItems.map((item = {}) => {
     const annualCtc = Math.max(0, number(item.annualCtc));
