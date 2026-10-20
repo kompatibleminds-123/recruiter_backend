@@ -96,7 +96,7 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
     setClient({ ...EMPTY_CLIENT, ...(clientProfiles[editClientName] || {}), legalName: clientProfiles[editClientName]?.legalName || editClientName });
     setInvoice((current) => ({ ...current, ...next, invoiceNumber: editingInvoice.invoice?.invoiceNumber || next.invoiceNumber || "", items: Array.isArray(editingInvoice.items) && editingInvoice.items.length ? editingInvoice.items : (next.items || current.items) }));
     setReviewed(false);
-  }, [editingInvoice, clientProfiles]);
+  }, [editingInvoice]);
 
   const clientOptions = useMemo(() => Array.from(new Set([
     ...clients.map((item) => String(item?.name || item || "").trim()),
@@ -117,8 +117,8 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
   };
   const updateProfile = (key, value) => setProfile((current) => ({ ...current, [key]: value }));
   const updateClient = (key, value) => setClient((current) => ({ ...current, [key]: value }));
-  const updateInvoice = (key, value) => setInvoice((current) => ({ ...current, [key]: value }));
-  const updateItem = (index, key, value) => setInvoice((current) => ({ ...current, items: current.items.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item) }));
+  const updateInvoice = (key, value) => { setReviewed(false); setInvoice((current) => ({ ...current, [key]: value })); };
+  const updateItem = (index, key, value) => { setReviewed(false); setInvoice((current) => ({ ...current, items: current.items.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item) })); };
   const addItem = () => setInvoice((current) => current.items.length >= 4 ? current : ({ ...current, items: [...current.items, { ...EMPTY_ITEM, feePercent: current.items[0]?.feePercent || "8.33", hsnSac: profile.defaultHsnSac || "998311" }] }));
   const removeItem = (index) => setInvoice((current) => ({ ...current, items: current.items.filter((_, itemIndex) => itemIndex !== index) }));
 
@@ -141,10 +141,11 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
     if (!client.address.trim()) { setStatus({ text: "Please enter the client's billing address.", kind: "error" }); return; }
     setWorking(true);
     try {
+      const invoicePayload = { ...invoice, items: invoice.items.map((item) => ({ ...item })), clientName };
       await saveSettings({ quiet: true });
       const endpoint = action === "finalize" ? (editingInvoice?.invoice?.id ? `/company/invoices/${encodeURIComponent(editingInvoice.invoice.id)}` : "/company/invoices/finalize") : "/company/reports/invoice/pdf";
       const result = await api(endpoint, token, action === "finalize" && editingInvoice?.invoice?.id ? "PUT" : "POST", {
-        invoice: { ...invoice, clientName }
+        invoice: invoicePayload
       });
       const file = dataUrlToFile(`data:${result.mimeType};base64,${result.fileData}`, result.filename || "invoice.pdf");
       downloadFile(file);
