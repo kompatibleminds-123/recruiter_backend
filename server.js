@@ -13248,48 +13248,82 @@ function sanitizeCreditNoteRecord(row = {}) {
   };
 }
 
-function buildInvoiceAnalytics(rows = [], creditNotes = []) {
+function readJsonObject(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return {};
+  try { const parsed = JSON.parse(value); return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}; } catch { return {}; }
+}
+
+function stateCode(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  return digits ? digits.padStart(2, "0") : "";
+}
+
+function invoiceTaxBreakup(row = {}, { companyStateCode = "06", clientProfiles = {}, invoicesById = new Map() } = {}) {
+  const taxableAmount = Number(row.taxableAmount ?? row.taxable_amount ?? 0) || 0;
+  const storedCgst = Number(row.cgst ?? row.cgst_amount ?? 0) || 0;
+  const storedSgst = Number(row.sgst ?? row.sgst_amount ?? 0) || 0;
+  const storedIgst = Number(row.igst ?? row.igst_amount ?? 0) || 0;
+  const taxAmount = storedCgst + storedSgst + storedIgst;
+  if (!taxAmount) return { taxableAmount, cgst: 0, sgst: 0, igst: 0, gstAmount: 0 };
+  const linkedInvoice = invoicesById.get(String(row.invoiceId ?? row.invoice_id ?? "")) || {};
+  const snapshot = readJsonObject(linkedInvoice.client_snapshot || row.clientSnapshot || row.client_snapshot);
+  const invoiceSnapshot = readJsonObject(linkedInvoice.invoice_snapshot || row.invoiceSnapshot || row.invoice_snapshot);
+  const clientName = String(row.clientName ?? row.client_name ?? linkedInvoice.client_name ?? "").trim();
+  const snapshotClient = readJsonObject(invoiceSnapshot.clientDetails);
+  const client = { ...(clientProfiles[clientName] || {}), ...snapshotClient, ...snapshot };
+  const clientStateCode = stateCode(client.stateCode || client.state_code);
+  const issuerStateCode = stateCode(companyStateCode) || "06";
+  if (!clientStateCode) return { taxableAmount, cgst: storedCgst, sgst: storedSgst, igst: storedIgst, gstAmount: taxAmount };
+  return clientStateCode === issuerStateCode
+    ? { taxableAmount, cgst: taxAmount / 2, sgst: taxAmount / 2, igst: 0, gstAmount: taxAmount }
+    : { taxableAmount, cgst: 0, sgst: 0, igst: taxAmount, gstAmount: taxAmount };
+}
+
+function buildInvoiceAnalytics(rows = [], creditNotes = [], settings = {}) {
   const issued = (Array.isArray(rows) ? rows : []).filter((row) => String(row?.status || "").toLowerCase() === "finalized");
+  const invoicesById = new Map((Array.isArray(rows) ? rows : []).map((row) => [String(row?.id || ""), row]));
+  const companyStateCode = stateCode(readJsonObject(settings.invoiceProfile).stateCode) || "06";
+  const clientProfiles = readJsonObject(settings.invoiceClientProfiles);
   const byMonth = new Map();
   const byClient = new Map();
   const totals = issued.reduce((sum, row) => {
     const month = String(row.invoiceDate || row.invoice_date || "").slice(0, 7) || "Unknown";
     const client = String(row.clientName || row.client_name || "Unassigned").trim() || "Unassigned";
-    const taxable = Number(row.taxableAmount ?? row.taxable_amount ?? 0) || 0;
-    const cgst = Number(row.cgst ?? row.cgst_amount ?? 0) || 0;
-    const sgst = Number(row.sgst ?? row.sgst_amount ?? 0) || 0;
-    const igst = Number(row.igst ?? row.igst_amount ?? 0) || 0;
-    const gst = cgst + sgst + igst;
+    const tax = invoiceTaxBreakup(row, { companyStateCode, clientProfiles, invoicesById });
+    const taxable = tax.taxableAmount;
+    const { cgst, sgst, igst } = tax;
+    const gst = tax.gstAmount;
     const total = Number(row.total ?? row.total_amount ?? 0) || 0;
     byMonth.set(month, (byMonth.get(month) || 0) + taxable);
     byClient.set(client, (byClient.get(client) || 0) + taxable);
-    sum.taxableAmount += taxable;
+    sum.grossTaxableAmount += taxable;
     sum.cgstAmount += cgst;
     sum.sgstAmount += sgst;
     sum.igstAmount += igst;
     sum.gstAmount += gst;
     sum.totalAmount += total;
     return sum;
-  }, { invoiceCount: issued.length, creditNoteCount: 0, taxableAmount: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstAmount: 0, creditAmount: 0, totalAmount: 0 });
+  }, { invoiceCount: issued.length, creditNoteCount: 0, grossTaxableAmount: 0, creditTaxableAmount: 0, taxableAmount: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, gstAmount: 0, creditAmount: 0, totalAmount: 0 });
   (Array.isArray(creditNotes) ? creditNotes : []).forEach((row) => {
     const month = String(row.creditNoteDate || row.credit_note_date || "").slice(0, 7) || "Unknown";
     const client = String(row.clientName || row.client_name || "Unassigned").trim() || "Unassigned";
-    const taxable = Number(row.taxableAmount ?? row.taxable_amount ?? 0) || 0;
-    const cgst = Number(row.cgst ?? row.cgst_amount ?? 0) || 0;
-    const sgst = Number(row.sgst ?? row.sgst_amount ?? 0) || 0;
-    const igst = Number(row.igst ?? row.igst_amount ?? 0) || 0;
+    const tax = invoiceTaxBreakup(row, { companyStateCode, clientProfiles, invoicesById });
+    const taxable = tax.taxableAmount;
+    const { cgst, sgst, igst } = tax;
     const total = Number(row.total ?? row.total_amount ?? 0) || 0;
     byMonth.set(month, (byMonth.get(month) || 0) - taxable);
     byClient.set(client, (byClient.get(client) || 0) - taxable);
     totals.creditNoteCount += 1;
     totals.creditAmount += total;
-    totals.taxableAmount -= taxable;
+    totals.creditTaxableAmount += taxable;
     totals.cgstAmount -= cgst;
     totals.sgstAmount -= sgst;
     totals.igstAmount -= igst;
     totals.gstAmount -= cgst + sgst + igst;
     totals.totalAmount -= total;
   });
+  totals.taxableAmount = totals.grossTaxableAmount - totals.creditTaxableAmount;
   return {
     ...totals,
     byMonth: Array.from(byMonth, ([month, taxableAmount]) => ({ month, taxableAmount })).sort((a, b) => a.month.localeCompare(b.month)),
@@ -18320,9 +18354,10 @@ const server = http.createServer(async (req, res) => {
         `?select=*&company_id=eq.${encodeURIComponent(actor.companyId)}&financial_year=eq.${encodeURIComponent(financialYear)}`,
         { pageSize: 1000, maxPages: 20 }
       ).catch(() => []);
+      const settings = await getCompanySharedExportPresets(actor.companyId).catch(() => ({}));
       const invoices = (rows || []).map(sanitizeInvoiceRecord);
       const creditNotes = (creditRows || []).map(sanitizeCreditNoteRecord);
-      sendJson(res, 200, { ok: true, result: { financialYear, invoices, analytics: buildInvoiceAnalytics(invoices, creditNotes) } });
+      sendJson(res, 200, { ok: true, result: { financialYear, invoices, analytics: buildInvoiceAnalytics(rows || [], creditRows || [], settings) } });
     } catch (error) {
       const message = String(error?.message || error);
       sendJson(res, 400, { ok: false, error: /invoices|relation/i.test(message) ? "Invoice database is not ready. Run sql/2026-10-20-invoices.sql in Supabase first." : message });
