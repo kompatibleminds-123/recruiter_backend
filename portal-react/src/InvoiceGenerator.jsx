@@ -56,8 +56,13 @@ function filledClientFields(value) {
   return Object.fromEntries(Object.entries(value && typeof value === "object" ? value : {}).filter(([, field]) => String(field || "").trim()));
 }
 
-function savedTaxMode(value) {
-  return ["igst", "cgst_sgst", "none"].includes(String(value || "")) ? String(value) : "";
+function taxModeFromStateCodes(clientStateCode, companyStateCode, currentMode = "") {
+  if (String(currentMode || "") === "none") return "none";
+  const clientDigits = String(clientStateCode || "").replace(/\D/g, "");
+  const companyDigits = String(companyStateCode || "").replace(/\D/g, "");
+  const client = clientDigits ? clientDigits.padStart(2, "0") : "";
+  const company = companyDigits ? companyDigits.padStart(2, "0") : "";
+  return client && company && client === company ? "cgst_sgst" : "igst";
 }
 
 export default function InvoiceGenerator({ token, api, clients = [], bootstrap = null, onSaved = null, editingInvoice = null, onCancelEdit = null }) {
@@ -118,10 +123,11 @@ export default function InvoiceGenerator({ token, api, clients = [], bootstrap =
     const editClientName = next.clientName || editingInvoice.invoice?.clientName || "";
     const masterClient = clientProfiles[editClientName] || {};
     const savedClient = filledClientFields(next.clientDetails);
+    const clientStateCode = masterClient.stateCode || savedClient.stateCode;
     setClient({ ...EMPTY_CLIENT, ...masterClient, ...savedClient, legalName: savedClient.legalName || masterClient.legalName || editClientName });
-    setInvoice((current) => ({ ...current, ...next, invoiceNumber: editingInvoice.invoice?.invoiceNumber || next.invoiceNumber || "", items: Array.isArray(editingInvoice.items) && editingInvoice.items.length ? editingInvoice.items : (next.items || current.items) }));
+    setInvoice((current) => ({ ...current, ...next, taxMode: taxModeFromStateCodes(clientStateCode, profile.stateCode, next.taxMode || current.taxMode), invoiceNumber: editingInvoice.invoice?.invoiceNumber || next.invoiceNumber || "", items: Array.isArray(editingInvoice.items) && editingInvoice.items.length ? editingInvoice.items : (next.items || current.items) }));
     setReviewed(false);
-  }, [editingInvoice, loading, clientProfiles]);
+  }, [editingInvoice, loading, clientProfiles, profile.stateCode]);
 
   const clientOptions = useMemo(() => Array.from(new Set([
     ...clients.map((item) => String(item?.name || item || "").trim()),
@@ -132,9 +138,10 @@ export default function InvoiceGenerator({ token, api, clients = [], bootstrap =
 
   const selectClient = (name) => {
     setClientName(name);
-    setClient({ ...EMPTY_CLIENT, ...(clientProfiles[name] || {}), legalName: clientProfiles[name]?.legalName || name });
+    const selectedClient = clientProfiles[name] || {};
+    setClient({ ...EMPTY_CLIENT, ...selectedClient, legalName: selectedClient.legalName || name });
     const rule = billingRules[name];
-    const clientTaxMode = savedTaxMode(clientProfiles[name]?.taxMode);
+    const clientTaxMode = taxModeFromStateCodes(selectedClient.stateCode, profile.stateCode);
     if (rule?.type === "percentage" && Number(rule.value) > 0) {
       setInvoice((current) => ({ ...current, taxMode: clientTaxMode || current.taxMode, items: current.items.map((item) => ({ ...item, feePercent: String(rule.value), taxableAmount: "" })) }));
     } else if (rule?.type === "flat" && Number(rule.value) > 0) {
@@ -143,8 +150,14 @@ export default function InvoiceGenerator({ token, api, clients = [], bootstrap =
       setInvoice((current) => ({ ...current, taxMode: clientTaxMode }));
     }
   };
-  const updateProfile = (key, value) => setProfile((current) => ({ ...current, [key]: value }));
-  const updateClient = (key, value) => setClient((current) => ({ ...current, [key]: value }));
+  const updateProfile = (key, value) => {
+    setProfile((current) => ({ ...current, [key]: value }));
+    if (key === "stateCode") setInvoice((current) => ({ ...current, taxMode: taxModeFromStateCodes(client.stateCode, value, current.taxMode) }));
+  };
+  const updateClient = (key, value) => {
+    setClient((current) => ({ ...current, [key]: value }));
+    if (key === "stateCode") setInvoice((current) => ({ ...current, taxMode: taxModeFromStateCodes(value, profile.stateCode, current.taxMode) }));
+  };
   const updateInvoice = (key, value) => { setReviewed(false); setInvoice((current) => ({ ...current, [key]: value })); };
   const updateItem = (index, key, value) => { setReviewed(false); setInvoice((current) => ({ ...current, items: current.items.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item) })); };
   const addItem = () => setInvoice((current) => current.items.length >= 4 ? current : ({ ...current, items: [...current.items, { ...EMPTY_ITEM, feePercent: current.items[0]?.feePercent || "8.33", hsnSac: profile.defaultHsnSac || "998311" }] }));
