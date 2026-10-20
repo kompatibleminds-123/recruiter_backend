@@ -66,6 +66,10 @@
 .invoice-kpis span { color: #53627c; font-size: 0.82rem; }
 .invoice-kpis strong { color: #102957; font-size: 1.15rem; }
 
+.invoice-line-items { display: grid; gap: 0.8rem; margin-top: 1rem; }
+.invoice-line-item { padding: 1rem; border: 1px solid #cfdbef; border-radius: 12px; background: #f8fbff; }
+.invoice-line-item-title { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.8rem; }
+
 .invoice-card-heading {
   display: flex;
   align-items: flex-start;

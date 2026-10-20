@@ -6,6 +6,15 @@ const EMPTY_PROFILE = {
   defaultHsnSac: "998311", defaultGstRate: 18, logoDataUrl: "", signatureDataUrl: ""
 };
 const EMPTY_CLIENT = { legalName: "", address: "", gstin: "", state: "", stateCode: "" };
+const EMPTY_ITEM = { candidateName: "", serviceDescription: "HR Consulting Services", annualCtc: "", feePercent: "8.33", taxableAmount: "", hsnSac: "998311" };
+
+function itemTaxable(item) {
+  const manual = Number(String(item.taxableAmount || "").replace(/,/g, ""));
+  if (manual > 0) return manual;
+  const ctc = Number(String(item.annualCtc || "").replace(/,/g, ""));
+  const fee = Number(item.feePercent || 0);
+  return ctc > 0 && fee > 0 ? ctc * fee / 100 : 0;
+}
 
 function dataUrlToFile(dataUrl, filename) {
   const [header, encoded] = String(dataUrl || "").split(",");
@@ -50,9 +59,8 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
   const [clientName, setClientName] = useState("");
   const [client, setClient] = useState(EMPTY_CLIENT);
   const [invoice, setInvoice] = useState({
-    invoiceNumber: "", invoiceDate: new Date().toISOString().slice(0, 10), candidateName: "",
-    serviceDescription: "HR Consulting Services", annualCtc: "", feePercent: "8.33", taxableAmount: "",
-    hsnSac: "998311", gstRate: "18", taxMode: "auto", notes: ""
+    invoiceNumber: "", invoiceDate: new Date().toISOString().slice(0, 10),
+    items: [{ ...EMPTY_ITEM }], gstRate: "18", taxMode: "auto", notes: ""
   });
   const [status, setStatus] = useState({ text: "", kind: "" });
   const [loading, setLoading] = useState(true);
@@ -70,7 +78,7 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
         setBillingRules(result?.clientBillingRules || {});
         setInvoice((current) => ({
           ...current,
-          hsnSac: nextProfile.defaultHsnSac || current.hsnSac,
+          items: current.items.map((item) => ({ ...item, hsnSac: nextProfile.defaultHsnSac || item.hsnSac })),
           gstRate: String(nextProfile.defaultGstRate ?? current.gstRate)
         }));
       })
@@ -84,27 +92,24 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
     ...Object.keys(clientProfiles)
   ].filter(Boolean))).sort((a, b) => a.localeCompare(b)), [clients, clientProfiles]);
 
-  const computedTaxable = useMemo(() => {
-    const manual = Number(String(invoice.taxableAmount || "").replace(/,/g, ""));
-    if (manual > 0) return manual;
-    const ctc = Number(String(invoice.annualCtc || "").replace(/,/g, ""));
-    const fee = Number(invoice.feePercent || 0);
-    return ctc > 0 && fee > 0 ? ctc * fee / 100 : 0;
-  }, [invoice.annualCtc, invoice.feePercent, invoice.taxableAmount]);
+  const computedTaxable = useMemo(() => invoice.items.reduce((sum, item) => sum + itemTaxable(item), 0), [invoice.items]);
 
   const selectClient = (name) => {
     setClientName(name);
     setClient({ ...EMPTY_CLIENT, ...(clientProfiles[name] || {}), legalName: clientProfiles[name]?.legalName || name });
     const rule = billingRules[name];
     if (rule?.type === "percentage" && Number(rule.value) > 0) {
-      setInvoice((current) => ({ ...current, feePercent: String(rule.value), taxableAmount: "" }));
+      setInvoice((current) => ({ ...current, items: current.items.map((item) => ({ ...item, feePercent: String(rule.value), taxableAmount: "" })) }));
     } else if (rule?.type === "flat" && Number(rule.value) > 0) {
-      setInvoice((current) => ({ ...current, feePercent: "", taxableAmount: String(rule.value) }));
+      setInvoice((current) => ({ ...current, items: current.items.map((item) => ({ ...item, feePercent: "", taxableAmount: String(rule.value) })) }));
     }
   };
   const updateProfile = (key, value) => setProfile((current) => ({ ...current, [key]: value }));
   const updateClient = (key, value) => setClient((current) => ({ ...current, [key]: value }));
   const updateInvoice = (key, value) => setInvoice((current) => ({ ...current, [key]: value }));
+  const updateItem = (index, key, value) => setInvoice((current) => ({ ...current, items: current.items.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item) }));
+  const addItem = () => setInvoice((current) => current.items.length >= 4 ? current : ({ ...current, items: [...current.items, { ...EMPTY_ITEM, feePercent: current.items[0]?.feePercent || "8.33", hsnSac: profile.defaultHsnSac || "998311" }] }));
+  const removeItem = (index) => setInvoice((current) => ({ ...current, items: current.items.filter((_, itemIndex) => itemIndex !== index) }));
 
   const saveSettings = async ({ quiet = false } = {}) => {
     if (!profile.legalName.trim()) throw new Error("Company legal name is required.");
@@ -127,7 +132,7 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
     try {
       await saveSettings({ quiet: true });
       const result = await api(action === "finalize" ? "/company/invoices/finalize" : "/company/reports/invoice/pdf", token, "POST", {
-        invoice: { ...invoice, clientName, taxableAmount: computedTaxable }
+        invoice: { ...invoice, clientName }
       });
       const file = dataUrlToFile(`data:${result.mimeType};base64,${result.fileData}`, result.filename || "invoice.pdf");
       if (action === "share" && navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
@@ -189,13 +194,23 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
           <label><span>Client state</span><input value={client.state} onChange={(e) => updateClient("state", e.target.value)} /></label>
           <label><span>Client state code</span><input value={client.stateCode} onChange={(e) => updateClient("stateCode", e.target.value)} placeholder="e.g. 29" /></label>
           <label className="span-all"><span>Client billing address *</span><textarea rows="3" value={client.address} onChange={(e) => updateClient("address", e.target.value)} /></label>
-          <label><span>Candidate / reference *</span><input value={invoice.candidateName} onChange={(e) => updateInvoice("candidateName", e.target.value)} /></label>
-          <label><span>Annual CTC (Rs.)</span><input type="number" min="0" value={invoice.annualCtc} onChange={(e) => updateInvoice("annualCtc", e.target.value)} /></label>
-          <label><span>Recruitment fee %</span><input type="number" min="0" step="0.01" value={invoice.feePercent} onChange={(e) => updateInvoice("feePercent", e.target.value)} /></label>
-          <label><span>Taxable amount (optional override)</span><input type="number" min="0" value={invoice.taxableAmount} onChange={(e) => updateInvoice("taxableAmount", e.target.value)} placeholder={computedTaxable ? computedTaxable.toFixed(2) : "Auto from CTC and fee"} /></label>
           <label><span>GST rate %</span><input type="number" min="0" value={invoice.gstRate} onChange={(e) => updateInvoice("gstRate", e.target.value)} /></label>
           <label><span>Tax type</span><select value={invoice.taxMode} onChange={(e) => updateInvoice("taxMode", e.target.value)}><option value="auto">Auto from state codes</option><option value="igst">IGST</option><option value="cgst_sgst">CGST + SGST</option><option value="none">No GST</option></select></label>
           <label className="span-all"><span>Notes / payment terms</span><textarea rows="2" value={invoice.notes} onChange={(e) => updateInvoice("notes", e.target.value)} /></label>
+        </div>
+        <div className="invoice-line-items">
+          <div className="invoice-card-heading"><div><h4>Candidate line items</h4><p className="muted">Add up to 4 candidates in one invoice.</p></div><button className="ghost-btn" type="button" disabled={invoice.items.length >= 4} onClick={addItem}>+ Add Candidate</button></div>
+          {invoice.items.map((item, index) => <div className="invoice-line-item" key={index}>
+            <div className="invoice-line-item-title"><strong>Candidate {index + 1}</strong>{invoice.items.length > 1 ? <button className="ghost-btn" type="button" onClick={() => removeItem(index)}>Remove</button> : null}</div>
+            <div className="form-grid three-col">
+              <label><span>Candidate / reference *</span><input value={item.candidateName} onChange={(e) => updateItem(index, "candidateName", e.target.value)} /></label>
+              <label><span>Annual CTC (Rs.)</span><input type="number" min="0" value={item.annualCtc} onChange={(e) => updateItem(index, "annualCtc", e.target.value)} /></label>
+              <label><span>Recruitment fee %</span><input type="number" min="0" step="0.01" value={item.feePercent} onChange={(e) => updateItem(index, "feePercent", e.target.value)} /></label>
+              <label><span>Taxable amount (optional override)</span><input type="number" min="0" value={item.taxableAmount} onChange={(e) => updateItem(index, "taxableAmount", e.target.value)} placeholder={itemTaxable(item) ? itemTaxable(item).toFixed(2) : "Auto from CTC and fee"} /></label>
+              <label><span>Service</span><input value={item.serviceDescription} onChange={(e) => updateItem(index, "serviceDescription", e.target.value)} /></label>
+              <label><span>HSN/SAC</span><input value={item.hsnSac} onChange={(e) => updateItem(index, "hsnSac", e.target.value)} /></label>
+            </div>
+          </div>)}
         </div>
         <div className="invoice-total-preview"><span>Taxable amount</span><strong>Rs. {computedTaxable.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
         <div className="button-row">

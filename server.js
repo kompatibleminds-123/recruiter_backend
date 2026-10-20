@@ -18352,17 +18352,17 @@ const server = http.createServer(async (req, res) => {
       const savedRows = await supabaseTableFetch("invoices", "?select=*", { method: "POST", body: invoiceRow, prefer: "return=representation" });
       await supabaseTableFetch("invoice_items", "?select=id", {
         method: "POST",
-        body: {
+        body: normalized.items.map((item) => ({
           id: crypto.randomUUID(), invoice_id: invoiceId, company_id: actor.companyId,
-          assessment_id: String(input.assessmentId || "").trim() || null,
-          candidate_id: String(input.candidateId || "").trim() || null,
-          candidate_name: normalized.candidateName,
-          description: normalized.serviceDescription,
-          annual_ctc: normalized.annualCtc,
-          fee_percent: normalized.feePercent,
-          taxable_amount: normalized.taxableAmount,
+          assessment_id: item.assessmentId || null,
+          candidate_id: item.candidateId || null,
+          candidate_name: item.candidateName,
+          description: item.serviceDescription,
+          annual_ctc: item.annualCtc,
+          fee_percent: item.feePercent,
+          taxable_amount: item.taxableAmount,
           created_at: now
-        },
+        })),
         prefer: "return=minimal"
       }).catch(() => null);
       sendJson(res, 200, { ok: true, result: { invoice: sanitizeInvoiceRecord(savedRows?.[0] || invoiceRow), fileData: generated.fileData, mimeType: generated.mimeType, filename: generated.filename } });
@@ -18420,6 +18420,21 @@ const server = http.createServer(async (req, res) => {
         file_sha256: sha256Hex(pdfBuffer), created_by: actor.id, created_at: now, updated_at: now
       };
       const savedRows = await supabaseTableFetch("invoices", "?select=*", { method: "POST", body: row, prefer: "return=representation" });
+      await supabaseTableFetch("invoice_items", "?select=id", {
+        method: "POST",
+        body: normalized.items.map((item) => ({
+          id: crypto.randomUUID(), invoice_id: invoiceId, company_id: actor.companyId,
+          assessment_id: item.assessmentId || null,
+          candidate_id: item.candidateId || null,
+          candidate_name: item.candidateName,
+          description: item.serviceDescription,
+          annual_ctc: item.annualCtc,
+          fee_percent: item.feePercent,
+          taxable_amount: item.taxableAmount,
+          created_at: now
+        })),
+        prefer: "return=minimal"
+      }).catch(() => null);
       sendJson(res, 200, { ok: true, result: sanitizeInvoiceRecord(savedRows?.[0] || row) });
     } catch (error) {
       const message = String(error?.message || error);

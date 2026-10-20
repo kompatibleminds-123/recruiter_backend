@@ -149,10 +149,24 @@ function normalizeInvoiceInput(input = {}, savedSettings = {}) {
     ? savedSettings.invoiceClientProfiles : {};
   const clientName = text(input.clientName);
   const client = clients[clientName] && typeof clients[clientName] === "object" ? clients[clientName] : {};
-  const annualCtc = Math.max(0, number(input.annualCtc));
-  const feePercent = Math.max(0, number(input.feePercent));
-  const calculatedTaxable = annualCtc > 0 && feePercent > 0 ? annualCtc * feePercent / 100 : 0;
-  const taxableAmount = Math.max(0, number(input.taxableAmount) || calculatedTaxable);
+  const rawItems = Array.isArray(input.items) && input.items.length ? input.items : [input];
+  const items = rawItems.map((item = {}) => {
+    const annualCtc = Math.max(0, number(item.annualCtc));
+    const feePercent = Math.max(0, number(item.feePercent));
+    const calculatedTaxable = annualCtc > 0 && feePercent > 0 ? annualCtc * feePercent / 100 : 0;
+    return {
+      assessmentId: text(item.assessmentId),
+      candidateId: text(item.candidateId),
+      candidateName: text(item.candidateName),
+      serviceDescription: text(item.serviceDescription || input.serviceDescription || "HR Consulting Services"),
+      annualCtc,
+      feePercent,
+      hsnSac: text(item.hsnSac || input.hsnSac || profile.defaultHsnSac || "998311"),
+      taxableAmount: Math.max(0, number(item.taxableAmount) || calculatedTaxable)
+    };
+  });
+  const taxableAmount = items.reduce((sum, item) => sum + item.taxableAmount, 0);
+  const annualCtc = items.reduce((sum, item) => sum + item.annualCtc, 0);
   const gstRate = Math.max(0, number(input.gstRate || profile.defaultGstRate || 18));
   const sellerStateCode = text(profile.stateCode);
   const clientStateCode = text(client.stateCode);
@@ -172,11 +186,12 @@ function normalizeInvoiceInput(input = {}, savedSettings = {}) {
     profile,
     client: { ...client, name: text(client.legalName || client.name || clientName) || clientName },
     clientName,
-    candidateName: text(input.candidateName),
-    serviceDescription: text(input.serviceDescription || "HR Consulting Services"),
+    candidateName: items.map((item) => item.candidateName).filter(Boolean).join(", "),
+    serviceDescription: items.length === 1 ? items[0].serviceDescription : "Recruitment Services",
     annualCtc,
-    feePercent,
-    hsnSac: text(input.hsnSac || profile.defaultHsnSac || "998311"),
+    feePercent: items.length === 1 ? items[0].feePercent : 0,
+    hsnSac: items.length === 1 ? items[0].hsnSac : text(input.hsnSac || profile.defaultHsnSac || "998311"),
+    items,
     taxableAmount,
     gstRate,
     taxMode,
@@ -196,7 +211,9 @@ function validateInvoice(invoice) {
   if (!invoice.invoiceDate) missing.push("invoice date");
   if (!text(invoice.profile.legalName)) missing.push("company legal name");
   if (!invoice.clientName) missing.push("client");
-  if (!invoice.candidateName) missing.push("candidate/service reference");
+  if (!invoice.items.length || invoice.items.some((item) => !item.candidateName)) missing.push("candidate/service reference");
+  if (invoice.items.length > 4) missing.push("maximum 4 candidates per invoice");
+  if (invoice.items.some((item) => !(item.taxableAmount > 0))) missing.push("taxable amount for every candidate");
   if (!(invoice.taxableAmount > 0)) missing.push("taxable amount");
   if (missing.length) throw new Error(`Missing required invoice fields: ${missing.join(", ")}.`);
 }
@@ -265,26 +282,24 @@ async function generateInvoicePdf(input = {}, savedSettings = {}) {
     x += cols[i];
   }
   x = left;
-  const serviceLabel = [invoice.serviceDescription, invoice.candidateName ? `Candidate: ${invoice.candidateName}` : "", invoice.annualCtc ? `Annual CTC: Rs. ${money(invoice.annualCtc)}` : ""].filter(Boolean).join("\n");
-  const taxAmountLabel = invoice.taxMode === "cgst_sgst"
-    ? `CGST: Rs. ${money(invoice.cgst)}\nSGST: Rs. ${money(invoice.sgst)}`
-    : invoice.taxMode === "igst" ? `IGST: Rs. ${money(invoice.igst)}` : "Nil";
-  const rowValues = [
-    "1",
-    serviceLabel,
-    invoice.hsnSac,
-    invoice.feePercent ? `${invoice.feePercent}%` : "-",
-    `Rs. ${money(invoice.taxableAmount)}`,
-    invoice.taxMode === "none" ? "Nil" : `${invoice.gstRate}%`,
-    taxAmountLabel,
-    `Rs. ${money(invoice.total)}`
-  ];
-  for (let i = 0; i < cols.length; i += 1) {
-    drawCell(page, { x, y: 282, width: cols[i], height: 120 });
-    const rowFontSize = i === 1 ? 8.2 : 7.5;
-    drawCenteredCellText(page, rowValues[i], { x, y: 282, width: cols[i], height: 120, font: i === 1 ? regular : bold, size: rowFontSize, lineHeight: i === 1 ? 13 : 10, maxLines: 8 });
-    x += cols[i];
-  }
+  const rowHeight = 120 / invoice.items.length;
+  invoice.items.forEach((item, itemIndex) => {
+    const rowY = 402 - ((itemIndex + 1) * rowHeight);
+    const itemGst = invoice.taxMode === "none" ? 0 : item.taxableAmount * invoice.gstRate / 100;
+    const itemTotal = item.taxableAmount + itemGst;
+    const itemTaxLabel = invoice.taxMode === "cgst_sgst"
+      ? `CGST: ${money(itemGst / 2)}\nSGST: ${money(itemGst / 2)}`
+      : invoice.taxMode === "igst" ? `IGST: ${money(itemGst)}` : "Nil";
+    const serviceLabel = [item.serviceDescription, `Candidate: ${item.candidateName}`, item.annualCtc ? `CTC: Rs. ${money(item.annualCtc)}` : ""].filter(Boolean).join("\n");
+    const rowValues = [String(itemIndex + 1), serviceLabel, item.hsnSac, item.feePercent ? `${item.feePercent}%` : "-", `Rs. ${money(item.taxableAmount)}`, invoice.taxMode === "none" ? "Nil" : `${invoice.gstRate}%`, itemTaxLabel, `Rs. ${money(itemTotal)}`];
+    x = left;
+    for (let i = 0; i < cols.length; i += 1) {
+      drawCell(page, { x, y: rowY, width: cols[i], height: rowHeight });
+      const compact = invoice.items.length > 2;
+      drawCenteredCellText(page, rowValues[i], { x, y: rowY, width: cols[i], height: rowHeight, font: i === 1 ? regular : bold, size: compact ? 6.5 : (i === 1 ? 8.2 : 7.5), lineHeight: compact ? 7.5 : (i === 1 ? 13 : 10), maxLines: compact ? 4 : 8 });
+      x += cols[i];
+    }
+  });
 
   drawCell(page, { x: left, y: 215, width: 360, height: 67, fill: PALE });
   drawCell(page, { x: left + 360, y: 215, width: 184, height: 67 });

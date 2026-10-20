@@ -40,6 +40,21 @@ async function run() {
   assert.strictEqual(bytes.subarray(0, 4).toString(), "%PDF");
   const doc = await PDFDocument.load(bytes);
   assert.strictEqual(doc.getPageCount(), 1);
+
+  const multi = normalizeInvoiceInput({
+    ...input,
+    items: [
+      { candidateName: "Candidate One", annualCtc: 1000000, feePercent: 10 },
+      { candidateName: "Candidate Two", annualCtc: 1500000, feePercent: 8 }
+    ]
+  }, settings);
+  assert.strictEqual(multi.items.length, 2);
+  assert.strictEqual(multi.taxableAmount, 220000);
+  assert.strictEqual(multi.igst, 39600);
+  assert.strictEqual(multi.total, 259600);
+  const multiResult = await generateInvoicePdf({ ...input, items: multi.items }, settings);
+  const multiDoc = await PDFDocument.load(Buffer.from(multiResult.fileData, "base64"));
+  assert.strictEqual(multiDoc.getPageCount(), 1);
 }
 
 module.exports = { run };
