@@ -141,7 +141,7 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
     if (!client.address.trim()) { setStatus({ text: "Please enter the client's billing address.", kind: "error" }); return; }
     setWorking(true);
     try {
-      const invoicePayload = { ...invoice, items: invoice.items.map((item) => ({ ...item })), clientName, clientDetails: { ...client, legalName: client.legalName || clientName } };
+      const invoicePayload = { ...invoice, items: invoice.items.map((item) => ({ ...item })), clientName, clientDetails: { ...client, legalName: client.legalName || clientName }, profileDetails: { ...profile } };
       const endpoint = action === "finalize" ? (editingInvoice?.invoice?.id ? `/company/invoices/${encodeURIComponent(editingInvoice.invoice.id)}` : "/company/invoices/finalize") : "/company/reports/invoice/pdf";
       const result = await api(endpoint, token, action === "finalize" && editingInvoice?.invoice?.id ? "PUT" : "POST", {
         invoice: invoicePayload

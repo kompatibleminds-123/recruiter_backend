@@ -143,8 +143,10 @@ function indianNumberWords(value) {
 }
 
 function normalizeInvoiceInput(input = {}, savedSettings = {}) {
-  const profile = savedSettings?.invoiceProfile && typeof savedSettings.invoiceProfile === "object"
+  const savedProfile = savedSettings?.invoiceProfile && typeof savedSettings.invoiceProfile === "object"
     ? savedSettings.invoiceProfile : {};
+  const submittedProfile = input.profileDetails && typeof input.profileDetails === "object" ? input.profileDetails : {};
+  const profile = { ...savedProfile, ...submittedProfile };
   const clients = savedSettings?.invoiceClientProfiles && typeof savedSettings.invoiceClientProfiles === "object"
     ? savedSettings.invoiceClientProfiles : {};
   const clientName = text(input.clientName);

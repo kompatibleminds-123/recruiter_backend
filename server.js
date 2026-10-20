@@ -18266,8 +18266,9 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const body = await readJsonBody(req);
-      const settings = await getCompanySharedExportPresets(actor.companyId).catch(() => ({}));
-      const result = await generateInvoicePdf(body?.invoice || body || {}, settings);
+      const invoiceInput = body?.invoice || body || {};
+      const settings = { invoiceProfile: invoiceInput.profileDetails || {}, invoiceClientProfiles: { [String(invoiceInput.clientName || "").trim()]: invoiceInput.clientDetails || {} } };
+      const result = await generateInvoicePdf(invoiceInput, settings);
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
@@ -18307,16 +18308,17 @@ const server = http.createServer(async (req, res) => {
       }
       const body = await readJsonBody(req);
       const input = body?.invoice || body || {};
-      const settings = await getCompanySharedExportPresets(actor.companyId).catch(() => ({}));
+      const financialYear = getIndiaFinancialYear(input.invoiceDate);
+      const settings = { invoiceProfile: input.profileDetails || {}, invoiceClientProfiles: { [String(input.clientName || "").trim()]: input.clientDetails || {} } };
       const normalized = normalizeInvoiceInput(input, settings);
-      const generated = await generateInvoicePdf(input, settings);
-      const financialYear = getIndiaFinancialYear(normalized.invoiceDate);
-      const duplicate = await supabaseTableFetch(
+      const duplicateRequest = supabaseTableFetch(
         "invoices",
         `?select=id&company_id=eq.${encodeURIComponent(actor.companyId)}&financial_year=eq.${encodeURIComponent(financialYear)}&invoice_number=eq.${encodeURIComponent(normalized.invoiceNumber)}&limit=1`
       );
+      const clientsRequest = getCompanyClients(actor.companyId).catch(() => []);
+      const generatedRequest = generateInvoicePdf(input, settings);
+      const [duplicate, clients, generated] = await Promise.all([duplicateRequest, clientsRequest, generatedRequest]);
       if (Array.isArray(duplicate) && duplicate.length) throw new Error("This invoice number already exists in the selected financial year.");
-      const clients = await getCompanyClients(actor.companyId).catch(() => []);
       const matchedClient = clients.find((item) => String(item?.name || "").trim().toLowerCase() === normalized.clientName.toLowerCase()) || null;
       const invoiceId = crypto.randomUUID();
       const pdfBuffer = Buffer.from(generated.fileData, "base64");
@@ -18523,9 +18525,12 @@ const server = http.createServer(async (req, res) => {
       const existing = rows?.[0];
       if (!existing?.id) throw new Error("Invoice not found.");
       const body = await readJsonBody(req); const input = { ...(body?.invoice || body || {}), invoiceNumber: existing.invoice_number };
-      const settings = await getCompanySharedExportPresets(actor.companyId).catch(() => ({}));
-      const normalized = normalizeInvoiceInput(input, settings); const generated = await generateInvoicePdf(input, settings);
-      const clients = await getCompanyClients(actor.companyId).catch(() => []);
+      const settings = { invoiceProfile: input.profileDetails || {}, invoiceClientProfiles: { [String(input.clientName || "").trim()]: input.clientDetails || {} } };
+      const normalized = normalizeInvoiceInput(input, settings);
+      const [generated, clients] = await Promise.all([
+        generateInvoicePdf(input, settings),
+        getCompanyClients(actor.companyId).catch(() => [])
+      ]);
       const matchedClient = clients.find((item) => String(item?.name || "").trim().toLowerCase() === normalized.clientName.toLowerCase()) || null;
       const stored = await storeUploadedFile({ filename: generated.filename, mimeType: generated.mimeType, fileData: generated.fileData }, { objectPrefix: `companies/${actor.companyId}/invoices/FY-${existing.financial_year}/${invoiceId}` });
       const now = new Date().toISOString();
