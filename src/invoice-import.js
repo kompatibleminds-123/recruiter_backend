@@ -78,7 +78,14 @@ async function extractHistoricalInvoice(file = {}, settings = {}, options = {}) 
     /Date\s*[:#-]?\s*([^\n]{6,24})/i
   ]);
   const candidateNames = allMatches(text, /Candidate\s*(?::|-)?\s*([^\n]+?)(?=\s+(?:Annual\s*)?CTC\s*:|\s+Candidate\s*:|$)/gi);
-  const annualCtcs = allMatches(text, /(?:Annual\s*)?CTC\s*:\s*(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d+)?)/gi).map(amount);
+  if (!candidateNames.length) {
+    const legacyCandidate = firstMatch(text, [/HR\s+Consulting\s+Services\s*-?\s*\n\s*([^\n(]+?)\s*\n\s*\(CTC\s*-/i]);
+    if (legacyCandidate) candidateNames.push(legacyCandidate);
+  }
+  const annualCtcs = [
+    ...allMatches(text, /(?:Annual\s*)?CTC\s*:\s*(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d+)?)/gi).map(amount),
+    ...allMatches(text, /\(CTC\s*-\s*(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d+)?)\)/gi).map(amount)
+  ];
   const tableRows = Array.from(text.matchAll(/(?:Annual\s*)?CTC\s*:\s*(?:Rs\.?|INR|₹)?\s*[\d,]+(?:\.\d+)?\s+(?:\d{4,}\s+)?([\d.]+)\s*%\s+(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d+)?)\s+([\d.]+)\s*%\s+(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d+)?)/gi));
   const feeMatches = [
     ...allMatches(text, /(?:Recruitment\s*)?Fee\s*:?\s*([\d.]+)\s*%/gi).map(amount),
@@ -86,9 +93,10 @@ async function extractHistoricalInvoice(file = {}, settings = {}, options = {}) 
     ...allMatches(text, /\b\d{4,}\s+([\d.]+)\s*%\s+(?:Rs\.?|INR|₹)?\s*[\d,]+(?:\.\d+)?\s+\d+(?:\.\d+)?\s*%/gi).map(amount)
   ];
   const rowTaxableAmounts = tableRows.map((match) => amount(match[2])).filter(Boolean);
+  const legacyTaxableAmounts = Array.from(text.matchAll(/998311[\s\S]{0,100}?(\d[\d,]*(?:\.\d+)?)\s+9%\s+\d[\d,]*(?:\.\d+)?\s+9%/gi), (match) => amount(match[1])).filter(Boolean);
   const taxableAmount = amount(firstMatch(text, [
     /Taxable(?:\s+Amount)?\s*[:#-]?\s*(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d+)?)/i
-  ])) || rowTaxableAmounts.reduce((sum, value) => sum + value, 0);
+  ])) || rowTaxableAmounts.reduce((sum, value) => sum + value, 0) || legacyTaxableAmounts.reduce((sum, value) => sum + value, 0);
   const cgst = amount(firstMatch(text, [/CGST\s*:?\s*(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d+)?)/i]));
   const sgst = amount(firstMatch(text, [/SGST\s*:?\s*(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d+)?)/i]));
   const igst = amount(firstMatch(text, [/IGST\s*:?\s*(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d+)?)/i]));
@@ -97,8 +105,10 @@ async function extractHistoricalInvoice(file = {}, settings = {}, options = {}) 
     /Grand\s+Total\s*:?\s*(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d+)?)/i,
     /Total\s*:?\s*(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d+)?)/i
   ]));
-  const taxMode = igst > 0 ? "igst" : (cgst > 0 || sgst > 0 ? "cgst_sgst" : "none");
-  const gstAmount = igst || (cgst + sgst);
+  const legacyCgstSgst = /\d[\d,]*(?:\.\d+)?\s+9%\s+\d[\d,]*(?:\.\d+)?\s+9%/i.test(text);
+  const taxMode = legacyCgstSgst ? "cgst_sgst" : (igst > 0 ? "igst" : (cgst > 0 || sgst > 0 ? "cgst_sgst" : "none"));
+  const legacyTaxAmounts = Array.from(text.matchAll(/\d[\d,]*(?:\.\d+)?\s+9%\s+(\d[\d,]*(?:\.\d+)?)\s+9%\s+(\d[\d,]*(?:\.\d+)?)/gi), (match) => amount(match[1]) + amount(match[2]));
+  const gstAmount = legacyCgstSgst ? (legacyTaxAmounts[0] || (cgst + sgst)) : (igst || (cgst + sgst));
   const inferredTaxable = taxableAmount || (total > gstAmount ? Number((total - gstAmount).toFixed(2)) : 0);
   const gstRate = inferredTaxable > 0 && gstAmount > 0 ? Number(((gstAmount / inferredTaxable) * 100).toFixed(2)) : 18;
   const clientName = knownClient || firstMatch(text, [/(?:Details\s+of\s+Receiver|Billed\s+To)[\s\S]{0,80}\n\s*([^\n]+)/i]);

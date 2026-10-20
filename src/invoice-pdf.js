@@ -291,7 +291,8 @@ async function generateInvoicePdf(input = {}, savedSettings = {}) {
       ? `CGST: ${money(itemGst / 2)}\nSGST: ${money(itemGst / 2)}`
       : invoice.taxMode === "igst" ? `IGST: ${money(itemGst)}` : "Nil";
     const serviceLabel = [item.serviceDescription, `Candidate: ${item.candidateName}`, item.annualCtc ? `CTC: Rs. ${money(item.annualCtc)}` : ""].filter(Boolean).join("\n");
-    const rowValues = [String(itemIndex + 1), serviceLabel, item.hsnSac, item.feePercent ? `${item.feePercent}%` : "-", `Rs. ${money(item.taxableAmount)}`, invoice.taxMode === "none" ? "Nil" : `${invoice.gstRate}%`, itemTaxLabel, `Rs. ${money(itemTotal)}`];
+    const rateLabel = invoice.taxMode === "cgst_sgst" ? `CGST ${Number(invoice.gstRate / 2)}%\nSGST ${Number(invoice.gstRate / 2)}%` : invoice.taxMode === "none" ? "Nil" : `${invoice.gstRate}%`;
+    const rowValues = [String(itemIndex + 1), serviceLabel, item.hsnSac, item.feePercent ? `${item.feePercent}%` : "-", `Rs. ${money(item.taxableAmount)}`, rateLabel, itemTaxLabel, `Rs. ${money(itemTotal)}`];
     x = left;
     for (let i = 0; i < cols.length; i += 1) {
       drawCell(page, { x, y: rowY, width: cols[i], height: rowHeight });
