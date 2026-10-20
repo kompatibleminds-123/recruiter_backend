@@ -31,6 +31,10 @@ function money(value) {
   return number(value).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function ctcMoney(value) {
+  return number(value).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+}
+
 function formatInvoiceDate(value) {
   const raw = text(value);
   const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -301,7 +305,7 @@ async function generateInvoicePdf(input = {}, savedSettings = {}) {
     const itemTaxLabel = invoice.taxMode === "cgst_sgst"
       ? `CGST: ${money(itemGst / 2)}\nSGST: ${money(itemGst / 2)}`
       : invoice.taxMode === "igst" ? `IGST: ${money(itemGst)}` : "Nil";
-    const serviceLabel = [item.serviceDescription, `Candidate: ${item.candidateName}`, item.annualCtc ? `CTC: Rs. ${money(item.annualCtc)}` : ""].filter(Boolean).join("\n");
+    const serviceLabel = [item.serviceDescription, `Candidate: ${item.candidateName}`, item.annualCtc ? `CTC: Rs. ${ctcMoney(item.annualCtc)}` : ""].filter(Boolean).join("\n");
     const rateLabel = invoice.taxMode === "cgst_sgst" ? `CGST ${Number(invoice.gstRate / 2)}%\nSGST ${Number(invoice.gstRate / 2)}%` : invoice.taxMode === "none" ? "Nil" : `${invoice.gstRate}%`;
     const rowValues = [String(itemIndex + 1), serviceLabel, item.hsnSac, item.feePercent ? `${item.feePercent}%` : "-", `Rs. ${money(item.taxableAmount)}`, rateLabel, itemTaxLabel, `Rs. ${money(itemTotal)}`];
     x = left;

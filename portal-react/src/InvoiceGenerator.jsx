@@ -16,6 +16,10 @@ function itemTaxable(item) {
   return ctc > 0 && fee > 0 ? ctc * fee / 100 : 0;
 }
 
+function compactAmount(value) {
+  return Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+}
+
 function dataUrlToFile(dataUrl, filename) {
   const [header, encoded] = String(dataUrl || "").split(",");
   const mime = header?.match(/data:([^;]+)/)?.[1] || "application/pdf";
@@ -257,13 +261,13 @@ export default function InvoiceGenerator({ token, api, clients = [], bootstrap =
               <label><span>Candidate / reference *</span><input value={item.candidateName} onChange={(e) => updateItem(index, "candidateName", e.target.value)} /></label>
               <label><span>Annual CTC (Rs.)</span><input type="number" min="0" value={item.annualCtc} onChange={(e) => updateItem(index, "annualCtc", e.target.value)} /></label>
               <label><span>Recruitment fee %</span><input type="number" min="0" step="0.01" value={item.feePercent} onChange={(e) => updateItem(index, "feePercent", e.target.value)} /></label>
-              <label><span>Taxable amount (optional override)</span><input type="number" min="0" value={item.taxableAmount} onChange={(e) => updateItem(index, "taxableAmount", e.target.value)} placeholder={itemTaxable(item) ? itemTaxable(item).toFixed(2) : "Auto from CTC and fee"} /></label>
+              <label><span>Taxable amount (optional override)</span><input type="number" min="0" value={item.taxableAmount} onChange={(e) => updateItem(index, "taxableAmount", e.target.value)} placeholder={itemTaxable(item) ? compactAmount(itemTaxable(item)) : "Auto from CTC and fee"} /></label>
               <label><span>Service</span><input value={item.serviceDescription} onChange={(e) => updateItem(index, "serviceDescription", e.target.value)} /></label>
               <label><span>HSN/SAC</span><input value={item.hsnSac} onChange={(e) => updateItem(index, "hsnSac", e.target.value)} /></label>
             </div>
           </div>)}
         </div>
-        <div className="invoice-total-preview"><span>Taxable amount</span><strong>Rs. {computedTaxable.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
+        <div className="invoice-total-preview"><span>Taxable amount</span><strong>Rs. {compactAmount(computedTaxable)}</strong></div>
         <div className="button-row">
           <button className="ghost-btn" disabled={working} onClick={() => { setReviewed(true); void generate("download"); }}>{working ? "Generating..." : "Review PDF"}</button>
           <button disabled={working || !reviewed} onClick={() => void generate("finalize")}>{working ? "Saving..." : editingInvoice ? "Save corrected invoice" : "Finalize, Save & Download"}</button>

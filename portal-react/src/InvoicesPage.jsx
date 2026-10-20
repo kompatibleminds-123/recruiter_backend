@@ -254,7 +254,13 @@ export default function InvoicesPage({ token, api, clients = [] }) {
       </div>
     </section>
 
-    {tab === "create" ? <InvoiceGenerator token={token} api={api} clients={clients} bootstrap={invoiceBootstrap} editingInvoice={editingInvoice} onCancelEdit={() => { setEditingInvoice(null); setTab("register"); }} onSaved={() => { setInvoiceBootstrap(null); setEditingInvoice(null); setTab("register"); }} /> : null}
+    {tab === "create" ? <InvoiceGenerator token={token} api={api} clients={clients} bootstrap={invoiceBootstrap} editingInvoice={editingInvoice} onCancelEdit={() => { setEditingInvoice(null); setTab("register"); }} onSaved={(savedInvoice) => {
+      setInvoiceBootstrap(null);
+      setEditingInvoice(null);
+      if (savedInvoice?.financialYear) setFinancialYear(savedInvoice.financialYear);
+      if (savedInvoice?.id) setData((current) => ({ ...current, invoices: [savedInvoice, ...(current.invoices || []).filter((item) => item.id !== savedInvoice.id)] }));
+      setTab("register");
+    }} /> : null}
 
     {tab === "register" ? <section className="panel">
       <div className="invoice-register-toolbar">
