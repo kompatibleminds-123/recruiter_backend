@@ -52,6 +52,11 @@ async function run() {
   const editedClient = normalizeInvoiceInput({ ...input, clientDetails: { legalName: "Corrected Client Limited", address: "Corrected billing address", stateCode: "06" } }, settings);
   assert.strictEqual(editedClient.client.name, "Corrected Client Limited");
   assert.strictEqual(editedClient.client.address, "Corrected billing address");
+  const sameState = normalizeInvoiceInput({ ...input, taxMode: "igst", clientDetails: { legalName: "Same state client", address: "Jind", stateCode: "6" } }, { ...settings, invoiceProfile: { ...settings.invoiceProfile, stateCode: "06" } });
+  assert.strictEqual(sameState.taxMode, "cgst_sgst");
+  assert.strictEqual(sameState.cgst, 10800);
+  assert.strictEqual(sameState.sgst, 10800);
+  assert.strictEqual(sameState.igst, 0);
 
   const multi = normalizeInvoiceInput({
     ...input,

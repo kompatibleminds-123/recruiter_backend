@@ -15,6 +15,18 @@ function number(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function normalizedStateCode(value) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  return digits ? digits.padStart(2, "0") : "";
+}
+
+function resolveTaxMode({ requestedMode, sellerStateCode, clientStateCode }) {
+  if (text(requestedMode).toLowerCase() === "none") return "none";
+  const seller = normalizedStateCode(sellerStateCode);
+  const client = normalizedStateCode(clientStateCode);
+  return seller && client && seller === client ? "cgst_sgst" : "igst";
+}
+
 function money(value) {
   return number(value).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -172,12 +184,7 @@ function normalizeInvoiceInput(input = {}, savedSettings = {}) {
   const taxableAmount = items.reduce((sum, item) => sum + item.taxableAmount, 0);
   const annualCtc = items.reduce((sum, item) => sum + item.annualCtc, 0);
   const gstRate = Math.max(0, number(input.gstRate || profile.defaultGstRate || 18));
-  const sellerStateCode = text(profile.stateCode);
-  const clientStateCode = text(client.stateCode);
-  const taxModeRaw = text(input.taxMode).toLowerCase();
-  const taxMode = ["igst", "cgst_sgst", "none"].includes(taxModeRaw)
-    ? taxModeRaw
-    : (sellerStateCode && clientStateCode && sellerStateCode === clientStateCode ? "cgst_sgst" : "igst");
+  const taxMode = resolveTaxMode({ requestedMode: input.taxMode, sellerStateCode: profile.stateCode, clientStateCode: client.stateCode });
   const totalGst = taxMode === "none" ? 0 : taxableAmount * gstRate / 100;
   const cgst = taxMode === "cgst_sgst" ? totalGst / 2 : 0;
   const sgst = taxMode === "cgst_sgst" ? totalGst / 2 : 0;
@@ -368,7 +375,7 @@ async function generateCreditNotePdf(input = {}, savedSettings = {}) {
   const originalInvoiceNumber = text(input.originalInvoiceNumber);
   const taxableAmount = Math.max(0, number(input.taxableAmount));
   const gstRate = Math.max(0, number(input.gstRate || profile.defaultGstRate || 18));
-  const taxMode = ["igst", "cgst_sgst", "none"].includes(text(input.taxMode)) ? text(input.taxMode) : "igst";
+  const taxMode = resolveTaxMode({ requestedMode: input.taxMode, sellerStateCode: profile.stateCode, clientStateCode: client.stateCode });
   if (!noteNumber || !noteDate || !clientName || !originalInvoiceNumber || !(taxableAmount > 0)) throw new Error("Credit note number, date, client, original invoice and taxable amount are required.");
   const tax = taxMode === "none" ? 0 : taxableAmount * gstRate / 100;
   const cgst = taxMode === "cgst_sgst" ? tax / 2 : 0;
