@@ -147,9 +147,11 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
       const result = await api(endpoint, token, action === "finalize" && editingInvoice?.invoice?.id ? "PUT" : "POST", {
         invoice: invoicePayload
       });
-      const file = dataUrlToFile(`data:${result.mimeType};base64,${result.fileData}`, result.filename || "invoice.pdf");
-      downloadFile(file);
-      setStatus({ text: action === "finalize" ? "Invoice finalized, saved and downloaded." : "Invoice PDF downloaded.", kind: "success" });
+      if (action !== "finalize") {
+        const file = dataUrlToFile(`data:${result.mimeType};base64,${result.fileData}`, result.filename || "invoice.pdf");
+        downloadFile(file);
+      }
+      setStatus({ text: action === "finalize" ? (editingInvoice ? "Corrected invoice saved." : "Invoice finalized and saved.") : "Invoice PDF downloaded.", kind: "success" });
       if (action === "finalize" && typeof onSaved === "function") onSaved(result?.invoice || null);
     } catch (error) {
       if (String(error?.name || "") !== "AbortError") setStatus({ text: error.message || String(error), kind: "error" });
