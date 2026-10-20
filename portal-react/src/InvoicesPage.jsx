@@ -48,6 +48,7 @@ export default function InvoicesPage({ token, api, clients = [] }) {
   const [status, setStatus] = useState({ text: "", kind: "" });
   const [history, setHistory] = useState({ invoiceNumber: "", invoiceDate: "", clientName: "", candidateName: "", annualCtc: "", feePercent: "", taxableAmount: "", gstRate: "18", taxMode: "auto" });
   const [historyFile, setHistoryFile] = useState(null);
+  const [bulkRows, setBulkRows] = useState([]);
 
   const fyOptions = useMemo(() => {
     const current = Number(currentFinancialYear().slice(0, 4));
@@ -86,6 +87,65 @@ export default function InvoicesPage({ token, api, clients = [] }) {
     }
   };
 
+  const deleteInvoice = async (invoice) => {
+    if (!window.confirm(`Delete invoice ${invoice.invoiceNumber}? Its stored PDF will also be removed.`)) return;
+    try {
+      await api(`/company/invoices/${encodeURIComponent(invoice.id)}`, token, "DELETE");
+      setStatus({ text: `Invoice ${invoice.invoiceNumber} deleted.`, kind: "success" });
+      await loadInvoices();
+    } catch (error) {
+      setStatus({ text: error.message, kind: "error" });
+    }
+  };
+
+  const readBulkInvoices = async (fileList) => {
+    const files = Array.from(fileList || []).slice(0, 20);
+    if (!files.length) return;
+    setLoading(true); setStatus({ text: "Reading invoice PDFs...", kind: "" });
+    const rows = [];
+    for (const sourceFile of files) {
+      try {
+        const file = await readPdf(sourceFile);
+        const preview = await api("/company/invoices/historical/preview", token, "POST", { file });
+        rows.push({ id: `${Date.now()}-${rows.length}`, file, invoice: preview.invoice || {}, missingFields: preview.missingFields || [], state: preview.status || "needs_review", error: "" });
+      } catch (error) {
+        rows.push({ id: `${Date.now()}-${rows.length}`, file: null, filename: sourceFile.name, invoice: {}, missingFields: [], state: "error", error: error.message });
+      }
+    }
+    setBulkRows(rows);
+    setStatus({ text: `${rows.length} invoice PDFs processed. Review the extracted values before importing.`, kind: "success" });
+    setLoading(false);
+  };
+
+  const updateBulkInvoice = (rowId, key, value) => setBulkRows((current) => current.map((row) => {
+    if (row.id !== rowId) return row;
+    const invoice = { ...row.invoice, [key]: value };
+    if (Array.isArray(invoice.items) && invoice.items.length === 1 && ["candidateName", "annualCtc", "feePercent", "taxableAmount"].includes(key)) {
+      invoice.items = [{ ...invoice.items[0], [key]: value }];
+    }
+    return { ...row, invoice, state: "reviewed", error: "" };
+  }));
+
+  const bulkRowReady = (row) => Boolean(row.file && row.invoice?.invoiceNumber && row.invoice?.invoiceDate && row.invoice?.clientName && row.invoice?.candidateName && Number(row.invoice?.taxableAmount) > 0 && row.state !== "imported");
+
+  const importBulkInvoices = async () => {
+    const readyRows = bulkRows.filter(bulkRowReady);
+    if (!readyRows.length) { setStatus({ text: "Complete the required fields before importing.", kind: "error" }); return; }
+    setLoading(true); setStatus({ text: "Importing reviewed invoices...", kind: "" });
+    let imported = 0;
+    for (const row of readyRows) {
+      try {
+        await api("/company/invoices/historical", token, "POST", { invoice: row.invoice, file: row.file });
+        imported += 1;
+        setBulkRows((current) => current.map((item) => item.id === row.id ? { ...item, state: "imported", error: "" } : item));
+      } catch (error) {
+        setBulkRows((current) => current.map((item) => item.id === row.id ? { ...item, state: "error", error: error.message } : item));
+      }
+    }
+    setStatus({ text: `${imported} of ${readyRows.length} invoices imported.`, kind: imported === readyRows.length ? "success" : "error" });
+    setLoading(false);
+  };
+
   const saveHistorical = async () => {
     setLoading(true); setStatus({ text: "", kind: "" });
     try {
@@ -119,11 +179,14 @@ export default function InvoicesPage({ token, api, clients = [] }) {
         <div className="button-row"><button className="ghost-btn" disabled={loading} onClick={() => void loadInvoices()}>{loading ? "Loading..." : "Refresh"}</button><button disabled={!data.invoices.length} onClick={() => downloadInvoiceExcel(financialYear, data.invoices)}>Download Excel</button></div>
       </div>
       <div className="table-wrap"><table className="dashboard-table"><thead><tr><th>Invoice</th><th>Date</th><th>Client</th><th>Candidate</th><th>Source</th><th>Taxable</th><th>GST</th><th>Total</th><th>PDF</th></tr></thead><tbody>
-        {data.invoices.length ? data.invoices.map((item) => <tr key={item.id}><td>{item.invoiceNumber}</td><td>{item.invoiceDate}</td><td>{item.clientName}</td><td>{item.candidateName || "-"}</td><td>{item.source}</td><td>{money(item.taxableAmount)}</td><td>{money(Number(item.cgst || 0) + Number(item.sgst || 0) + Number(item.igst || 0))}</td><td><strong>{money(item.total)}</strong></td><td><button className="ghost-btn" onClick={() => void downloadStoredInvoice(item)}>Download</button></td></tr>) : <tr><td colSpan="9">{loading ? "Loading invoices..." : "No finalized invoices in this financial year."}</td></tr>}
+        {data.invoices.length ? data.invoices.map((item) => <tr key={item.id}><td>{item.invoiceNumber}</td><td>{item.invoiceDate}</td><td>{item.clientName}</td><td>{item.candidateName || "-"}</td><td>{item.source}</td><td>{money(item.taxableAmount)}</td><td>{money(Number(item.cgst || 0) + Number(item.sgst || 0) + Number(item.igst || 0))}</td><td><strong>{money(item.total)}</strong></td><td><div className="button-row tight"><button className="ghost-btn" onClick={() => void downloadStoredInvoice(item)}>Download</button><button className="danger-btn" onClick={() => void deleteInvoice(item)}>Delete</button></div></td></tr>) : <tr><td colSpan="9">{loading ? "Loading invoices..." : "No finalized invoices in this financial year."}</td></tr>}
       </tbody></table></div>
     </section> : null}
 
-    {tab === "historical" ? <section className="panel"><h2>Add an existing invoice</h2><p className="muted">The original PDF and invoice number will be preserved.</p><div className="form-grid three-col">
+    {tab === "historical" ? <section className="panel"><h2>Bulk upload historical invoices</h2><p className="muted">Select up to 20 text PDFs. Review every extracted value before importing; no AI is used.</p>
+      <div className="invoice-bulk-upload"><input type="file" accept="application/pdf" multiple disabled={loading} onChange={(e) => void readBulkInvoices(e.target.files)} /><button disabled={loading || !bulkRows.some(bulkRowReady)} onClick={() => void importBulkInvoices()}>{loading ? "Processing..." : "Import reviewed invoices"}</button></div>
+      {bulkRows.length ? <div className="table-wrap"><table className="dashboard-table invoice-review-table"><thead><tr><th>PDF</th><th>Invoice no.</th><th>Date</th><th>Client</th><th>Candidate</th><th>Taxable</th><th>GST %</th><th>Status</th></tr></thead><tbody>{bulkRows.map((row) => <tr key={row.id}><td>{row.file?.filename || row.filename}</td><td><input value={row.invoice.invoiceNumber || ""} onChange={(e) => updateBulkInvoice(row.id, "invoiceNumber", e.target.value)} /></td><td><input type="date" value={row.invoice.invoiceDate || ""} onChange={(e) => updateBulkInvoice(row.id, "invoiceDate", e.target.value)} /></td><td><select value={row.invoice.clientName || ""} onChange={(e) => updateBulkInvoice(row.id, "clientName", e.target.value)}><option value="">Select client</option>{clients.map((item) => <option key={String(item?.name || item)} value={String(item?.name || item)}>{String(item?.name || item)}</option>)}</select></td><td><input value={row.invoice.candidateName || ""} onChange={(e) => updateBulkInvoice(row.id, "candidateName", e.target.value)} /></td><td><input type="number" min="0" value={row.invoice.taxableAmount || ""} onChange={(e) => updateBulkInvoice(row.id, "taxableAmount", e.target.value)} /></td><td><input type="number" min="0" value={row.invoice.gstRate ?? 18} onChange={(e) => updateBulkInvoice(row.id, "gstRate", e.target.value)} /></td><td><span className={`invoice-import-state ${row.state}`}>{row.state === "imported" ? "Imported" : row.error || (bulkRowReady(row) ? "Ready" : "Needs review")}</span></td></tr>)}</tbody></table></div> : null}
+      <hr className="invoice-section-divider" /><h2>Add one invoice manually</h2><p className="muted">The original PDF and invoice number will be preserved.</p><div className="form-grid three-col">
       <label><span>Invoice number *</span><input value={history.invoiceNumber} onChange={(e) => setHistory((current) => ({ ...current, invoiceNumber: e.target.value }))} /></label>
       <label><span>Invoice date *</span><input type="date" value={history.invoiceDate} onChange={(e) => setHistory((current) => ({ ...current, invoiceDate: e.target.value }))} /></label>
       <label><span>Client *</span><select value={history.clientName} onChange={(e) => setHistory((current) => ({ ...current, clientName: e.target.value }))}><option value="">Select client</option>{clients.map((item) => <option key={String(item?.name || item)} value={String(item?.name || item)}>{String(item?.name || item)}</option>)}</select></label>

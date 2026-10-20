@@ -1,7 +1,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
+const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
 
 const LOCAL_UPLOAD_DIR = path.join(__dirname, "..", "data", "uploads");
 
@@ -134,7 +134,22 @@ async function loadStoredFile(fileRef = {}) {
   };
 }
 
+async function deleteStoredFile(fileRef = {}) {
+  const provider = String(fileRef.provider || "").trim();
+  const key = String(fileRef.key || "").trim();
+  const url = String(fileRef.url || "").trim();
+  const config = getS3Config();
+  if (provider === "s3") {
+    if (!config.bucket || !config.region || !config.accessKeyId || !config.secretAccessKey || !key) throw new Error("S3 file configuration is incomplete.");
+    await createS3Client(config).send(new DeleteObjectCommand({ Bucket: config.bucket, Key: key }));
+    return;
+  }
+  const localPath = url && path.resolve(url).startsWith(path.resolve(LOCAL_UPLOAD_DIR)) ? url : (key ? path.join(LOCAL_UPLOAD_DIR, path.basename(key)) : "");
+  if (localPath && fs.existsSync(localPath)) fs.unlinkSync(localPath);
+}
+
 module.exports = {
   storeUploadedFile,
-  loadStoredFile
+  loadStoredFile,
+  deleteStoredFile
 };

@@ -1,6 +1,7 @@
 const assert = require("assert");
 const { PDFDocument } = require("pdf-lib");
 const { formatInvoiceDate, generateInvoicePdf, indianNumberWords, normalizeInvoiceInput } = require("../src/invoice-pdf");
+const { extractHistoricalInvoice } = require("../src/invoice-import");
 
 async function run() {
   const settings = {
@@ -40,6 +41,13 @@ async function run() {
   assert.strictEqual(bytes.subarray(0, 4).toString(), "%PDF");
   const doc = await PDFDocument.load(bytes);
   assert.strictEqual(doc.getPageCount(), 1);
+  const extracted = await extractHistoricalInvoice({ filename: result.filename, fileData: result.fileData }, settings);
+  assert.strictEqual(extracted.invoice.invoiceNumber, input.invoiceNumber);
+  assert.strictEqual(extracted.invoice.invoiceDate, input.invoiceDate);
+  assert.strictEqual(extracted.invoice.clientName, input.clientName);
+  assert.strictEqual(extracted.invoice.candidateName, input.candidateName);
+  assert.strictEqual(extracted.invoice.taxableAmount, normalized.taxableAmount);
+  assert.strictEqual(extracted.invoice.taxMode, normalized.taxMode);
 
   const multi = normalizeInvoiceInput({
     ...input,

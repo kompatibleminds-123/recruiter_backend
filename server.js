@@ -5,11 +5,12 @@ const path = require("path");
 const crypto = require("crypto");
 const { buildRecruiterIncentives } = require("./src/recruiter-incentives");
 const { generateInvoicePdf, normalizeInvoiceInput } = require("./src/invoice-pdf");
+const { extractHistoricalInvoice } = require("./src/invoice-import");
 const { buildJobBooleanFingerprint, generateJobBooleanOptions, getCachedJobBooleanState } = require("./src/job-boolean");
 const { parseCandidatePayload } = require("./src/parser");
 const { callOpenAiJsonSchema, callOpenAiQuestions, normalizeCandidateFileWithAi, normalizeCandidateWithAi, extractLinkedInAssistFromScreenshotWithAi } = require("./src/ai");
 const { parseCandidateHybrid } = require("./src/hybrid-candidate-service");
-const { storeUploadedFile, loadStoredFile } = require("./src/storage");
+const { storeUploadedFile, loadStoredFile, deleteStoredFile } = require("./src/storage");
 const {
   assignCandidate,
   deleteCandidate,
@@ -18439,6 +18440,43 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
       const message = String(error?.message || error);
       sendJson(res, 400, { ok: false, error: /invoices|relation/i.test(message) ? "Invoice database is not ready. Run sql/2026-10-20-invoices.sql in Supabase first." : message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/invoices/historical/preview") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (String(actor?.role || "").trim().toLowerCase() !== "admin") {
+        sendJson(res, 403, { ok: false, error: "Only admin can read historical invoices." });
+        return;
+      }
+      const body = await readJsonBody(req);
+      const settings = await getCompanySharedExportPresets(actor.companyId).catch(() => ({}));
+      const preview = await extractHistoricalInvoice(body?.file || {}, settings);
+      sendJson(res, 200, { ok: true, result: preview });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && /^\/company\/invoices\/[^/]+$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      if (String(actor?.role || "").trim().toLowerCase() !== "admin") {
+        sendJson(res, 403, { ok: false, error: "Only admin can delete invoices." });
+        return;
+      }
+      const invoiceId = String(requestUrl.pathname.match(/^\/company\/invoices\/([^/]+)$/)?.[1] || "").trim();
+      const rows = await supabaseTableFetch("invoices", `?select=*&id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&limit=1`);
+      const row = rows?.[0];
+      if (!row?.id) throw new Error("Invoice not found.");
+      await deleteStoredFile({ provider: row.file_provider, key: row.file_key, url: row.file_url });
+      await supabaseTableFetch("invoices", `?id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}`, { method: "DELETE", prefer: "return=minimal" });
+      sendJson(res, 200, { ok: true, result: { id: invoiceId } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
     return;
   }
