@@ -10483,6 +10483,7 @@ function PortalApp({ token, onLogout }) {
   const [clientOnlyDraft, setClientOnlyDraft] = useState("");
   const [selectedClientMasterName, setSelectedClientMasterName] = useState("");
   const [clientMasterRenameDraft, setClientMasterRenameDraft] = useState("");
+  const [clientMasterBillingDraft, setClientMasterBillingDraft] = useState({ legalName: "", address: "", gstin: "", state: "", stateCode: "" });
   const [clientMasterActionBusy, setClientMasterActionBusy] = useState("");
   const [clientMasterViewFilter, setClientMasterViewFilter] = useState("active");
   const [clientMasterViewTransitioning, setClientMasterViewTransitioning] = useState(false);
@@ -10746,6 +10747,11 @@ function PortalApp({ token, onLogout }) {
       archived: item.archived === true,
       source: "client_master",
       aboutCompany: item.aboutCompany || "",
+      billingLegalName: item.billingLegalName || "",
+      billingAddress: item.billingAddress || "",
+      billingGstin: item.billingGstin || "",
+      billingState: item.billingState || "",
+      billingStateCode: item.billingStateCode || "",
       publicCompanyLine: item.publicCompanyLine || "",
       publicPostingTitle: item.publicPostingTitle || ""
     }));
@@ -23607,6 +23613,16 @@ function PortalApp({ token, onLogout }) {
   }, [clientMasterViewFilter, activeClientMasterOptions, archivedClientMasterOptions, visibleClientMasterOptions, selectedClientMasterName, selectedClientMaster, clientMasterRenameDraft]);
 
   useEffect(() => {
+    setClientMasterBillingDraft(selectedClientMaster ? {
+      legalName: selectedClientMaster.billingLegalName || selectedClientMaster.name || "",
+      address: selectedClientMaster.billingAddress || "",
+      gstin: selectedClientMaster.billingGstin || "",
+      state: selectedClientMaster.billingState || "",
+      stateCode: selectedClientMaster.billingStateCode || ""
+    } : { legalName: "", address: "", gstin: "", state: "", stateCode: "" });
+  }, [selectedClientMasterName]);
+
+  useEffect(() => {
     if (!clientMasterViewTransitioning) return undefined;
     const timer = setTimeout(() => setClientMasterViewTransitioning(false), 180);
     return () => clearTimeout(timer);
@@ -23694,6 +23710,29 @@ function PortalApp({ token, onLogout }) {
       void reloadClientRecordsWorkspace().catch(() => {});
     } catch (error) {
       setStatus("loginClientArchive", String(error?.message || error), "error");
+    } finally {
+      setClientMasterActionBusy("");
+    }
+  }
+
+  async function saveClientMasterBillingDetails() {
+    if (!isSettingsAdmin || !selectedClientMaster?.id) return;
+    try {
+      setClientMasterActionBusy("billing");
+      const result = await api("/company/clients", token, "PATCH", {
+        clientId: selectedClientMaster.id,
+        currentName: selectedClientMaster.name,
+        nextName: selectedClientMaster.name,
+        billingLegalName: clientMasterBillingDraft.legalName,
+        billingAddress: clientMasterBillingDraft.address,
+        billingGstin: clientMasterBillingDraft.gstin,
+        billingState: clientMasterBillingDraft.state,
+        billingStateCode: clientMasterBillingDraft.stateCode
+      });
+      setClientRecords((current) => mergeClientRecordsByIdentity(current, [result]));
+      setStatus("loginClientRename", "Client billing details saved.", "ok");
+    } catch (error) {
+      setStatus("loginClientRename", String(error?.message || error), "error");
     } finally {
       setClientMasterActionBusy("");
     }
@@ -32123,7 +32162,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </div>
                     {selectedClientMaster ? (
                       <div style={{ marginTop: 10 }}>
+                        <div className="form-grid three-col" style={{ marginBottom: 10 }}>
+                          <label><span>Billing legal name</span><input disabled={!isSettingsAdmin} value={clientMasterBillingDraft.legalName} onChange={(e) => setClientMasterBillingDraft((current) => ({ ...current, legalName: e.target.value }))} /></label>
+                          <label><span>GSTIN</span><input disabled={!isSettingsAdmin} value={clientMasterBillingDraft.gstin} onChange={(e) => setClientMasterBillingDraft((current) => ({ ...current, gstin: e.target.value.toUpperCase() }))} /></label>
+                          <label><span>State</span><input disabled={!isSettingsAdmin} value={clientMasterBillingDraft.state} onChange={(e) => setClientMasterBillingDraft((current) => ({ ...current, state: e.target.value }))} /></label>
+                          <label><span>State code</span><input disabled={!isSettingsAdmin} value={clientMasterBillingDraft.stateCode} onChange={(e) => setClientMasterBillingDraft((current) => ({ ...current, stateCode: e.target.value }))} /></label>
+                          <label className="span-all"><span>Billing address</span><textarea rows="3" disabled={!isSettingsAdmin} value={clientMasterBillingDraft.address} onChange={(e) => setClientMasterBillingDraft((current) => ({ ...current, address: e.target.value }))} /></label>
+                        </div>
                         <div className="button-row tight">
+                          <button className="ghost-btn" onClick={() => void saveClientMasterBillingDetails()} disabled={!isSettingsAdmin || !!clientMasterActionBusy}>
+                            {clientMasterActionBusy === "billing" ? "Saving..." : "Save billing details"}
+                          </button>
                           <button onClick={() => void renameClientMasterSelection()} disabled={!isSettingsAdmin || !!clientMasterActionBusy}>
                             {clientMasterActionBusy === "rename" ? "Saving..." : "Save rename globally"}
                           </button>

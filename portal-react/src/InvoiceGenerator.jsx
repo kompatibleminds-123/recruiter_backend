@@ -70,12 +70,22 @@ export default function InvoiceGenerator({ token, api, clients = [], onSaved = n
   useEffect(() => {
     let active = true;
     setLoading(true);
-    api("/company/reports/invoice/settings", token)
-      .then((result) => {
+    Promise.all([
+      api("/company/reports/invoice/settings", token),
+      api("/company/clients", token).catch(() => ({ clients: [] }))
+    ])
+      .then(([result, clientResult]) => {
         if (!active) return;
         const nextProfile = { ...EMPTY_PROFILE, ...(result?.invoiceProfile || {}) };
+        const masterProfiles = Object.fromEntries((clientResult?.clients || []).map((item) => [String(item?.name || "").trim(), {
+          legalName: item?.billingLegalName || item?.name || "",
+          address: item?.billingAddress || "",
+          gstin: item?.billingGstin || "",
+          state: item?.billingState || "",
+          stateCode: item?.billingStateCode || ""
+        }]).filter(([name]) => Boolean(name)));
         setProfile(nextProfile);
-        setClientProfiles(result?.invoiceClientProfiles || {});
+        setClientProfiles({ ...(result?.invoiceClientProfiles || {}), ...masterProfiles });
         setBillingRules(result?.clientBillingRules || {});
         setInvoice((current) => ({
           ...current,

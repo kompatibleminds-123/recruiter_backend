@@ -13260,18 +13260,20 @@ function syncInvoiceClientProfile(actor, clientName, clientDetails) {
     stateCode: details.stateCode
   }).filter(([, value]) => String(value || "").trim()));
   if (Object.keys(nextDetails).length <= 1) return Promise.resolve();
-  return getCompanySharedExportPresets(actor.companyId)
-    .then((settings) => saveCompanySharedExportPresets({
-      actorUserId: actor.id,
-      companyId: actor.companyId,
-      settings: {
-        ...settings,
-        invoiceClientProfiles: {
-          ...(settings?.invoiceClientProfiles || {}),
-          [name]: { ...(settings?.invoiceClientProfiles?.[name] || {}), ...nextDetails }
-        }
-      }
-    }))
+  return getCompanyClients(actor.companyId)
+    .then((clients) => {
+      const matched = (clients || []).find((item) => String(item?.name || "").trim().toLowerCase() === name.toLowerCase());
+      const billing = {
+        billingLegalName: nextDetails.legalName,
+        billingAddress: nextDetails.address,
+        billingGstin: nextDetails.gstin,
+        billingState: nextDetails.state,
+        billingStateCode: nextDetails.stateCode
+      };
+      return matched
+        ? updateCompanyClientRecord({ actorUserId: actor.id, companyId: actor.companyId, clientId: matched.id, currentName: matched.name, nextName: matched.name, ...billing })
+        : createCompanyClient({ actorUserId: actor.id, companyId: actor.companyId, name, ...billing });
+    })
     .catch(() => null);
 }
 
@@ -16920,7 +16922,12 @@ const server = http.createServer(async (req, res) => {
         publicCompanyLine: String(body.publicCompanyLine || body.public_company_line || "").trim(),
         publicPostingTitle: String(body.publicPostingTitle || body.public_posting_title || "").trim(),
         presetLabel: String(body.presetLabel || body.preset_label || "").trim(),
-        presetColumns: String(body.presetColumns || body.preset_columns || "").trim()
+        presetColumns: String(body.presetColumns || body.preset_columns || "").trim(),
+        billingLegalName: String(body.billingLegalName || body.billing_legal_name || "").trim(),
+        billingAddress: String(body.billingAddress || body.billing_address || "").trim(),
+        billingGstin: String(body.billingGstin || body.billing_gstin || "").trim(),
+        billingState: String(body.billingState || body.billing_state || "").trim(),
+        billingStateCode: String(body.billingStateCode || body.billing_state_code || "").trim()
       });
       sendJson(res, 200, { ok: true, result: client });
     } catch (error) {
@@ -16945,7 +16952,12 @@ const server = http.createServer(async (req, res) => {
         publicCompanyLine: body.publicCompanyLine,
         publicPostingTitle: body.publicPostingTitle,
         presetLabel: body.presetLabel,
-        presetColumns: body.presetColumns
+        presetColumns: body.presetColumns,
+        billingLegalName: body.billingLegalName,
+        billingAddress: body.billingAddress,
+        billingGstin: body.billingGstin,
+        billingState: body.billingState,
+        billingStateCode: body.billingStateCode
       });
       sendJson(res, 200, { ok: true, result: client });
     } catch (error) {

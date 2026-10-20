@@ -480,6 +480,11 @@ function sanitizeCompanyClient(client) {
     status: archived ? "archived" : "active",
     archived,
     aboutCompany: String(client.aboutCompany ?? client.about_company ?? "").trim(),
+    billingLegalName: String(client.billingLegalName ?? client.billing_legal_name ?? "").trim(),
+    billingAddress: String(client.billingAddress ?? client.billing_address ?? "").trim(),
+    billingGstin: String(client.billingGstin ?? client.billing_gstin ?? "").trim(),
+    billingState: String(client.billingState ?? client.billing_state ?? "").trim(),
+    billingStateCode: String(client.billingStateCode ?? client.billing_state_code ?? "").trim(),
     publicCompanyLine: String(client.publicCompanyLine ?? client.public_company_line ?? "").trim(),
     publicPostingTitle: String(client.publicPostingTitle ?? client.public_posting_title ?? client.publicTitle ?? client.public_title ?? "").trim(),
     presetLabel: String(client.presetLabel ?? client.preset_label ?? "").trim(),
@@ -522,6 +527,11 @@ function mergeCompanyClientEntries(entries = []) {
       archived: item.archived,
       status: item.archived ? "archived" : "active",
       aboutCompany: item.aboutCompany || existing.aboutCompany || "",
+      billingLegalName: item.billingLegalName || existing.billingLegalName || "",
+      billingAddress: item.billingAddress || existing.billingAddress || "",
+      billingGstin: item.billingGstin || existing.billingGstin || "",
+      billingState: item.billingState || existing.billingState || "",
+      billingStateCode: item.billingStateCode || existing.billingStateCode || "",
       publicCompanyLine: item.publicCompanyLine || existing.publicCompanyLine || "",
       publicPostingTitle: item.publicPostingTitle || existing.publicPostingTitle || "",
       presetLabel: item.presetLabel || existing.presetLabel || "",
@@ -4358,6 +4368,11 @@ async function saveCompanyClientsRow({ companyId, clients, actorEmail = "" }) {
         status: item.archived ? "archived" : "active",
         archived: item.archived === true,
         aboutCompany: item.aboutCompany || "",
+        billingLegalName: item.billingLegalName || "",
+        billingAddress: item.billingAddress || "",
+        billingGstin: item.billingGstin || "",
+        billingState: item.billingState || "",
+        billingStateCode: item.billingStateCode || "",
         publicCompanyLine: item.publicCompanyLine || "",
         publicPostingTitle: item.publicPostingTitle || "",
         presetLabel: item.presetLabel || "",
@@ -4378,6 +4393,11 @@ async function saveCompanyClientsRow({ companyId, clients, actorEmail = "" }) {
     name: item.name,
     status: item.archived ? "archived" : "active",
     about_company: item.aboutCompany || "",
+    billing_legal_name: item.billingLegalName || "",
+    billing_address: item.billingAddress || "",
+    billing_gstin: item.billingGstin || "",
+    billing_state: item.billingState || "",
+    billing_state_code: item.billingStateCode || "",
     public_company_line: item.publicCompanyLine || "",
     public_posting_title: item.publicPostingTitle || "",
     preset_label: item.presetLabel || "",
@@ -4431,7 +4451,7 @@ async function getCompanyClients(companyId) {
   }
   return merged;
 }
-async function createCompanyClient({ actorUserId, companyId, name, aboutCompany = "", publicCompanyLine = "", publicPostingTitle = "", presetLabel = "", presetColumns = "" }) {
+async function createCompanyClient({ actorUserId, companyId, name, aboutCompany = "", publicCompanyLine = "", publicPostingTitle = "", presetLabel = "", presetColumns = "", billingLegalName = "", billingAddress = "", billingGstin = "", billingState = "", billingStateCode = "" }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor || String(actor.role || "").toLowerCase() !== "admin") throw new Error("Only an admin can create clients.");
   const scopedCompanyId = String(companyId || "").trim();
@@ -4447,6 +4467,11 @@ async function createCompanyClient({ actorUserId, companyId, name, aboutCompany 
     name: existing?.name || safeName,
     archived: false,
     aboutCompany: String(aboutCompany || existing?.aboutCompany || "").trim(),
+    billingLegalName: String(billingLegalName || existing?.billingLegalName || "").trim(),
+    billingAddress: String(billingAddress || existing?.billingAddress || "").trim(),
+    billingGstin: String(billingGstin || existing?.billingGstin || "").trim(),
+    billingState: String(billingState || existing?.billingState || "").trim(),
+    billingStateCode: String(billingStateCode || existing?.billingStateCode || "").trim(),
     publicCompanyLine: String(publicCompanyLine || existing?.publicCompanyLine || "").trim(),
     publicPostingTitle: String(publicPostingTitle || existing?.publicPostingTitle || "").trim(),
     presetLabel: String(presetLabel || existing?.presetLabel || "").trim(),
@@ -4477,7 +4502,7 @@ async function createCompanyClient({ actorUserId, companyId, name, aboutCompany 
   }
   return nextClient;
 }
-async function updateCompanyClientRecord({ actorUserId, companyId, clientId = "", currentName = "", nextName = "", archived, aboutCompany, publicCompanyLine, publicPostingTitle, presetLabel, presetColumns }) {
+async function updateCompanyClientRecord({ actorUserId, companyId, clientId = "", currentName = "", nextName = "", archived, aboutCompany, publicCompanyLine, publicPostingTitle, presetLabel, presetColumns, billingLegalName, billingAddress, billingGstin, billingState, billingStateCode }) {
   const actor = sanitizeUser(await getUserById(actorUserId, companyId));
   if (!actor || String(actor.role || "").toLowerCase() !== "admin") throw new Error("Only an admin can update clients.");
   const scopedCompanyId = String(companyId || "").trim();
@@ -4500,6 +4525,11 @@ async function updateCompanyClientRecord({ actorUserId, companyId, clientId = ""
     name: safeNextName,
     archived: typeof archived === "boolean" ? archived : matched.archived,
     aboutCompany: aboutCompany !== undefined ? String(aboutCompany || "").trim() : matched.aboutCompany,
+    billingLegalName: billingLegalName !== undefined ? String(billingLegalName || "").trim() : matched.billingLegalName,
+    billingAddress: billingAddress !== undefined ? String(billingAddress || "").trim() : matched.billingAddress,
+    billingGstin: billingGstin !== undefined ? String(billingGstin || "").trim() : matched.billingGstin,
+    billingState: billingState !== undefined ? String(billingState || "").trim() : matched.billingState,
+    billingStateCode: billingStateCode !== undefined ? String(billingStateCode || "").trim() : matched.billingStateCode,
     publicCompanyLine: publicCompanyLine !== undefined ? String(publicCompanyLine || "").trim() : matched.publicCompanyLine,
     publicPostingTitle: publicPostingTitle !== undefined ? String(publicPostingTitle || "").trim() : matched.publicPostingTitle,
     presetLabel: nextPresetLabel,
