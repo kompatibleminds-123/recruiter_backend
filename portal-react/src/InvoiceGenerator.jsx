@@ -56,6 +56,10 @@ function filledClientFields(value) {
   return Object.fromEntries(Object.entries(value && typeof value === "object" ? value : {}).filter(([, field]) => String(field || "").trim()));
 }
 
+function savedTaxMode(value) {
+  return ["igst", "cgst_sgst", "none"].includes(String(value || "")) ? String(value) : "";
+}
+
 export default function InvoiceGenerator({ token, api, clients = [], bootstrap = null, onSaved = null, editingInvoice = null, onCancelEdit = null }) {
   const [profile, setProfile] = useState(EMPTY_PROFILE);
   const [clientProfiles, setClientProfiles] = useState({});
@@ -130,10 +134,13 @@ export default function InvoiceGenerator({ token, api, clients = [], bootstrap =
     setClientName(name);
     setClient({ ...EMPTY_CLIENT, ...(clientProfiles[name] || {}), legalName: clientProfiles[name]?.legalName || name });
     const rule = billingRules[name];
+    const clientTaxMode = savedTaxMode(clientProfiles[name]?.taxMode);
     if (rule?.type === "percentage" && Number(rule.value) > 0) {
-      setInvoice((current) => ({ ...current, items: current.items.map((item) => ({ ...item, feePercent: String(rule.value), taxableAmount: "" })) }));
+      setInvoice((current) => ({ ...current, taxMode: clientTaxMode || current.taxMode, items: current.items.map((item) => ({ ...item, feePercent: String(rule.value), taxableAmount: "" })) }));
     } else if (rule?.type === "flat" && Number(rule.value) > 0) {
-      setInvoice((current) => ({ ...current, items: current.items.map((item) => ({ ...item, feePercent: "", taxableAmount: String(rule.value) })) }));
+      setInvoice((current) => ({ ...current, taxMode: clientTaxMode || current.taxMode, items: current.items.map((item) => ({ ...item, feePercent: "", taxableAmount: String(rule.value) })) }));
+    } else if (clientTaxMode) {
+      setInvoice((current) => ({ ...current, taxMode: clientTaxMode }));
     }
   };
   const updateProfile = (key, value) => setProfile((current) => ({ ...current, [key]: value }));

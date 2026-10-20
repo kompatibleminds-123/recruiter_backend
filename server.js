@@ -13248,10 +13248,11 @@ function sanitizeCreditNoteRecord(row = {}) {
   };
 }
 
-function syncInvoiceClientProfile(actor, clientName, clientDetails) {
+function syncInvoiceClientProfile(actor, clientName, clientDetails, taxMode = "") {
   const name = String(clientName || "").trim();
   const details = clientDetails && typeof clientDetails === "object" ? clientDetails : {};
   if (!name) return Promise.resolve();
+  const savedTaxMode = ["igst", "cgst_sgst", "none"].includes(String(taxMode || "")) ? String(taxMode) : "";
   const nextDetails = Object.fromEntries(Object.entries({
     legalName: details.legalName || name,
     address: details.address,
@@ -13259,9 +13260,9 @@ function syncInvoiceClientProfile(actor, clientName, clientDetails) {
     state: details.state,
     stateCode: details.stateCode
   }).filter(([, value]) => String(value || "").trim()));
-  if (Object.keys(nextDetails).length <= 1) return Promise.resolve();
-  return getCompanyClients(actor.companyId)
-    .then((clients) => {
+  const clientSync = Object.keys(nextDetails).length <= 1
+    ? Promise.resolve()
+    : getCompanyClients(actor.companyId).then((clients) => {
       const matched = (clients || []).find((item) => String(item?.name || "").trim().toLowerCase() === name.toLowerCase());
       const billing = {
         billingLegalName: nextDetails.legalName,
@@ -13273,7 +13274,17 @@ function syncInvoiceClientProfile(actor, clientName, clientDetails) {
       return matched
         ? updateCompanyClientRecord({ actorUserId: actor.id, companyId: actor.companyId, clientId: matched.id, currentName: matched.name, nextName: matched.name, ...billing })
         : createCompanyClient({ actorUserId: actor.id, companyId: actor.companyId, name, ...billing });
-    })
+    });
+  const taxModeSync = !savedTaxMode ? Promise.resolve() : getCompanySharedExportPresets(actor.companyId)
+    .then((settings) => {
+      const profiles = settings?.invoiceClientProfiles && typeof settings.invoiceClientProfiles === "object" ? settings.invoiceClientProfiles : {};
+      return saveCompanySharedExportPresets({
+        actorUserId: actor.id,
+        companyId: actor.companyId,
+        settings: { ...settings, invoiceClientProfiles: { ...profiles, [name]: { ...(profiles[name] || {}), ...nextDetails, taxMode: savedTaxMode } } }
+      });
+    });
+  return Promise.all([clientSync, taxModeSync])
     .catch(() => null);
 }
 
@@ -18485,7 +18496,7 @@ const server = http.createServer(async (req, res) => {
         })),
         prefer: "return=minimal"
       }).catch(() => null);
-      await syncInvoiceClientProfile(actor, normalized.clientName, normalized.client);
+      await syncInvoiceClientProfile(actor, normalized.clientName, normalized.client, normalized.taxMode);
       sendJson(res, 200, { ok: true, result: { invoice: sanitizeInvoiceRecord(savedRows?.[0] || invoiceRow) } });
     } catch (error) {
       const message = String(error?.message || error);
@@ -18556,7 +18567,7 @@ const server = http.createServer(async (req, res) => {
         })),
         prefer: "return=minimal"
       }).catch(() => null);
-      await syncInvoiceClientProfile(actor, normalized.clientName, normalized.client);
+      await syncInvoiceClientProfile(actor, normalized.clientName, normalized.client, normalized.taxMode);
       sendJson(res, 200, { ok: true, result: sanitizeInvoiceRecord(savedRows?.[0] || row) });
     } catch (error) {
       const message = String(error?.message || error);
@@ -18649,7 +18660,7 @@ const server = http.createServer(async (req, res) => {
       await supabaseTableFetch("invoice_items", `?invoice_id=eq.${encodeURIComponent(invoiceId)}&company_id=eq.${encodeURIComponent(actor.companyId)}`, { method: "DELETE", prefer: "return=minimal" });
       await supabaseTableFetch("invoice_items", "?select=id", { method: "POST", body: normalized.items.map((item) => ({ id: crypto.randomUUID(), invoice_id: invoiceId, company_id: actor.companyId, assessment_id: item.assessmentId || null, candidate_id: item.candidateId || null, candidate_name: item.candidateName, description: item.serviceDescription, annual_ctc: item.annualCtc, fee_percent: item.feePercent, taxable_amount: item.taxableAmount, created_at: now })), prefer: "return=minimal" });
       await deleteStoredFile({ provider: existing.file_provider, key: existing.file_key, url: existing.file_url }).catch(() => null);
-      await syncInvoiceClientProfile(actor, normalized.clientName, normalized.client);
+      await syncInvoiceClientProfile(actor, normalized.clientName, normalized.client, normalized.taxMode);
       sendJson(res, 200, { ok: true, result: { invoice: sanitizeInvoiceRecord(savedRows?.[0] || { ...existing, ...patch }) } });
     } catch (error) { sendJson(res, 400, { ok: false, error: String(error?.message || error) }); }
     return;
