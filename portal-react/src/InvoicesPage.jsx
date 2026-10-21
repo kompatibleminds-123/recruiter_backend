@@ -11,6 +11,11 @@ function money(value) {
   return `Rs. ${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function invoiceSequence(value) {
+  const match = String(value || "").match(/(\d+)\s*$/);
+  return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+}
+
 function displayDate(value) {
   const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return String(value || "-");
@@ -69,6 +74,7 @@ export default function InvoicesPage({ token, api, clients = [] }) {
   const [bulkRows, setBulkRows] = useState([]);
   const [editingInvoice, setEditingInvoice] = useState(null);
   const [invoiceBootstrap, setInvoiceBootstrap] = useState(null);
+  const [registerSort, setRegisterSort] = useState("invoice_asc");
   const [creditNotes, setCreditNotes] = useState([]);
   const [credit, setCredit] = useState({ creditNoteNumber: "", creditNoteDate: new Date().toISOString().slice(0, 10), invoiceId: "", reason: "", taxableAmount: "", gstRate: "18", taxMode: "auto" });
   const [creditReviewed, setCreditReviewed] = useState(false);
@@ -80,6 +86,14 @@ export default function InvoicesPage({ token, api, clients = [] }) {
       return `${start}-${String((start + 1) % 100).padStart(2, "0")}`;
     });
   }, []);
+
+  const registerInvoices = useMemo(() => [...(data.invoices || [])].sort((left, right) => {
+    if (registerSort === "date_desc") return String(right.invoiceDate || "").localeCompare(String(left.invoiceDate || ""));
+    if (registerSort === "date_asc") return String(left.invoiceDate || "").localeCompare(String(right.invoiceDate || ""));
+    const serialDifference = invoiceSequence(left.invoiceNumber) - invoiceSequence(right.invoiceNumber);
+    const comparison = serialDifference || String(left.invoiceNumber || "").localeCompare(String(right.invoiceNumber || ""));
+    return registerSort === "invoice_desc" ? -comparison : comparison;
+  }), [data.invoices, registerSort]);
 
   const loadInvoices = useCallback(async () => {
     setLoading(true);
@@ -265,10 +279,11 @@ export default function InvoicesPage({ token, api, clients = [] }) {
     {tab === "register" ? <section className="panel">
       <div className="invoice-register-toolbar">
         <label><span>Financial year</span><select value={financialYear} onChange={(e) => setFinancialYear(e.target.value)}>{fyOptions.map((fy) => <option key={fy} value={fy}>FY {fy}</option>)}</select></label>
-        <div className="button-row"><button className="ghost-btn" disabled={loading} onClick={() => void loadInvoices()}>{loading ? "Loading..." : "Refresh"}</button><button disabled={!data.invoices.length} onClick={() => downloadInvoiceExcel(financialYear, data.invoices)}>Download Excel</button></div>
+        <label><span>Sort by</span><select value={registerSort} onChange={(e) => setRegisterSort(e.target.value)}><option value="invoice_asc">Invoice number: low to high</option><option value="invoice_desc">Invoice number: high to low</option><option value="date_desc">Invoice date: latest first</option><option value="date_asc">Invoice date: oldest first</option></select></label>
+        <div className="button-row"><button className="ghost-btn" disabled={loading} onClick={() => void loadInvoices()}>{loading ? "Loading..." : "Refresh"}</button><button disabled={!registerInvoices.length} onClick={() => downloadInvoiceExcel(financialYear, registerInvoices)}>Download Excel</button></div>
       </div>
       <div className="table-wrap"><table className="dashboard-table"><thead><tr><th>Invoice</th><th>Date</th><th>Client</th><th>Candidate</th><th>Source</th><th>Taxable</th><th>GST</th><th>Total</th><th>PDF</th></tr></thead><tbody>
-        {data.invoices.length ? data.invoices.map((item) => <tr key={item.id}><td>{item.invoiceNumber}</td><td>{displayDate(item.invoiceDate)}</td><td>{item.clientName}</td><td>{item.candidateName || "-"}</td><td>{item.source}</td><td>{money(item.taxableAmount)}</td><td>{money(Number(item.cgst || 0) + Number(item.sgst || 0) + Number(item.igst || 0))}</td><td><strong>{money(item.total)}</strong></td><td><div className="button-row tight"><button className="ghost-btn" onClick={() => void downloadStoredInvoice(item)}>Download</button><button className="ghost-btn" onClick={() => void editInvoice(item)}>Edit</button><button className="danger-btn" onClick={() => void deleteInvoice(item)}>Delete</button></div></td></tr>) : <tr><td colSpan="9">{loading ? "Loading invoices..." : "No finalized invoices in this financial year."}</td></tr>}
+        {registerInvoices.length ? registerInvoices.map((item) => <tr key={item.id}><td>{item.invoiceNumber}</td><td>{displayDate(item.invoiceDate)}</td><td>{item.clientName}</td><td>{item.candidateName || "-"}</td><td>{item.source}</td><td>{money(item.taxableAmount)}</td><td>{money(Number(item.cgst || 0) + Number(item.sgst || 0) + Number(item.igst || 0))}</td><td><strong>{money(item.total)}</strong></td><td><div className="button-row tight"><button className="ghost-btn" onClick={() => void downloadStoredInvoice(item)}>Download</button><button className="ghost-btn" onClick={() => void editInvoice(item)}>Edit</button><button className="danger-btn" onClick={() => void deleteInvoice(item)}>Delete</button></div></td></tr>) : <tr><td colSpan="9">{loading ? "Loading invoices..." : "No finalized invoices in this financial year."}</td></tr>}
       </tbody></table></div>
     </section> : null}
 
