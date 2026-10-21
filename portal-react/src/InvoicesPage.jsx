@@ -11,6 +11,11 @@ function money(value) {
   return `Rs. ${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function invoiceDownloadFilename(invoiceNumber) {
+  const number = String(invoiceNumber || "invoice").trim().replace(/[\\/]+/g, "_").replace(/[^a-z0-9._-]+/gi, "_").replace(/^_+|_+$/g, "") || "invoice";
+  return `Invoice_${number}.pdf`;
+}
+
 function invoiceSequence(value) {
   const match = String(value || "").match(/(\d+)\s*$/);
   return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
@@ -134,7 +139,7 @@ export default function InvoicesPage({ token, api, clients = [] }) {
       const response = await fetch(`/company/invoices/${encodeURIComponent(invoice.id)}/pdf?download=1`, { headers: { Authorization: `Bearer ${token}` } });
       if (!response.ok) throw new Error((await response.json().catch(() => ({})))?.error || "Could not download invoice.");
       const blob = await response.blob();
-      const file = new File([blob], invoice.filename || `${invoice.invoiceNumber}.pdf`, { type: "application/pdf" });
+      const file = new File([blob], invoiceDownloadFilename(invoice.invoiceNumber), { type: "application/pdf" });
       const url = URL.createObjectURL(file);
       const anchor = document.createElement("a"); anchor.href = url; anchor.download = file.name; anchor.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);

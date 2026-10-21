@@ -36,7 +36,7 @@ async function run() {
   assert.strictEqual(formatInvoiceDate("2026-10-12"), "12th Oct, 2026");
   const result = await generateInvoicePdf(input, settings);
   assert.strictEqual(result.mimeType, "application/pdf");
-  assert.strictEqual(result.filename, "TEST-26-27-001.pdf");
+  assert.strictEqual(result.filename, "Invoice_TEST_26-27_001.pdf");
   const bytes = Buffer.from(result.fileData, "base64");
   assert.strictEqual(bytes.subarray(0, 4).toString(), "%PDF");
   const doc = await PDFDocument.load(bytes);

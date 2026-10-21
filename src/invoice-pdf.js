@@ -53,6 +53,14 @@ function safeFilename(value = "invoice") {
   return text(value).replace(/[^a-z0-9._-]+/gi, "-").replace(/^-+|-+$/g, "") || "invoice";
 }
 
+function invoiceFilename(invoiceNumber = "") {
+  const number = text(invoiceNumber)
+    .replace(/[\\/]+/g, "_")
+    .replace(/[^a-z0-9._-]+/gi, "_")
+    .replace(/^_+|_+$/g, "") || "invoice";
+  return `Invoice_${number}.pdf`;
+}
+
 function parseDataUrl(value = "") {
   const match = String(value || "").match(/^data:(image\/(?:png|jpe?g));base64,([A-Za-z0-9+/=\s]+)$/i);
   if (!match) return null;
@@ -354,7 +362,7 @@ async function generateInvoicePdf(input = {}, savedSettings = {}) {
 
   const bytes = await doc.save();
   return {
-    filename: `${safeFilename(invoice.invoiceNumber)}.pdf`,
+    filename: invoiceFilename(invoice.invoiceNumber),
     mimeType: "application/pdf",
     fileData: Buffer.from(bytes).toString("base64"),
     totals: {
@@ -445,5 +453,6 @@ module.exports = {
   formatInvoiceDate,
   indianNumberWords,
   normalizeInvoiceInput,
-  generateCreditNotePdf
+  generateCreditNotePdf,
+  invoiceFilename
 };

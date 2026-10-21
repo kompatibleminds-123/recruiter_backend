@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { buildRecruiterIncentives } = require("./src/recruiter-incentives");
-const { generateInvoicePdf, normalizeInvoiceInput, generateCreditNotePdf } = require("./src/invoice-pdf");
+const { generateInvoicePdf, normalizeInvoiceInput, generateCreditNotePdf, invoiceFilename } = require("./src/invoice-pdf");
 const { extractHistoricalInvoice, getHistoricalInvoiceText, normalizeAiInvoiceFields } = require("./src/invoice-import");
 const { buildJobBooleanFingerprint, generateJobBooleanOptions, getCachedJobBooleanState } = require("./src/job-boolean");
 const { parseCandidatePayload } = require("./src/parser");
@@ -18746,7 +18746,7 @@ const server = http.createServer(async (req, res) => {
       const forceDownload = ["1", "true", "download"].includes(String(requestUrl.searchParams.get("download") || "").toLowerCase());
       sendConditionalBuffer(req, res, 200, file.buffer, {
         "Content-Type": file.mimeType || "application/pdf",
-        "Content-Disposition": `${forceDownload ? "attachment" : "inline"}; filename="${String(file.filename || "invoice.pdf").replace(/"/g, "")}"`,
+        "Content-Disposition": `${forceDownload ? "attachment" : "inline"}; filename="${invoiceFilename(row.invoice_number || file.filename).replace(/"/g, "")}"`,
         "Cache-Control": "private, max-age=0, must-revalidate",
         "ETag": `"${sha256Hex(file.buffer)}"`
       });
