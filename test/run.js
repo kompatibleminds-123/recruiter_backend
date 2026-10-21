@@ -6,6 +6,7 @@ const specs = [
   "./assessment-visibility.spec.js",
   "./recruiter-incentives.spec.js",
   "./commercial-billing.spec.js",
+  "./quick-capture-duplicate-pagination.spec.js",
   "./job-title-filter.spec.js",
   "./branded-pdf.spec.js",
   "./search-normalize.spec.js",

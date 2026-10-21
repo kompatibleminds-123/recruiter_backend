@@ -384,20 +384,31 @@ async function findDuplicateCandidate(candidate, options = {}) {
 
   const { url, serviceRoleKey } = getSupabaseConfig();
   if (url && serviceRoleKey) {
-    const filters = ["select=*", "order=created_at.desc", "limit=2000"];
-    if (companyId) {
-      filters.push(`company_id=eq.${encodeURIComponent(companyId)}`);
-    }
-    const response = await fetch(`${url}/rest/v1/candidates?${filters.join("&")}`, {
-      headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` }
-    });
-    const rows = response.ok ? await response.json() : [];
-    for (const existing of rows) {
-      if (String(existing?.id || "").trim() === candidateId) continue;
-      const matchBy = getDuplicateMatch(candidate, existing);
-      if (matchBy.length) {
-        return { existing, matchBy };
+    // Do not cap duplicate protection at the most recent 2,000 records.
+    // A client can have an older matching candidate, so walk every page and
+    // stop as soon as one exact phone/email/LinkedIn match is found.
+    const pageSize = 1000;
+    for (let offset = 0; ; offset += pageSize) {
+      const filters = ["select=*", "order=created_at.desc,id.desc", `limit=${pageSize}`, `offset=${offset}`];
+      if (companyId) {
+        filters.push(`company_id=eq.${encodeURIComponent(companyId)}`);
       }
+      const response = await fetch(`${url}/rest/v1/candidates?${filters.join("&")}`, {
+        headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` }
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Supabase duplicate check failed: ${response.status} ${errorText}`);
+      }
+      const rows = await response.json();
+      for (const existing of rows) {
+        if (String(existing?.id || "").trim() === candidateId) continue;
+        const matchBy = getDuplicateMatch(candidate, existing);
+        if (matchBy.length) {
+          return { existing, matchBy };
+        }
+      }
+      if (!Array.isArray(rows) || rows.length < pageSize) break;
     }
     return null;
   }
