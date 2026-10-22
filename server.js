@@ -4748,11 +4748,9 @@ function applyApplicantFiltersLocal(row = {}, filters = {}, includeConverted = t
     const value = String(row?.client_name || "Unassigned").trim();
     if (!filters.clients.includes(value)) return false;
   }
-  if (filters.jds?.length) {
+  if (filters.jds?.length || filters.jdIds?.length) {
     const value = String(row?.jd_title || row?.assigned_jd_title || "").trim();
-    if (!matchesJdFilterValue(value, filters.jds)) return false;
-  }
-  if (filters.jdIds?.length) {
+    const titleMatches = Boolean(filters.jds?.length && matchesJdFilterValue(value, filters.jds));
     const candidateIds = [
       row?.assigned_jd_id,
       row?.assignedJdId,
@@ -4761,7 +4759,8 @@ function applyApplicantFiltersLocal(row = {}, filters = {}, includeConverted = t
       row?.job_id,
       row?.jobId
     ].map((item) => String(item || "").trim()).filter(Boolean);
-    if (!candidateIds.some((id) => matchesJobIdFilterValue(id, filters.jdIds))) return false;
+    const idMatches = Boolean(filters.jdIds?.length && candidateIds.some((id) => matchesJobIdFilterValue(id, filters.jdIds)));
+    if (!titleMatches && !idMatches) return false;
   }
   if (filters.locations?.length) {
     const value = String(row?.location || "").trim();
@@ -4824,7 +4823,7 @@ async function listApplicantsForUser(user, options = {}) {
     if (filters.dateTo) baseFilterParts.push(`created_at=lte.${encodeURIComponent(`${filters.dateTo}T23:59:59.999Z`)}`);
     if (filters.clients.length) baseFilterParts.push(`client_name=in.(${filters.clients.map((item) => encodeURIComponent(item)).join(",")})`);
     if (filters.jdIds.length) {
-      const jobIdClause = buildJobIdFilterQueryClause(filters.jdIds, ["assigned_jd_id", "jd_id", "job_id"]);
+      const jobIdClause = buildJobIdFilterQueryClause(filters.jdIds, ["assigned_jd_id"]);
       if (jobIdClause) baseFilterParts.push(jobIdClause);
     } else if (filters.jds.length) {
       const jdClause = buildJdFilterQueryClause(filters.jds, "jd_title");
@@ -4938,7 +4937,7 @@ async function getApplicantStatsForUser(user, options = {}) {
     if (filters.dateTo) parts.push(`created_at=lte.${encodeURIComponent(`${filters.dateTo}T23:59:59.999Z`)}`);
     if (filters.clients.length) parts.push(`client_name=in.(${filters.clients.map((item) => encodeURIComponent(item)).join(",")})`);
     if (filters.jdIds.length) {
-      const jobIdClause = buildJobIdFilterQueryClause(filters.jdIds, ["assigned_jd_id", "jd_id", "job_id"]);
+      const jobIdClause = buildJobIdFilterQueryClause(filters.jdIds, ["assigned_jd_id"]);
       if (jobIdClause) parts.push(jobIdClause);
     } else if (filters.jds.length) {
       const jdClause = buildJdFilterQueryClause(filters.jds, "jd_title");
@@ -5116,11 +5115,9 @@ function applyCapturedFiltersLocal(row = {}, filters = {}, user = null) {
     const value = String(row?.client_name || "Unassigned").trim();
     if (!filters.clients.includes(value)) return false;
   }
-  if (filters?.jds?.length) {
+  if (filters?.jds?.length || filters?.jdIds?.length) {
     const value = String(row?.jd_title || row?.assigned_jd_title || "").trim();
-    if (!matchesJdFilterValue(value, filters.jds)) return false;
-  }
-  if (filters?.jdIds?.length) {
+    const titleMatches = Boolean(filters?.jds?.length && matchesJdFilterValue(value, filters.jds));
     const candidateIds = [
       row?.assigned_jd_id,
       row?.assignedJdId,
@@ -5129,7 +5126,8 @@ function applyCapturedFiltersLocal(row = {}, filters = {}, user = null) {
       row?.job_id,
       row?.jobId
     ].map((item) => String(item || "").trim()).filter(Boolean);
-    if (!candidateIds.some((id) => matchesJobIdFilterValue(id, filters.jdIds))) return false;
+    const idMatches = Boolean(filters?.jdIds?.length && candidateIds.some((id) => matchesJobIdFilterValue(id, filters.jdIds)));
+    if (!titleMatches && !idMatches) return false;
   }
   if (filters?.assignedTo?.length) {
     const value = String(row?.assigned_to_name || "Unassigned").trim();
@@ -5225,7 +5223,7 @@ async function listCapturedForUser(user, options = {}) {
     if (filters.dateTo) baseFilterParts.push(`created_at=lte.${encodeURIComponent(`${filters.dateTo}T23:59:59.999Z`)}`);
     if (filters.clients.length) baseFilterParts.push(`client_name=in.(${filters.clients.map((item) => encodeURIComponent(item)).join(",")})`);
     if (filters.jdIds.length) {
-      const jobIdClause = buildJobIdFilterQueryClause(filters.jdIds, ["assigned_jd_id", "jd_id", "job_id"]);
+      const jobIdClause = buildJobIdFilterQueryClause(filters.jdIds, ["assigned_jd_id"]);
       if (jobIdClause) baseFilterParts.push(jobIdClause);
     } else if (filters.jds.length) {
       const jdClause = buildJdFilterQueryClause(filters.jds, "jd_title");
@@ -5473,7 +5471,7 @@ async function hydrateAssessmentsWithCandidateAssignees(rows = [], companyId = "
   if (!candidateIds.length) return items;
   const { on, url, key } = getSupabaseServiceConfig();
   if (!(on && url && key)) return items;
-  const candidateRows = await fetch(`${url}/rest/v1/candidates?select=id,assigned_to_name,assigned_to_user_id,name&company_id=eq.${encodeURIComponent(safeCompanyId)}&id=in.(${candidateIds.map((id) => encodeURIComponent(id)).join(",")})&limit=5000`, {
+  const candidateRows = await fetch(`${url}/rest/v1/candidates?select=id,assigned_to_name,assigned_to_user_id,assigned_jd_id,assigned_jd_title,jd_title,name&company_id=eq.${encodeURIComponent(safeCompanyId)}&id=in.(${candidateIds.map((id) => encodeURIComponent(id)).join(",")})&limit=5000`, {
     headers: { apikey: key, Authorization: `Bearer ${key}` }
   }).then(async (response) => (response.ok ? response.json() : [])).catch(() => []);
   const byId = new Map((Array.isArray(candidateRows) ? candidateRows : []).map((candidate) => [String(candidate?.id || "").trim(), candidate]));
@@ -5484,12 +5482,18 @@ async function hydrateAssessmentsWithCandidateAssignees(rows = [], companyId = "
     if (!candidate) return item;
     const assignedToName = String(candidate?.assigned_to_name || "").trim();
     const assignedToUserId = String(candidate?.assigned_to_user_id || "").trim();
+    const assignedJdId = String(candidate?.assigned_jd_id || "").trim();
+    const assignedJdTitle = String(candidate?.assigned_jd_title || candidate?.jd_title || "").trim();
     return {
       ...item,
       assigned_to_name: assignedToName || item?.assigned_to_name || item?.recruiter_name || "",
       assignedToName: assignedToName || item?.assignedToName || item?.recruiter_name || "",
       assigned_to_user_id: assignedToUserId || item?.assigned_to_user_id || item?.assignedToUserId || "",
       assignedToUserId: assignedToUserId || item?.assignedToUserId || item?.assigned_to_user_id || "",
+      assigned_jd_id: assignedJdId || item?.assigned_jd_id || item?.job_id || item?.jobId || "",
+      assignedJdId: assignedJdId || item?.assignedJdId || item?.jobId || item?.job_id || "",
+      assigned_jd_title: assignedJdTitle || item?.assigned_jd_title || item?.jd_title || "",
+      assignedJdTitle: assignedJdTitle || item?.assignedJdTitle || item?.jdTitle || item?.jd_title || "",
       recruiter_name: assignedToName || item?.recruiter_name || "",
       recruiterName: assignedToName || item?.recruiterName || ""
     };
@@ -5508,6 +5512,18 @@ async function resolveAssessmentCandidateIdsForAssignees(companyId, recruiters =
   return Array.from(new Set((Array.isArray(candidateRows) ? candidateRows : []).map((candidate) => String(candidate?.id || "").trim()).filter(Boolean)));
 }
 
+async function resolveAssessmentCandidateIdsForJobIds(companyId, jobIds = []) {
+  const safeCompanyId = String(companyId || "").trim();
+  const ids = Array.isArray(jobIds) ? jobIds.map((item) => String(item || "").trim()).filter(Boolean) : [];
+  if (!safeCompanyId || !ids.length) return [];
+  const { on, url, key } = getSupabaseServiceConfig();
+  if (!(on && url && key)) return [];
+  const candidateRows = await fetch(`${url}/rest/v1/candidates?select=id&company_id=eq.${encodeURIComponent(safeCompanyId)}&assigned_jd_id=in.(${ids.map((id) => encodeURIComponent(id)).join(",")})&limit=5000`, {
+    headers: { apikey: key, Authorization: `Bearer ${key}` }
+  }).then(async (response) => (response.ok ? response.json() : [])).catch(() => []);
+  return Array.from(new Set((Array.isArray(candidateRows) ? candidateRows : []).map((candidate) => String(candidate?.id || "").trim()).filter(Boolean)));
+}
+
 function applyAssessmentFiltersLocal(item = {}, filters = {}) {
   const lane = String(filters?.lane || "active").trim() || "active";
   const archived = isAssessmentArchivedLocal(item);
@@ -5519,8 +5535,10 @@ function applyAssessmentFiltersLocal(item = {}, filters = {}) {
   if (filters?.dateFrom && createdKey && createdKey < filters.dateFrom) return false;
   if (filters?.dateTo && createdKey && createdKey > filters.dateTo) return false;
   if (Array.isArray(filters?.clients) && filters.clients.length && !filters.clients.includes(clientValue)) return false;
-  if (Array.isArray(filters?.jds) && filters.jds.length && !matchesJdFilterValue(jdValue, filters.jds)) return false;
-  if (Array.isArray(filters?.jdIds) && filters.jdIds.length) {
+  const hasJdTitleFilters = Array.isArray(filters?.jds) && filters.jds.length > 0;
+  const hasJdIdFilters = Array.isArray(filters?.jdIds) && filters.jdIds.length > 0;
+  if (hasJdTitleFilters || hasJdIdFilters) {
+    const titleMatches = hasJdTitleFilters && matchesJdFilterValue(jdValue, filters.jds);
     const candidateIds = [
       item?.jobId,
       item?.job_id,
@@ -5530,7 +5548,8 @@ function applyAssessmentFiltersLocal(item = {}, filters = {}) {
       item?.payload?.job_id,
       item?.payload?.jd_id
     ].map((value) => String(value || "").trim()).filter(Boolean);
-    if (!candidateIds.some((id) => matchesJobIdFilterValue(id, filters.jdIds))) return false;
+    const idMatches = hasJdIdFilters && candidateIds.some((id) => matchesJobIdFilterValue(id, filters.jdIds));
+    if (!titleMatches && !idMatches) return false;
   }
   if (Array.isArray(filters?.recruiterCandidateIds) && filters.recruiterCandidateIds.length) {
     const candidateId = String(item?.candidateId || item?.candidate_id || item?.payload?.candidateId || item?.payload?.candidate_id || "").trim();
@@ -5642,8 +5661,10 @@ async function countAssessmentsForUser(user, options = {}) {
   if (filters.dateTo) queryParts.push(`created_at=lte.${encodeURIComponent(`${filters.dateTo}T23:59:59.999Z`)}`);
   if (filters.clients.length) queryParts.push(`client_name=in.(${filters.clients.map((item) => encodeURIComponent(item)).join(",")})`);
   if (filters.jdIds.length) {
-    const jobIdClause = buildJobIdFilterQueryClause(filters.jdIds, ["job_id", "jobId", "jd_id"]);
-    if (jobIdClause) queryParts.push(jobIdClause);
+    const jdCandidateIds = await resolveAssessmentCandidateIdsForJobIds(companyId, filters.jdIds);
+    queryParts.push(jdCandidateIds.length
+      ? `candidate_id=in.(${jdCandidateIds.map((item) => encodeURIComponent(item)).join(",")})`
+      : "id=eq.__no_jd_match__");
   } else if (filters.jds.length) {
     const jdClause = buildJdFilterQueryClause(filters.jds, "jd_title");
     if (jdClause) queryParts.push(jdClause);
@@ -21216,6 +21237,7 @@ const server = http.createServer(async (req, res) => {
           dateTo: String(requestUrl.searchParams.get("dateTo") || "").trim(),
           clients: String(requestUrl.searchParams.get("clients") || "").trim(),
           jds: String(requestUrl.searchParams.get("jds") || "").trim(),
+          jdIds: String(requestUrl.searchParams.get("jdIds") || "").trim(),
           recruiters: String(requestUrl.searchParams.get("recruiters") || "").trim(),
           outcomes: String(requestUrl.searchParams.get("outcomes") || "").trim(),
           lane: String(requestUrl.searchParams.get("lane") || "active").trim() || "active"
@@ -21238,6 +21260,7 @@ const server = http.createServer(async (req, res) => {
           dateTo: String(requestUrl.searchParams.get("dateTo") || "").trim(),
           clients: String(requestUrl.searchParams.get("clients") || "").trim(),
           jds: String(requestUrl.searchParams.get("jds") || "").trim(),
+          jdIds: String(requestUrl.searchParams.get("jdIds") || "").trim(),
           recruiters: String(requestUrl.searchParams.get("recruiters") || "").trim(),
           outcomes: String(requestUrl.searchParams.get("outcomes") || "").trim()
         }
@@ -21701,6 +21724,7 @@ const server = http.createServer(async (req, res) => {
         dateTo: String(requestUrl.searchParams.get("dateTo") || "").trim(),
         clients: String(requestUrl.searchParams.get("clients") || "").trim(),
         jds: String(requestUrl.searchParams.get("jds") || "").trim(),
+        jdIds: String(requestUrl.searchParams.get("jdIds") || "").trim(),
         locations: String(requestUrl.searchParams.get("locations") || "").trim(),
         assignedTo: String(requestUrl.searchParams.get("assignedTo") || "").trim(),
         sources: String(requestUrl.searchParams.get("sources") || "").trim(),
@@ -21737,6 +21761,7 @@ const server = http.createServer(async (req, res) => {
         dateTo: String(requestUrl.searchParams.get("dateTo") || "").trim(),
         clients: String(requestUrl.searchParams.get("clients") || "").trim(),
         jds: String(requestUrl.searchParams.get("jds") || "").trim(),
+        jdIds: String(requestUrl.searchParams.get("jdIds") || "").trim(),
         assignedTo: String(requestUrl.searchParams.get("assignedTo") || "").trim(),
         capturedBy: String(requestUrl.searchParams.get("capturedBy") || "").trim(),
         sources: String(requestUrl.searchParams.get("sources") || "").trim(),
@@ -21771,6 +21796,7 @@ const server = http.createServer(async (req, res) => {
         dateTo: String(requestUrl.searchParams.get("dateTo") || "").trim(),
         clients: String(requestUrl.searchParams.get("clients") || "").trim(),
         jds: String(requestUrl.searchParams.get("jds") || "").trim(),
+        jdIds: String(requestUrl.searchParams.get("jdIds") || "").trim(),
         assignedTo: String(requestUrl.searchParams.get("assignedTo") || "").trim(),
         capturedBy: String(requestUrl.searchParams.get("capturedBy") || "").trim(),
         sources: String(requestUrl.searchParams.get("sources") || "").trim(),
@@ -21795,6 +21821,7 @@ const server = http.createServer(async (req, res) => {
         dateTo: String(requestUrl.searchParams.get("dateTo") || "").trim(),
         clients: String(requestUrl.searchParams.get("clients") || "").trim(),
         jds: String(requestUrl.searchParams.get("jds") || "").trim(),
+        jdIds: String(requestUrl.searchParams.get("jdIds") || "").trim(),
         locations: String(requestUrl.searchParams.get("locations") || "").trim(),
         assignedTo: String(requestUrl.searchParams.get("assignedTo") || "").trim(),
         sources: String(requestUrl.searchParams.get("sources") || "").trim(),

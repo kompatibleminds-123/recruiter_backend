@@ -13397,6 +13397,22 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
+  function resolveSelectedJobIdsForFilters(filters = {}) {
+    const selectedTitles = new Set((Array.isArray(filters?.jds) ? filters.jds : []).map((item) => String(item || "").trim().toLowerCase()).filter(Boolean));
+    if (!selectedTitles.size) return [];
+    const selectedClients = new Set((Array.isArray(filters?.clients) ? filters.clients : []).map((item) => String(item || "").trim().toLowerCase()).filter(Boolean));
+    const jobs = [...(Array.isArray(state.jobs) ? state.jobs : []), ...(Array.isArray(jobsCatalog) ? jobsCatalog : [])];
+    return Array.from(new Set(jobs
+      .filter((job) => {
+        const title = String(job?.title || "").trim().toLowerCase();
+        if (!title || !selectedTitles.has(title)) return false;
+        if (!selectedClients.size) return true;
+        return selectedClients.has(String(job?.clientName || job?.client_name || "").trim().toLowerCase());
+      })
+      .map((job) => String(job?.id || "").trim())
+      .filter(Boolean)));
+  }
+
   function buildApplicantQueryParams(filters = applicantFiltersApplied, page = safeApplicantApiPage, limit = safeApplicantApiPageSize, sortBy = applicantSortBy) {
     const params = new URLSearchParams();
     params.set("limit", String(Math.max(1, Number(limit || 25))));
@@ -13412,6 +13428,7 @@ function PortalApp({ token, onLogout }) {
     if (String(filters?.dateTo || "").trim()) params.set("dateTo", String(filters.dateTo).trim());
     addCsv("clients", filters?.clients);
     addCsv("jds", filters?.jds);
+    addCsv("jdIds", resolveSelectedJobIdsForFilters(filters));
     // This dropdown filters by title, including legacy records without a job ID.
     addCsv("locations", filters?.locations);
     addCsv("assignedTo", filters?.assignedTo);
@@ -13501,6 +13518,7 @@ function PortalApp({ token, onLogout }) {
     if (String(filters?.dateTo || "").trim()) params.set("dateTo", String(filters.dateTo).trim());
     addCsv("clients", filters?.clients);
     addCsv("jds", filters?.jds);
+    addCsv("jdIds", resolveSelectedJobIdsForFilters(filters));
     // This dropdown filters by title, including legacy records without a job ID.
     addCsv("assignedTo", filters?.assignedTo);
     addCsv("capturedBy", filters?.capturedBy);
@@ -13765,6 +13783,7 @@ function PortalApp({ token, onLogout }) {
     if (String(filters?.dateTo || "").trim()) params.set("dateTo", String(filters.dateTo).trim());
     addCsv("clients", filters?.clients);
     addCsv("jds", filters?.jds);
+    addCsv("jdIds", resolveSelectedJobIdsForFilters(filters));
     // This dropdown filters by title, including legacy records without a job ID.
     addCsv("recruiters", filters?.recruiters);
     addCsv("outcomes", filters?.outcomes);
