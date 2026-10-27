@@ -13491,8 +13491,10 @@ function buildCommercialBillingReport({ user, candidates = [], assessments = [],
         shortlisted: 0,
         offered: 0,
         joined: 0,
+        dropped: 0,
         ctcPending: 0,
         totalBillableCtcLakhs: 0,
+        activeBillableCtcLakhs: 0,
         expectedBillingInr: 0,
         assuredBillingInr: 0,
         clientCount: 0,
@@ -13509,8 +13511,10 @@ function buildCommercialBillingReport({ user, candidates = [], assessments = [],
     if (funnelRank >= 1) row.shortlisted += 1;
     if (funnelRank >= 2) row.offered += 1;
     if (funnelRank >= 3) row.joined += 1;
+    if (!isActive) row.dropped += 1;
     if (candidateRow.ctcPending) row.ctcPending += 1;
     if (isExpectedBillingEligible && ctcLakhs > 0) row.totalBillableCtcLakhs += ctcLakhs;
+    if (isActive && ctcLakhs > 0) row.activeBillableCtcLakhs += ctcLakhs;
     row.expectedBillingInr += expectedBillingInr;
     row.assuredBillingInr += assuredBillingInr;
     row.candidates.push(candidateRow);

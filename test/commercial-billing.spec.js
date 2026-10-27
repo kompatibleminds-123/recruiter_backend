@@ -71,6 +71,9 @@ function run() {
   assert.equal(september.shortlisted, 9);
   assert.equal(september.offered, 7);
   assert.equal(september.joined, 4);
+  assert.equal(september.dropped, 2);
+  assert.equal(september.totalBillableCtcLakhs, 87);
+  assert.equal(september.activeBillableCtcLakhs, 72);
   assert.equal(context.buildCommercialBillingReport({ ...options, clientFilter: "Flat" })[0].assuredBillingInr, 50000);
   const offeredOnly = context.buildCommercialBillingReport({ ...options, assessments: [assessments[1]] })[0];
   assert.equal(offeredOnly.assuredBillingInr, 0);
