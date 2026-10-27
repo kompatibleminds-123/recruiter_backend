@@ -13178,6 +13178,23 @@ function findCommercialShortlistedAt(assessment = {}) {
   return "";
 }
 
+function getCommercialFunnelRank(assessment = {}) {
+  const history = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
+  const statuses = [
+    normalizeCommercialStatus(assessment?.candidateStatus || assessment?.candidate_status || assessment?.assessment_status || assessment?.status || ""),
+    ...history.map((entry) => normalizeCommercialStatus(entry?.status || ""))
+  ];
+  if (statuses.includes("joined")) return 3;
+  if (statuses.includes("offered")) return 2;
+  if (statuses.includes("shortlisted")) return 1;
+  return 0;
+}
+
+function isCommercialInactiveStatus(value = "") {
+  const status = normalizeCommercialStatus(value);
+  return /\b(dropped|dropout|reject|rejected|duplicate|not interested|not responding|did not attend|did not join|withdrawn|offer declined|declined|no show)\b/.test(status);
+}
+
 function findCommercialOfferAmount(assessment = {}) {
   const history = Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [];
   for (let index = history.length - 1; index >= 0; index -= 1) {
@@ -13406,7 +13423,10 @@ function buildCommercialBillingReport({ user, candidates = [], assessments = [],
   for (const assessment of Array.isArray(assessments) ? assessments : []) {
     if (!isDashboardRowInActorScope(assessment, user, "assessment")) continue;
     const latestStatus = normalizeCommercialStatus(assessment?.candidateStatus || assessment?.candidate_status || assessment?.assessment_status || assessment?.status || "");
-    if (!["shortlisted", "offered", "joined"].includes(latestStatus)) continue;
+    const funnelRank = getCommercialFunnelRank(assessment);
+    if (funnelRank < 1) continue;
+    const isActive = !isCommercialInactiveStatus(latestStatus);
+    const isExpectedBillingEligible = isActive || funnelRank >= 2;
     const shortlistedAt = findCommercialShortlistedAt(assessment);
     if (!shortlistedAt) continue;
     const overrideMonth = normalizeCommercialBillingMonth(assessment?.commercialBillingMonth || assessment?.commercial_billing_month || assessment?.payload?.commercialBillingMonth || assessment?.payload?.commercial_billing_month || "");
@@ -13432,15 +13452,20 @@ function buildCommercialBillingReport({ user, candidates = [], assessments = [],
     const ctcLakhs = parseCommercialCtcLakhs(ctcText);
     const ruleType = String(rule?.type || "").trim().toLowerCase() === "flat" ? "flat" : (rule ? "percentage" : "");
     const ruleValue = Number(rule?.value || 0) || 0;
-    const expectedBillingInr = ruleType === "flat"
+    const potentialBillingInr = ruleType === "flat"
       ? ruleValue
       : (ctcLakhs > 0 && ruleValue > 0 ? (ctcLakhs * 100000 * ruleValue / 100) : 0);
-    const assuredBillingInr = latestStatus === "joined" ? expectedBillingInr : 0;
+    const expectedBillingInr = isExpectedBillingEligible ? potentialBillingInr : 0;
+    const assuredBillingInr = funnelRank >= 3 ? potentialBillingInr : 0;
     const candidateRow = {
       assessmentId: String(assessment?.id || "").trim(),
       candidateId,
       name: String(assessment?.candidateName || assessment?.candidate_name || candidate?.name || "Candidate").trim(),
       currentStatus: latestStatus,
+      reachedShortlisted: funnelRank >= 1,
+      reachedOffered: funnelRank >= 2,
+      reachedJoined: funnelRank >= 3,
+      isActive,
       shortlistedAt,
       billingMonth: month,
       naturalBillingMonth: naturalMonth,
@@ -13453,7 +13478,7 @@ function buildCommercialBillingReport({ user, candidates = [], assessments = [],
       expectedDoj: normalizeDateOutput(findCommercialExpectedDoj(assessment, candidate)),
       dateOfJoining: normalizeDateOutput(resolveAssessmentDateOfJoiningRaw(assessment, candidate)),
       ctcLakhs,
-      ctcPending: ctcLakhs <= 0 && ruleType !== "flat",
+      ctcPending: isExpectedBillingEligible && ctcLakhs <= 0 && ruleType !== "flat",
       billingRule: ruleType ? { type: ruleType, value: ruleValue } : null,
       expectedBillingInr,
       assuredBillingInr
@@ -13480,10 +13505,12 @@ function buildCommercialBillingReport({ user, candidates = [], assessments = [],
       row.clients.push(clientName);
       row.clientCount = row.clients.length;
     }
-    row.activeCandidates += 1;
-    row[latestStatus] += 1;
+    if (isActive) row.activeCandidates += 1;
+    if (funnelRank >= 1) row.shortlisted += 1;
+    if (funnelRank >= 2) row.offered += 1;
+    if (funnelRank >= 3) row.joined += 1;
     if (candidateRow.ctcPending) row.ctcPending += 1;
-    if (ctcLakhs > 0) row.totalBillableCtcLakhs += ctcLakhs;
+    if (isExpectedBillingEligible && ctcLakhs > 0) row.totalBillableCtcLakhs += ctcLakhs;
     row.expectedBillingInr += expectedBillingInr;
     row.assuredBillingInr += assuredBillingInr;
     row.candidates.push(candidateRow);
