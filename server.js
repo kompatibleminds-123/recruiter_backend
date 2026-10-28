@@ -13349,7 +13349,7 @@ function invoiceTaxBreakup(row = {}, { companyStateCode = "06", clientProfiles =
 }
 
 function buildInvoiceAnalytics(rows = [], creditNotes = [], settings = {}) {
-  const issued = (Array.isArray(rows) ? rows : []).filter((row) => String(row?.status || "").toLowerCase() === "finalized");
+  const issued = (Array.isArray(rows) ? rows : []).filter((row) => String(row?.status || "finalized").toLowerCase() === "finalized");
   const invoicesById = new Map((Array.isArray(rows) ? rows : []).map((row) => [String(row?.id || ""), row]));
   const companyStateCode = stateCode(readJsonObject(settings.invoiceProfile).stateCode) || "06";
   const clientProfiles = readJsonObject(settings.invoiceClientProfiles);
