@@ -284,17 +284,17 @@ async function generateInvoicePdf(input = {}, savedSettings = {}) {
   page.drawText(`Invoice Date: ${formatInvoiceDate(invoice.invoiceDate)}`, { x: left + 337, y: 692, font: regular, size: 8.5, color: TEXT });
   page.drawText(`Reverse Charge: ${invoice.reverseCharge}`, { x: left + 337, y: 674, font: regular, size: 8.5, color: TEXT });
 
-  drawCell(page, { x: left, y: 440, width, height: 152 });
-  page.drawRectangle({ x: left, y: 572, width, height: 20, color: NAVY });
-  page.drawText("DETAILS OF RECEIVER / BILLED TO", { x: left + 8, y: 578, font: bold, size: 8, color: rgb(1, 1, 1) });
-  page.drawText(text(invoice.client.name || invoice.clientName), { x: left + 10, y: 556, font: bold, size: 9, color: TEXT });
-  drawLines(page, wrapText(invoice.client.address, regular, 8.5, 310, 8), { x: left + 10, y: 542, font: regular, size: 8.5, lineHeight: 12, maxLines: 8 });
+  drawCell(page, { x: left, y: 440, width, height: 170 });
+  page.drawRectangle({ x: left, y: 590, width, height: 20, color: NAVY });
+  page.drawText("DETAILS OF RECEIVER / BILLED TO", { x: left + 8, y: 596, font: bold, size: 8, color: rgb(1, 1, 1) });
+  page.drawText(text(invoice.client.name || invoice.clientName), { x: left + 10, y: 574, font: bold, size: 9, color: TEXT });
+  drawLines(page, wrapText(invoice.client.address, regular, 8.5, 310, 10), { x: left + 10, y: 560, font: regular, size: 8.5, lineHeight: 12, maxLines: 10 });
   const clientMeta = [
     invoice.client.gstin ? `GSTIN: ${text(invoice.client.gstin)}` : "GSTIN: -",
     `State: ${text(invoice.client.state) || "-"}`,
     `State Code: ${text(invoice.client.stateCode) || "-"}`
   ];
-  drawLines(page, clientMeta, { x: left + 330, y: 542, font: regular, size: 8.5, lineHeight: 15 });
+  drawLines(page, clientMeta, { x: left + 330, y: 560, font: regular, size: 8.5, lineHeight: 15 });
 
   const cols = [28, 176, 50, 44, 68, 45, 68, 65];
   const headers = ["Sr.", "Product / Service", "HSN/SAC", "Fee", "Taxable", "GST rate", "Tax amount", "Total"];
@@ -425,13 +425,13 @@ async function generateCreditNotePdf(input = {}, savedSettings = {}) {
   page.drawText(`Credit Note Date: ${formatInvoiceDate(noteDate)}`, { x: left + 337, y: 692, font: regular, size: 8.5, color: TEXT });
   page.drawText(`Against Invoice: ${originalInvoiceNumber}`, { x: left + 337, y: 674, font: regular, size: 8.5, color: TEXT });
 
-  drawCell(page, { x: left, y: 440, width, height: 152 });
-  page.drawRectangle({ x: left, y: 572, width, height: 20, color: NAVY });
-  page.drawText("DETAILS OF RECEIVER / BILLED TO", { x: left + 8, y: 578, font: bold, size: 8, color: rgb(1, 1, 1) });
-  page.drawText(text(client.legalName || clientName), { x: left + 10, y: 556, font: bold, size: 9, color: TEXT });
-  drawLines(page, wrapText(client.address, regular, 8.5, 310, 8), { x: left + 10, y: 542, font: regular, size: 8.5, lineHeight: 12, maxLines: 8 });
+  drawCell(page, { x: left, y: 440, width, height: 170 });
+  page.drawRectangle({ x: left, y: 590, width, height: 20, color: NAVY });
+  page.drawText("DETAILS OF RECEIVER / BILLED TO", { x: left + 8, y: 596, font: bold, size: 8, color: rgb(1, 1, 1) });
+  page.drawText(text(client.legalName || clientName), { x: left + 10, y: 574, font: bold, size: 9, color: TEXT });
+  drawLines(page, wrapText(client.address, regular, 8.5, 310, 10), { x: left + 10, y: 560, font: regular, size: 8.5, lineHeight: 12, maxLines: 10 });
   const clientMeta = [client.gstin ? `GSTIN: ${text(client.gstin)}` : "GSTIN: -", `State: ${text(client.state) || "-"}`, `State Code: ${text(client.stateCode) || "-"}`];
-  drawLines(page, clientMeta, { x: left + 330, y: 542, font: regular, size: 8.5, lineHeight: 15 });
+  drawLines(page, clientMeta, { x: left + 330, y: 560, font: regular, size: 8.5, lineHeight: 15 });
   const rows = [["Reason", text(input.reason) || "Billing adjustment"], ["Taxable adjustment", `Rs. ${money(taxableAmount)}`], ["GST adjustment", taxMode === "cgst_sgst" ? `CGST Rs. ${money(cgst)} + SGST Rs. ${money(sgst)}` : taxMode === "igst" ? `IGST Rs. ${money(igst)}` : "Nil"], ["Total credit", `Rs. ${money(total)}`]];
   let y = 382;
   rows.forEach(([label, value]) => { drawCell(page, { x: left, y, width: 180, height: 38, fill: PALE }); drawCell(page, { x: left + 180, y, width: 364, height: 38 }); page.drawText(label, { x: left + 9, y: y + 14, font: bold, size: 8.5, color: TEXT }); drawLines(page, wrapText(value, regular, 8.5, 344, 2), { x: left + 190, y: y + 14, font: regular, size: 8.5, lineHeight: 10, maxLines: 2 }); y -= 38; });

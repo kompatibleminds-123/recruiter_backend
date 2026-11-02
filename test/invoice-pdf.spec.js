@@ -1,5 +1,6 @@
 const assert = require("assert");
 const { PDFDocument } = require("pdf-lib");
+const { PDFParse } = require("pdf-parse");
 const { formatInvoiceDate, generateInvoicePdf, indianNumberWords, normalizeInvoiceInput } = require("../src/invoice-pdf");
 const { extractHistoricalInvoice } = require("../src/invoice-import");
 
@@ -72,6 +73,28 @@ async function run() {
   const multiResult = await generateInvoicePdf({ ...input, items: multi.items }, settings);
   const multiDoc = await PDFDocument.load(Buffer.from(multiResult.fileData, "base64"));
   assert.strictEqual(multiDoc.getPageCount(), 1);
+
+  const longAddress = [
+    "Registered Office Building Alpha, Fifth Floor, Wing Number B, Technology Business Park",
+    "Plot Number 123, Main Corporate Road, Near Central Metro Station and Community Centre",
+    "Landmark Opposite International Convention Centre, Sector 45, District Gurugram",
+    "Registered Correspondence Address Line One for Accounts and Tax Registration Records",
+    "Registered Correspondence Address Line Two for Legal and Compliance Communications",
+    "Registered Correspondence Address Line Three for Official Government Communications",
+    "Registered Correspondence Address Line Four for Postal and Courier Deliveries",
+    "State Haryana, Country India, PIN Code 122003"
+  ].join(", ");
+  const longAddressResult = await generateInvoicePdf({
+    ...input,
+    clientDetails: { legalName: "Long Address Client Limited", address: longAddress, state: "Haryana", stateCode: "06" }
+  }, settings);
+  const longAddressParser = new PDFParse({ data: Buffer.from(longAddressResult.fileData, "base64") });
+  try {
+    const longAddressText = String((await longAddressParser.getText())?.text || "");
+    assert.match(longAddressText, /PIN\s+Code\s+122003/);
+  } finally {
+    await longAddressParser.destroy().catch(() => {});
+  }
 }
 
 module.exports = { run };
