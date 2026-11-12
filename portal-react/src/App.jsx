@@ -12572,18 +12572,14 @@ function PortalApp({ token, onLogout }) {
 
   async function openWhatsappScreeningPicker(candidate = {}) {
     const candidateId = String(candidate?.id || "").trim();
-    setWhatsappTemplatePicker({
+    setWhatsappTemplatePicker((current) => ({
+      ...current,
       open: true,
       mode: "screening",
-      options: [],
-      selectedId: "",
-      row: candidate,
-      phone: candidate?.phone || candidate?.phoneNumber || "",
+      row: { ...(current.row || {}), ...(candidate || {}) },
+      phone: candidate?.phone || candidate?.phoneNumber || current.phone || "",
       statusKey: "captured",
-      customText: "",
-      newShortcutKey: "",
-      saveScope: "all_jobs",
-      assignJobId: String(candidate?.assigned_jd_id || candidate?.assignedJdId || "").trim(),
+      assignJobId: String(candidate?.assigned_jd_id || candidate?.assignedJdId || current.assignJobId || "").trim(),
       candidateId,
       screeningBusy: true,
       screeningStatus: "Loading screening history...",
@@ -12591,9 +12587,9 @@ function PortalApp({ token, onLogout }) {
       sessions: [],
       activeSession: null,
       messages: [],
-      clientVisibility: "anonymous",
+      clientVisibility: current.clientVisibility || "anonymous",
       manualMessage: ""
-    });
+    }));
     try {
       const details = await loadWhatsappScreeningDetails(candidateId);
       setWhatsappTemplatePicker((current) => current.open && current.mode === "screening"
@@ -32665,10 +32661,45 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       {whatsappTemplatePicker.open ? (
         <div className="overlay" onClick={() => setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace", customText: "", newShortcutKey: "", saveScope: "all_jobs", assignJobId: "" })}>
           <div className="overlay-card whatsapp-template-picker" onClick={(event) => event.stopPropagation()}>
+            {whatsappTemplatePicker.statusKey === "captured" ? (
+              <>
+                <div className="section-kicker">WhatsApp</div>
+                <h3>{whatsappTemplatePicker.row?.name || "Candidate"}</h3>
+                <div className="button-row" style={{ justifyContent: "flex-start", gap: 8, marginBottom: 14 }} role="tablist" aria-label="WhatsApp options">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={whatsappTemplatePicker.mode !== "screening"}
+                    className={whatsappTemplatePicker.mode !== "screening" ? "" : "ghost-btn"}
+                    onClick={() => setWhatsappTemplatePicker((current) => ({ ...current, mode: "manual", screeningStatus: "", screeningStatusKind: "" }))}
+                  >
+                    Manual WhatsApp
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={whatsappTemplatePicker.mode === "screening"}
+                    className={whatsappTemplatePicker.mode === "screening" ? "" : "ghost-btn"}
+                    disabled={
+                      !String(whatsappTemplatePicker.row?.id || "").trim()
+                      || !String(whatsappTemplatePicker.phone || "").trim()
+                      || !String(whatsappTemplatePicker.row?.assigned_jd_id || whatsappTemplatePicker.row?.assignedJdId || "").trim()
+                    }
+                    title={!String(whatsappTemplatePicker.row?.assigned_jd_id || whatsappTemplatePicker.row?.assignedJdId || "").trim() ? "Assign a JD before starting WhatsApp screening." : "Send or view automated WhatsApp screening"}
+                    onClick={() => void openWhatsappScreeningPicker(whatsappTemplatePicker.row || {})}
+                  >
+                    Automated Screening
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="section-kicker">WhatsApp Template</div>
+                <h3>Choose Template to Copy</h3>
+              </>
+            )}
             {whatsappTemplatePicker.mode === "screening" ? (
               <>
-                <div className="section-kicker">WhatsApp Screening</div>
-                <h3>{whatsappTemplatePicker.row?.name || "Candidate"}</h3>
                 <p className="muted">
                   {whatsappTemplatePicker.row?.assigned_jd_title || whatsappTemplatePicker.row?.jd_title || "Assigned job"}
                   {whatsappTemplatePicker.phone ? ` | ${whatsappTemplatePicker.phone}` : ""}
@@ -32791,8 +32822,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               </>
             ) : (
             <>
-            <div className="section-kicker">WhatsApp Template</div>
-            <h3>Choose Template to Copy</h3>
             <div className="muted">Pick a saved shortcut, tweak it if needed, then copy and open WhatsApp.</div>
             {(() => {
               const selectedOption = (whatsappTemplatePicker.options || []).find((option) => String(option.id || "") === String(whatsappTemplatePicker.selectedId || "")) || null;
@@ -32826,20 +32855,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             </label>
             <div className="button-row">
               <button className="ghost-btn" onClick={() => setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace", customText: "", newShortcutKey: "", saveScope: "all_jobs", assignJobId: "" })}>Cancel</button>
-              {whatsappTemplatePicker.statusKey === "captured" ? (
-                <button
-                  className="ghost-btn"
-                  disabled={
-                    !String(whatsappTemplatePicker.row?.id || "").trim()
-                    || !String(whatsappTemplatePicker.phone || "").trim()
-                    || !String(whatsappTemplatePicker.row?.assigned_jd_id || whatsappTemplatePicker.row?.assignedJdId || "").trim()
-                  }
-                  title={!String(whatsappTemplatePicker.row?.assigned_jd_id || whatsappTemplatePicker.row?.assignedJdId || "").trim() ? "Assign a JD before starting WhatsApp screening." : "Send or view automated WhatsApp screening"}
-                  onClick={() => void openWhatsappScreeningPicker(whatsappTemplatePicker.row || {})}
-                >
-                  WhatsApp Automated Screening
-                </button>
-              ) : null}
               <button onClick={() => void applyWhatsappTemplatePickerSelection()}>Copy & open WhatsApp</button>
             </div>
             </>
