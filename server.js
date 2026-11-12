@@ -34,6 +34,13 @@ const {
   sendWhatsappConfirmation
 } = require("./src/whatsapp-notes");
 const {
+  extractMetaWhatsappEvents,
+  persistMetaWhatsappEvents,
+  readRawBodyBuffer,
+  verifyMetaSignature,
+  verifyWebhookChallenge
+} = require("./src/meta-whatsapp-webhook");
+const {
   assertCanCreatePlatformCompany,
   bootstrapAdmin,
   createCompanyClient,
@@ -16349,6 +16356,7 @@ const server = http.createServer(async (req, res) => {
         "/candidates",
         "/candidates/assign",
         "/contact-attempts",
+        "/webhooks/meta/whatsapp",
         "/webhook",
         "/whatsapp/notes",
         "/parse-candidate",
@@ -16362,6 +16370,46 @@ const server = http.createServer(async (req, res) => {
         )
       }
     });
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/webhooks/meta/whatsapp") {
+    const verification = verifyWebhookChallenge({
+      mode: requestUrl.searchParams.get("hub.mode"),
+      token: requestUrl.searchParams.get("hub.verify_token"),
+      challenge: requestUrl.searchParams.get("hub.challenge"),
+      expectedToken: process.env.META_WHATSAPP_VERIFY_TOKEN
+    });
+    if (verification.ok) {
+      res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end(verification.challenge);
+      return;
+    }
+    sendJson(res, verification.status, { ok: false, error: verification.error });
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/webhooks/meta/whatsapp") {
+    try {
+      const rawBody = await readRawBodyBuffer(req);
+      const signature = verifyMetaSignature(rawBody, req.headers["x-hub-signature-256"], process.env.META_APP_SECRET);
+      if (!signature.ok) {
+        sendJson(res, signature.status, { ok: false, error: signature.error });
+        return;
+      }
+      let payload = null;
+      try {
+        payload = JSON.parse(rawBody.toString("utf8"));
+      } catch {
+        sendJson(res, 400, { ok: false, error: "Invalid JSON body." });
+        return;
+      }
+      const events = extractMetaWhatsappEvents(payload);
+      const persisted = await persistMetaWhatsappEvents(events);
+      sendJson(res, 200, { ok: true, result: { received: persisted.received } });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: "WhatsApp webhook event could not be stored." });
+    }
     return;
   }
 

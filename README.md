@@ -219,6 +219,8 @@ Next backend upgrades:
 
 ## Mobile-First WhatsApp Note Capture
 
+For the isolated Meta Cloud API Phase 1 event receiver, see `docs/META_WHATSAPP_WEBHOOK_PHASE1.md`. Its callback URL is `/webhooks/meta/whatsapp`; it does not send messages or modify recruitment data. The legacy note-capture routes below remain separate.
+
 This backend can also receive recruiter notes from WhatsApp and structure them using AI.
 
 ### Flow

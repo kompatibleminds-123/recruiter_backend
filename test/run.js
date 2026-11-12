@@ -1,6 +1,7 @@
 const path = require("path");
 
 const specs = [
+  "./meta-whatsapp-webhook.spec.js",
   "./invoice-pdf.spec.js",
   "./invoice-analytics.spec.js",
   "./job-boolean.spec.js",
