@@ -316,6 +316,18 @@ function FeatureLockedSection({ title = "Feature locked" }) {
   sheetImportLearnedAliases: {}
 };
 
+const WHATSAPP_SCREENING_ACTIVE_STATUSES = new Set([
+  "creating",
+  "template_sent",
+  "awaiting_interest",
+  "awaiting_current_ctc",
+  "awaiting_expected_ctc",
+  "awaiting_notice_period",
+  "awaiting_recruiter_call",
+  "awaiting_confirmation",
+  "human_takeover"
+]);
+
 const JOB_APPLY_FIELD_TYPES = ["text", "textarea", "select", "checkbox"];
 
 function normalizeJobApplyField(field, index = 0) {
@@ -11296,6 +11308,7 @@ function PortalApp({ token, onLogout }) {
   const [personalShortcuts, setPersonalShortcuts] = useState({});
   const [whatsappTemplatePicker, setWhatsappTemplatePicker] = useState({
     open: false,
+    mode: "manual",
     options: [],
     selectedId: "",
     row: null,
@@ -11304,7 +11317,19 @@ function PortalApp({ token, onLogout }) {
     customText: "",
     newShortcutKey: "",
     saveScope: "all_jobs",
-    assignJobId: ""
+    assignJobId: "",
+    candidateId: "",
+    screeningBusy: false,
+    screeningStatus: "",
+    screeningStatusKind: "",
+    sessions: [],
+    activeSession: null,
+    messages: [],
+    optInConfirmed: false,
+    optInSource: "candidate_form",
+    optInEvidence: "",
+    clientVisibility: "anonymous",
+    manualMessage: ""
   });
   const [linkedinTemplatePicker, setLinkedinTemplatePicker] = useState({
     open: false,
@@ -12469,6 +12494,7 @@ function PortalApp({ token, onLogout }) {
     const selectedTemplate = String(options[0]?.template || "");
     setWhatsappTemplatePicker({
       open: true,
+      mode: "manual",
       options,
       selectedId,
       row: rowWithLinks,
@@ -12517,6 +12543,127 @@ function PortalApp({ token, onLogout }) {
         };
       });
     })();
+  }
+
+  async function loadWhatsappScreeningDetails(candidateId, preferredSessionId = "") {
+    const safeCandidateId = String(candidateId || "").trim();
+    if (!safeCandidateId) return { sessions: [], activeSession: null, messages: [] };
+    const listResult = await api(`/company/candidates/${encodeURIComponent(safeCandidateId)}/whatsapp-screenings`, token);
+    const sessions = Array.isArray(listResult?.sessions) ? listResult.sessions : [];
+    const activeSession = sessions.find((item) => String(item?.id || "") === String(preferredSessionId || "")) || sessions[0] || null;
+    let messages = [];
+    let hydratedSession = activeSession;
+    if (activeSession?.id) {
+      const detailResult = await api(`/company/whatsapp-screenings/${encodeURIComponent(activeSession.id)}`, token);
+      hydratedSession = detailResult?.session || activeSession;
+      messages = Array.isArray(detailResult?.messages) ? detailResult.messages : [];
+    }
+    return { sessions, activeSession: hydratedSession, messages };
+  }
+
+  async function refreshWhatsappScreeningView(preferredSessionId = "") {
+    const candidateId = String(whatsappTemplatePicker.candidateId || "").trim();
+    if (!candidateId) return;
+    setWhatsappTemplatePicker((current) => ({ ...current, screeningBusy: true, screeningStatus: "Refreshing screening...", screeningStatusKind: "" }));
+    try {
+      const details = await loadWhatsappScreeningDetails(candidateId, preferredSessionId || whatsappTemplatePicker.activeSession?.id || "");
+      setWhatsappTemplatePicker((current) => ({ ...current, ...details, screeningBusy: false, screeningStatus: "", screeningStatusKind: "" }));
+    } catch (error) {
+      setWhatsappTemplatePicker((current) => ({ ...current, screeningBusy: false, screeningStatus: String(error?.message || error), screeningStatusKind: "error" }));
+    }
+  }
+
+  async function openWhatsappScreeningPicker(candidate = {}) {
+    const candidateId = String(candidate?.id || "").trim();
+    setWhatsappTemplatePicker({
+      open: true,
+      mode: "screening",
+      options: [],
+      selectedId: "",
+      row: candidate,
+      phone: candidate?.phone || candidate?.phoneNumber || "",
+      statusKey: "captured",
+      customText: "",
+      newShortcutKey: "",
+      saveScope: "all_jobs",
+      assignJobId: String(candidate?.assigned_jd_id || candidate?.assignedJdId || "").trim(),
+      candidateId,
+      screeningBusy: true,
+      screeningStatus: "Loading screening history...",
+      screeningStatusKind: "",
+      sessions: [],
+      activeSession: null,
+      messages: [],
+      optInConfirmed: false,
+      optInSource: "candidate_form",
+      optInEvidence: "",
+      clientVisibility: "anonymous",
+      manualMessage: ""
+    });
+    try {
+      const details = await loadWhatsappScreeningDetails(candidateId);
+      setWhatsappTemplatePicker((current) => current.open && current.mode === "screening"
+        ? { ...current, ...details, screeningBusy: false, screeningStatus: "", screeningStatusKind: "" }
+        : current);
+    } catch (error) {
+      setWhatsappTemplatePicker((current) => current.open && current.mode === "screening"
+        ? { ...current, screeningBusy: false, screeningStatus: String(error?.message || error), screeningStatusKind: "error" }
+        : current);
+    }
+  }
+
+  async function startWhatsappScreening() {
+    const candidateId = String(whatsappTemplatePicker.candidateId || "").trim();
+    if (!candidateId) return;
+    setWhatsappTemplatePicker((current) => ({ ...current, screeningBusy: true, screeningStatus: "Sending approved WhatsApp template...", screeningStatusKind: "" }));
+    try {
+      const result = await api(`/company/candidates/${encodeURIComponent(candidateId)}/whatsapp-screenings`, token, "POST", {
+        jobId: whatsappTemplatePicker.assignJobId,
+        optInConfirmed: whatsappTemplatePicker.optInConfirmed === true,
+        optInSource: whatsappTemplatePicker.optInSource,
+        optInEvidence: whatsappTemplatePicker.optInEvidence,
+        clientVisibility: whatsappTemplatePicker.clientVisibility
+      });
+      const sessionId = String(result?.session?.id || "").trim();
+      const details = await loadWhatsappScreeningDetails(candidateId, sessionId);
+      setWhatsappTemplatePicker((current) => ({
+        ...current,
+        ...details,
+        screeningBusy: false,
+        screeningStatus: "WhatsApp screening sent successfully.",
+        screeningStatusKind: "ok"
+      }));
+      setCapturedInlineStatus(candidateId, "WhatsApp screening sent.", "ok");
+    } catch (error) {
+      setWhatsappTemplatePicker((current) => ({ ...current, screeningBusy: false, screeningStatus: String(error?.message || error), screeningStatusKind: "error" }));
+    }
+  }
+
+  async function changeWhatsappScreeningTakeover(action) {
+    const sessionId = String(whatsappTemplatePicker.activeSession?.id || "").trim();
+    if (!sessionId) return;
+    setWhatsappTemplatePicker((current) => ({ ...current, screeningBusy: true, screeningStatus: action === "resume" ? "Resuming automation..." : "Pausing automation...", screeningStatusKind: "" }));
+    try {
+      await api(`/company/whatsapp-screenings/${encodeURIComponent(sessionId)}/takeover`, token, "POST", { action });
+      const details = await loadWhatsappScreeningDetails(whatsappTemplatePicker.candidateId, sessionId);
+      setWhatsappTemplatePicker((current) => ({ ...current, ...details, screeningBusy: false, screeningStatus: action === "resume" ? "Automation resumed." : "Manual takeover active.", screeningStatusKind: "ok" }));
+    } catch (error) {
+      setWhatsappTemplatePicker((current) => ({ ...current, screeningBusy: false, screeningStatus: String(error?.message || error), screeningStatusKind: "error" }));
+    }
+  }
+
+  async function sendWhatsappScreeningManualMessage() {
+    const sessionId = String(whatsappTemplatePicker.activeSession?.id || "").trim();
+    const message = String(whatsappTemplatePicker.manualMessage || "").trim();
+    if (!sessionId || !message) return;
+    setWhatsappTemplatePicker((current) => ({ ...current, screeningBusy: true, screeningStatus: "Sending message...", screeningStatusKind: "" }));
+    try {
+      await api(`/company/whatsapp-screenings/${encodeURIComponent(sessionId)}/messages`, token, "POST", { message });
+      const details = await loadWhatsappScreeningDetails(whatsappTemplatePicker.candidateId, sessionId);
+      setWhatsappTemplatePicker((current) => ({ ...current, ...details, manualMessage: "", screeningBusy: false, screeningStatus: "Message sent. Automation is paused.", screeningStatusKind: "ok" }));
+    } catch (error) {
+      setWhatsappTemplatePicker((current) => ({ ...current, screeningBusy: false, screeningStatus: String(error?.message || error), screeningStatusKind: "error" }));
+    }
   }
 
   async function openLinkedinTemplatePicker(row = {}, statusKey = "workspace") {
@@ -29195,6 +29342,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <button className="ghost-btn" onClick={() => { setBulkAssignCandidateModalOpen(false); setBulkAssignCandidateIds([]); setAssignCandidateId(item.id); }}>{item.assigned_to_name ? "Reassign" : "Assign"}</button>
 	                      <button className="ghost-btn" onClick={() => openRecruiterNotes(item)}>Recruiter note</button>
                       <button
+                        className="ghost-btn"
+                        disabled={!String(item.phone || item.phoneNumber || "").trim() || !String(item.assigned_jd_id || item.assignedJdId || "").trim()}
+                        title={!String(item.assigned_jd_id || item.assignedJdId || "").trim() ? "Assign a JD before starting WhatsApp screening." : "Send or view candidate-specific WhatsApp screening"}
+                        onClick={() => void openWhatsappScreeningPicker(item)}
+                      >
+                        WhatsApp screening
+                      </button>
+                      <button
                         className="whatsapp-logo-btn"
                         onClick={() => openWhatsappTemplatePicker({
                             name: item.name || "",
@@ -32521,6 +32676,150 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
       {whatsappTemplatePicker.open ? (
         <div className="overlay" onClick={() => setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace", customText: "", newShortcutKey: "", saveScope: "all_jobs", assignJobId: "" })}>
           <div className="overlay-card whatsapp-template-picker" onClick={(event) => event.stopPropagation()}>
+            {whatsappTemplatePicker.mode === "screening" ? (
+              <>
+                <div className="section-kicker">WhatsApp Screening</div>
+                <h3>{whatsappTemplatePicker.row?.name || "Candidate"}</h3>
+                <p className="muted">
+                  {whatsappTemplatePicker.row?.assigned_jd_title || whatsappTemplatePicker.row?.jd_title || "Assigned job"}
+                  {whatsappTemplatePicker.phone ? ` | ${whatsappTemplatePicker.phone}` : ""}
+                </p>
+                {(whatsappTemplatePicker.sessions || []).length && whatsappTemplatePicker.activeSession ? (
+                  <label className="full">
+                    <span>Screening history</span>
+                    <select
+                      value={whatsappTemplatePicker.activeSession?.id || ""}
+                      disabled={whatsappTemplatePicker.screeningBusy}
+                      onChange={(event) => void refreshWhatsappScreeningView(event.target.value)}
+                    >
+                      {(whatsappTemplatePicker.sessions || []).map((session) => (
+                        <option key={session.id} value={session.id}>
+                          {new Date(session.created_at).toLocaleString()} | {String(session.status || "-").replace(/_/g, " ")}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                {whatsappTemplatePicker.activeSession ? (
+                  <>
+                    <div className="whatsapp-template-picker__summary">
+                      <div className="whatsapp-template-picker__summary-title">
+                        Screening status: {String(whatsappTemplatePicker.activeSession.status || "-").replace(/_/g, " ")}
+                      </div>
+                      <div className="whatsapp-template-picker__summary-subtitle">
+                        Question: {String(whatsappTemplatePicker.activeSession.current_question || "-").replace(/_/g, " ")}
+                        {whatsappTemplatePicker.activeSession.needs_recruiter_follow_up ? " | Recruiter follow-up requested" : ""}
+                      </div>
+                    </div>
+                    {Object.keys(whatsappTemplatePicker.activeSession.confirmed_answers || whatsappTemplatePicker.activeSession.proposed_answers || {}).length ? (
+                      <div className="candidate-snippet" style={{ whiteSpace: "pre-wrap", marginBottom: 12 }}>
+                        {(() => {
+                          const answers = whatsappTemplatePicker.activeSession.confirmed_answers && Object.keys(whatsappTemplatePicker.activeSession.confirmed_answers || {}).length
+                            ? whatsappTemplatePicker.activeSession.confirmed_answers
+                            : whatsappTemplatePicker.activeSession.proposed_answers || {};
+                          return [
+                            answers.current_ctc ? `Current CTC: ${answers.current_ctc}` : "",
+                            answers.expected_ctc ? `Expected CTC: ${answers.expected_ctc}` : "",
+                            answers.notice_period ? `Notice: ${answers.notice_period}` : "",
+                            typeof answers.recruiter_call_requested === "boolean" ? `Recruiter call: ${answers.recruiter_call_requested ? "Yes" : "No"}` : ""
+                          ].filter(Boolean).join("\n");
+                        })()}
+                      </div>
+                    ) : null}
+                    {Object.keys(whatsappTemplatePicker.activeSession.conflicts || {}).length ? (
+                      <div className="status error">Some confirmed answers differ from existing Captured Notes. Review is required before overwriting them.</div>
+                    ) : null}
+                    <div style={{ maxHeight: 280, overflowY: "auto", border: "1px solid rgba(148,163,184,.35)", borderRadius: 14, padding: 12, marginBottom: 12 }}>
+                      {(whatsappTemplatePicker.messages || []).length ? (whatsappTemplatePicker.messages || []).map((message) => (
+                        <div key={message.id || message.meta_message_id} style={{ marginBottom: 10, textAlign: message.direction === "outbound" ? "right" : "left" }}>
+                          <div style={{ display: "inline-block", maxWidth: "88%", padding: "8px 10px", borderRadius: 12, background: message.direction === "outbound" ? "#e8f1ff" : "#f3f4f6", whiteSpace: "pre-wrap", textAlign: "left" }}>
+                            {message.body || `[${message.message_type || "message"}]`}
+                          </div>
+                          <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>
+                            {message.sender_type || message.direction}
+                            {message.created_at ? ` | ${new Date(message.created_at).toLocaleString()}` : ""}
+                            {message.delivery_status ? ` | ${message.delivery_status}` : ""}
+                          </div>
+                        </div>
+                      )) : <div className="muted">No screening messages yet.</div>}
+                    </div>
+                    {WHATSAPP_SCREENING_ACTIVE_STATUSES.has(String(whatsappTemplatePicker.activeSession.status || "")) ? (
+                      <>
+                        <div className="button-row" style={{ justifyContent: "flex-start" }}>
+                          <button className="ghost-btn" disabled={whatsappTemplatePicker.screeningBusy} onClick={() => void refreshWhatsappScreeningView()}>Refresh</button>
+                          {whatsappTemplatePicker.activeSession.status === "human_takeover" ? (
+                            <button className="ghost-btn" disabled={whatsappTemplatePicker.screeningBusy} onClick={() => void changeWhatsappScreeningTakeover("resume")}>Resume automation</button>
+                          ) : (
+                            <button className="ghost-btn" disabled={whatsappTemplatePicker.screeningBusy} onClick={() => void changeWhatsappScreeningTakeover("pause")}>Manual takeover</button>
+                          )}
+                        </div>
+                        <label className="full">
+                          <span>Manual reply from official WhatsApp number</span>
+                          <textarea
+                            value={whatsappTemplatePicker.manualMessage || ""}
+                            onChange={(event) => setWhatsappTemplatePicker((current) => ({ ...current, manualMessage: event.target.value }))}
+                            placeholder="Available only inside the active 24-hour service window. Sending pauses automation."
+                          />
+                        </label>
+                        <div className="button-row">
+                          <button className="ghost-btn" onClick={() => setWhatsappTemplatePicker((current) => ({ ...current, open: false }))}>Close</button>
+                          <button disabled={whatsappTemplatePicker.screeningBusy || !String(whatsappTemplatePicker.manualMessage || "").trim()} onClick={() => void sendWhatsappScreeningManualMessage()}>
+                            {whatsappTemplatePicker.screeningBusy ? "Working..." : "Send manual reply"}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="button-row">
+                        <button className="ghost-btn" onClick={() => setWhatsappTemplatePicker((current) => ({ ...current, open: false }))}>Close</button>
+                        <button className="ghost-btn" disabled={whatsappTemplatePicker.screeningBusy} onClick={() => void refreshWhatsappScreeningView()}>Refresh</button>
+                        <button onClick={() => setWhatsappTemplatePicker((current) => ({ ...current, activeSession: null, messages: [], optInConfirmed: false, optInEvidence: "", screeningStatus: "" }))}>Start another screening</button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p className="muted">Send the approved opportunity template with Interested, Share JD and Not Interested options.</p>
+                    <label className="full">
+                      <span>Client visibility in shared JD</span>
+                      <select value={whatsappTemplatePicker.clientVisibility || "anonymous"} onChange={(event) => setWhatsappTemplatePicker((current) => ({ ...current, clientVisibility: event.target.value }))}>
+                        <option value="anonymous">Keep client anonymous</option>
+                        <option value="named">Show client name</option>
+                      </select>
+                    </label>
+                    <label className="full">
+                      <span>WhatsApp opt-in source</span>
+                      <select value={whatsappTemplatePicker.optInSource || "candidate_form"} onChange={(event) => setWhatsappTemplatePicker((current) => ({ ...current, optInSource: event.target.value }))}>
+                        <option value="candidate_form">Candidate form / application</option>
+                        <option value="email_confirmation">Email confirmation</option>
+                        <option value="verbal_confirmation">Verbal confirmation</option>
+                        <option value="previous_whatsapp_request">Previous WhatsApp request</option>
+                        <option value="other_documented_source">Other documented source</option>
+                      </select>
+                    </label>
+                    <label className="full">
+                      <span>Opt-in evidence / note</span>
+                      <textarea value={whatsappTemplatePicker.optInEvidence || ""} onChange={(event) => setWhatsappTemplatePicker((current) => ({ ...current, optInEvidence: event.target.value }))} placeholder="Where and when the candidate agreed to receive job opportunities on WhatsApp" />
+                    </label>
+                    <label className="whatsapp-template-picker__option">
+                      <input type="checkbox" checked={whatsappTemplatePicker.optInConfirmed === true} onChange={(event) => setWhatsappTemplatePicker((current) => ({ ...current, optInConfirmed: event.target.checked }))} />
+                      <span>I confirm that this candidate opted in to receive job opportunity messages on WhatsApp.</span>
+                    </label>
+                    <div className="button-row">
+                      <button className="ghost-btn" onClick={() => setWhatsappTemplatePicker((current) => ({ ...current, open: false }))}>Cancel</button>
+                      <button disabled={whatsappTemplatePicker.screeningBusy || !whatsappTemplatePicker.optInConfirmed} onClick={() => void startWhatsappScreening()}>
+                        {whatsappTemplatePicker.screeningBusy ? "Sending..." : "Send WhatsApp Screening"}
+                      </button>
+                    </div>
+                  </>
+                )}
+                {whatsappTemplatePicker.screeningStatus ? (
+                  <div className={`status ${whatsappTemplatePicker.screeningStatusKind || ""}`} aria-live="polite" style={{ marginTop: 12 }}>
+                    {whatsappTemplatePicker.screeningStatus}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+            <>
             <div className="section-kicker">WhatsApp Template</div>
             <h3>Choose Template to Copy</h3>
             <div className="muted">Pick a saved shortcut, tweak it if needed, then copy and open WhatsApp.</div>
@@ -32558,6 +32857,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               <button className="ghost-btn" onClick={() => setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace", customText: "", newShortcutKey: "", saveScope: "all_jobs", assignJobId: "" })}>Cancel</button>
               <button onClick={() => void applyWhatsappTemplatePickerSelection()}>Copy & open WhatsApp</button>
             </div>
+            </>
+            )}
           </div>
         </div>
       ) : null}

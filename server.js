@@ -41,6 +41,15 @@ const {
   verifyWebhookChallenge
 } = require("./src/meta-whatsapp-webhook");
 const {
+  createScreeningSession,
+  getScreeningSession,
+  listCandidateScreenings,
+  listScreeningMessages,
+  processWhatsAppScreeningEvents,
+  sendManualScreeningMessage,
+  setHumanTakeover
+} = require("./src/whatsapp-screening");
+const {
   assertCanCreatePlatformCompany,
   bootstrapAdmin,
   createCompanyClient,
@@ -16407,6 +16416,27 @@ const server = http.createServer(async (req, res) => {
       const events = extractMetaWhatsappEvents(payload);
       const persisted = await persistMetaWhatsappEvents(events);
       sendJson(res, 200, { ok: true, result: { received: persisted.received } });
+      setImmediate(() => {
+        processWhatsAppScreeningEvents(events, {
+          onCandidateUpdated(candidate, attempt, session) {
+            if (!candidate || !session?.company_id) return;
+            emitCapturedStreamEvent(session.company_id, "candidate_attempt", {
+              candidateId: candidate.id,
+              candidate,
+              attempt,
+              whatsappScreeningSession: session
+            });
+            emitApplicantStreamEvent(session.company_id, "candidate_attempt", {
+              candidateId: candidate.id,
+              candidate,
+              attempt,
+              whatsappScreeningSession: session
+            });
+          }
+        }).catch((error) => {
+          console.warn("[whatsapp-screening] background processing failed", String(error?.message || error || ""));
+        });
+      });
     } catch (error) {
       sendJson(res, 500, { ok: false, error: "WhatsApp webhook event could not be stored." });
     }
@@ -24315,6 +24345,105 @@ const server = http.createServer(async (req, res) => {
       } catch (error) {
         sendJson(res, 400, { ok: false, error: String(error.message || error) });
       }
+    return;
+  }
+
+  if (req.method === "GET" && /^\/company\/candidates\/[^/]+\/whatsapp-screenings$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/whatsapp-screenings$/, "")).trim();
+      await ensureCandidateVisibleToActor(actor, candidateId);
+      const sessions = await listCandidateScreenings(candidateId, actor.companyId);
+      sendJson(res, 200, { ok: true, result: { sessions } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && /^\/company\/candidates\/[^/]+\/whatsapp-screenings$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/whatsapp-screenings$/, "")).trim();
+      const candidate = await ensureCandidateVisibleToActor(actor, candidateId);
+      const body = await readJsonBody(req);
+      const assignedJobId = String(candidate?.assigned_jd_id || candidate?.assignedJdId || "").trim();
+      const requestedJobId = String(body.jobId || body.job_id || assignedJobId).trim();
+      if (!assignedJobId || requestedJobId !== assignedJobId) {
+        throw new Error("Use the candidate's currently assigned job for WhatsApp screening.");
+      }
+      const jobs = await listCompanyJobs(actor.companyId, actor.id, {
+        includeArchived: true,
+        viewerRole: actor.role,
+        includeJobShortcuts: false
+      });
+      const job = (jobs || []).find((item) => String(item?.id || "").trim() === assignedJobId) || null;
+      if (!job) throw new Error("Assigned job was not found or is not available to this recruiter.");
+      const session = await createScreeningSession({
+        actor,
+        candidate,
+        job,
+        clientVisibility: String(body.clientVisibility || body.client_visibility || "anonymous").trim(),
+        consent: {
+          confirmed: body.optInConfirmed === true || body.opt_in_confirmed === true,
+          source: body.optInSource || body.opt_in_source,
+          evidence: body.optInEvidence || body.opt_in_evidence,
+          consentedAt: body.optedInAt || body.opted_in_at || new Date().toISOString()
+        }
+      });
+      const messages = await listScreeningMessages(session.id, actor.companyId);
+      sendJson(res, 201, { ok: true, result: { session, messages } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && /^\/company\/whatsapp-screenings\/[^/]+$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const sessionId = String(requestUrl.pathname.replace(/^\/company\/whatsapp-screenings\//, "")).trim();
+      const session = await getScreeningSession(sessionId, actor.companyId);
+      if (!session) throw new Error("WhatsApp screening session not found.");
+      await ensureCandidateVisibleToActor(actor, session.candidate_id);
+      const messages = await listScreeningMessages(session.id, actor.companyId);
+      sendJson(res, 200, { ok: true, result: { session, messages } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && /^\/company\/whatsapp-screenings\/[^/]+\/takeover$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const sessionId = String(requestUrl.pathname.replace(/^\/company\/whatsapp-screenings\//, "").replace(/\/takeover$/, "")).trim();
+      const body = await readJsonBody(req);
+      const session = await getScreeningSession(sessionId, actor.companyId);
+      if (!session) throw new Error("WhatsApp screening session not found.");
+      await ensureCandidateVisibleToActor(actor, session.candidate_id);
+      const updated = await setHumanTakeover(session, actor, body.action || "pause");
+      sendJson(res, 200, { ok: true, result: { session: updated } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && /^\/company\/whatsapp-screenings\/[^/]+\/messages$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const sessionId = String(requestUrl.pathname.replace(/^\/company\/whatsapp-screenings\//, "").replace(/\/messages$/, "")).trim();
+      const body = await readJsonBody(req);
+      const session = await getScreeningSession(sessionId, actor.companyId);
+      if (!session) throw new Error("WhatsApp screening session not found.");
+      await ensureCandidateVisibleToActor(actor, session.candidate_id);
+      const updated = await sendManualScreeningMessage(session, actor, body.message || body.text || "");
+      const messages = await listScreeningMessages(session.id, actor.companyId);
+      sendJson(res, 200, { ok: true, result: { session: updated, messages } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
     return;
   }
 
