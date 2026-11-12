@@ -11325,9 +11325,6 @@ function PortalApp({ token, onLogout }) {
     sessions: [],
     activeSession: null,
     messages: [],
-    optInConfirmed: false,
-    optInSource: "candidate_form",
-    optInEvidence: "",
     clientVisibility: "anonymous",
     manualMessage: ""
   });
@@ -12594,9 +12591,6 @@ function PortalApp({ token, onLogout }) {
       sessions: [],
       activeSession: null,
       messages: [],
-      optInConfirmed: false,
-      optInSource: "candidate_form",
-      optInEvidence: "",
       clientVisibility: "anonymous",
       manualMessage: ""
     });
@@ -12619,9 +12613,8 @@ function PortalApp({ token, onLogout }) {
     try {
       const result = await api(`/company/candidates/${encodeURIComponent(candidateId)}/whatsapp-screenings`, token, "POST", {
         jobId: whatsappTemplatePicker.assignJobId,
-        optInConfirmed: whatsappTemplatePicker.optInConfirmed === true,
-        optInSource: whatsappTemplatePicker.optInSource,
-        optInEvidence: whatsappTemplatePicker.optInEvidence,
+        optInConfirmed: true,
+        optInSource: "recruiter_confirmation",
         clientVisibility: whatsappTemplatePicker.clientVisibility
       });
       const sessionId = String(result?.session?.id || "").trim();
@@ -29342,19 +29335,15 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <button className="ghost-btn" onClick={() => { setBulkAssignCandidateModalOpen(false); setBulkAssignCandidateIds([]); setAssignCandidateId(item.id); }}>{item.assigned_to_name ? "Reassign" : "Assign"}</button>
 	                      <button className="ghost-btn" onClick={() => openRecruiterNotes(item)}>Recruiter note</button>
                       <button
-                        className="ghost-btn"
-                        disabled={!String(item.phone || item.phoneNumber || "").trim() || !String(item.assigned_jd_id || item.assignedJdId || "").trim()}
-                        title={!String(item.assigned_jd_id || item.assignedJdId || "").trim() ? "Assign a JD before starting WhatsApp screening." : "Send or view candidate-specific WhatsApp screening"}
-                        onClick={() => void openWhatsappScreeningPicker(item)}
-                      >
-                        WhatsApp screening
-                      </button>
-                      <button
                         className="whatsapp-logo-btn"
                         onClick={() => openWhatsappTemplatePicker({
+                            id: item.id || "",
                             name: item.name || "",
                             jd_title: item.jd_title || item.role || "",
+                            assigned_jd_id: item.assigned_jd_id || item.assignedJdId || "",
+                            assigned_jd_title: item.assigned_jd_title || item.assignedJdTitle || item.jd_title || item.role || "",
                             company: item.company || "",
+                            company_id: item.company_id || item.companyId || "",
                             company_name: state.user?.companyName || "",
                             outcome: getCapturedOutcome(item, matchedAssessment),
                             recruiter_name: item.assigned_to_name || item.recruiter_name || state.user?.name || "",
@@ -32772,7 +32761,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <div className="button-row">
                         <button className="ghost-btn" onClick={() => setWhatsappTemplatePicker((current) => ({ ...current, open: false }))}>Close</button>
                         <button className="ghost-btn" disabled={whatsappTemplatePicker.screeningBusy} onClick={() => void refreshWhatsappScreeningView()}>Refresh</button>
-                        <button onClick={() => setWhatsappTemplatePicker((current) => ({ ...current, activeSession: null, messages: [], optInConfirmed: false, optInEvidence: "", screeningStatus: "" }))}>Start another screening</button>
+                        <button onClick={() => setWhatsappTemplatePicker((current) => ({ ...current, activeSession: null, messages: [], screeningStatus: "" }))}>Start another screening</button>
                       </div>
                     )}
                   </>
@@ -32786,27 +32775,9 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         <option value="named">Show client name</option>
                       </select>
                     </label>
-                    <label className="full">
-                      <span>WhatsApp opt-in source</span>
-                      <select value={whatsappTemplatePicker.optInSource || "candidate_form"} onChange={(event) => setWhatsappTemplatePicker((current) => ({ ...current, optInSource: event.target.value }))}>
-                        <option value="candidate_form">Candidate form / application</option>
-                        <option value="email_confirmation">Email confirmation</option>
-                        <option value="verbal_confirmation">Verbal confirmation</option>
-                        <option value="previous_whatsapp_request">Previous WhatsApp request</option>
-                        <option value="other_documented_source">Other documented source</option>
-                      </select>
-                    </label>
-                    <label className="full">
-                      <span>Opt-in evidence / note</span>
-                      <textarea value={whatsappTemplatePicker.optInEvidence || ""} onChange={(event) => setWhatsappTemplatePicker((current) => ({ ...current, optInEvidence: event.target.value }))} placeholder="Where and when the candidate agreed to receive job opportunities on WhatsApp" />
-                    </label>
-                    <label className="whatsapp-template-picker__option">
-                      <input type="checkbox" checked={whatsappTemplatePicker.optInConfirmed === true} onChange={(event) => setWhatsappTemplatePicker((current) => ({ ...current, optInConfirmed: event.target.checked }))} />
-                      <span>I confirm that this candidate opted in to receive job opportunity messages on WhatsApp.</span>
-                    </label>
                     <div className="button-row">
                       <button className="ghost-btn" onClick={() => setWhatsappTemplatePicker((current) => ({ ...current, open: false }))}>Cancel</button>
-                      <button disabled={whatsappTemplatePicker.screeningBusy || !whatsappTemplatePicker.optInConfirmed} onClick={() => void startWhatsappScreening()}>
+                      <button disabled={whatsappTemplatePicker.screeningBusy} onClick={() => void startWhatsappScreening()}>
                         {whatsappTemplatePicker.screeningBusy ? "Sending..." : "Send WhatsApp Screening"}
                       </button>
                     </div>
@@ -32855,6 +32826,20 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
             </label>
             <div className="button-row">
               <button className="ghost-btn" onClick={() => setWhatsappTemplatePicker({ open: false, options: [], selectedId: "", row: null, phone: "", statusKey: "workspace", customText: "", newShortcutKey: "", saveScope: "all_jobs", assignJobId: "" })}>Cancel</button>
+              {whatsappTemplatePicker.statusKey === "captured" ? (
+                <button
+                  className="ghost-btn"
+                  disabled={
+                    !String(whatsappTemplatePicker.row?.id || "").trim()
+                    || !String(whatsappTemplatePicker.phone || "").trim()
+                    || !String(whatsappTemplatePicker.row?.assigned_jd_id || whatsappTemplatePicker.row?.assignedJdId || "").trim()
+                  }
+                  title={!String(whatsappTemplatePicker.row?.assigned_jd_id || whatsappTemplatePicker.row?.assignedJdId || "").trim() ? "Assign a JD before starting WhatsApp screening." : "Send or view automated WhatsApp screening"}
+                  onClick={() => void openWhatsappScreeningPicker(whatsappTemplatePicker.row || {})}
+                >
+                  WhatsApp Automated Screening
+                </button>
+              ) : null}
               <button onClick={() => void applyWhatsappTemplatePickerSelection()}>Copy & open WhatsApp</button>
             </div>
             </>
