@@ -308,7 +308,7 @@ async function generateInvoicePdf(input = {}, savedSettings = {}) {
   drawLines(page, clientMeta, { x: left + 330, y: 560, font: regular, size: 8.5, lineHeight: 15 });
 
   const cols = [28, 176, 50, 44, 68, 45, 68, 65];
-  const headers = ["Sr.", "Product / Service", "HSN/SAC", "Fee", "Taxable", "GST rate", "Tax amount", "Total"];
+  const headers = ["Sr.", "Product / Service", "HSN/SAC", "Rate", "Taxable", "GST rate", "Tax amount", "Total"];
   let x = left;
   for (let i = 0; i < cols.length; i += 1) {
     drawCell(page, { x, y: 402, width: cols[i], height: 38, fill: PALE });
