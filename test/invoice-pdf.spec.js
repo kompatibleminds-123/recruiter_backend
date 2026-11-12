@@ -95,6 +95,31 @@ async function run() {
   } finally {
     await longAddressParser.destroy().catch(() => {});
   }
+
+  const confidentialInput = {
+    ...input,
+    candidateName: "Confidential Candidate 927",
+    annualCtc: 1234567,
+    feePercent: 13.75,
+    hideCandidateCommercialDetails: true
+  };
+  const confidentialNormalized = normalizeInvoiceInput(confidentialInput, settings);
+  assert.strictEqual(confidentialNormalized.hideCandidateCommercialDetails, true);
+  assert.strictEqual(confidentialNormalized.candidateName, confidentialInput.candidateName);
+  assert.strictEqual(confidentialNormalized.annualCtc, confidentialInput.annualCtc);
+  assert.strictEqual(confidentialNormalized.feePercent, confidentialInput.feePercent);
+  const confidentialResult = await generateInvoicePdf(confidentialInput, settings);
+  const confidentialParser = new PDFParse({ data: Buffer.from(confidentialResult.fileData, "base64") });
+  try {
+    const confidentialText = String((await confidentialParser.getText())?.text || "");
+    assert.doesNotMatch(confidentialText, /Confidential Candidate 927/);
+    assert.doesNotMatch(confidentialText, /CTC:\s*Rs\./);
+    assert.doesNotMatch(confidentialText, /13\.75%/);
+    assert.match(confidentialText, /HR Consulting Services/);
+    assert.match(confidentialText, /Taxable/);
+  } finally {
+    await confidentialParser.destroy().catch(() => {});
+  }
 }
 
 module.exports = { run };
