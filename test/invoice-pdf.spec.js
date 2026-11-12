@@ -101,10 +101,14 @@ async function run() {
     candidateName: "Confidential Candidate 927",
     annualCtc: 1234567,
     feePercent: 13.75,
-    hideCandidateCommercialDetails: true
+    hideCandidateName: true,
+    hideAnnualCtc: true,
+    hideFeePercent: true
   };
   const confidentialNormalized = normalizeInvoiceInput(confidentialInput, settings);
-  assert.strictEqual(confidentialNormalized.hideCandidateCommercialDetails, true);
+  assert.strictEqual(confidentialNormalized.hideCandidateName, true);
+  assert.strictEqual(confidentialNormalized.hideAnnualCtc, true);
+  assert.strictEqual(confidentialNormalized.hideFeePercent, true);
   assert.strictEqual(confidentialNormalized.candidateName, confidentialInput.candidateName);
   assert.strictEqual(confidentialNormalized.annualCtc, confidentialInput.annualCtc);
   assert.strictEqual(confidentialNormalized.feePercent, confidentialInput.feePercent);
@@ -119,6 +123,21 @@ async function run() {
     assert.match(confidentialText, /Taxable/);
   } finally {
     await confidentialParser.destroy().catch(() => {});
+  }
+
+  const nameOnlyResult = await generateInvoicePdf({
+    ...confidentialInput,
+    hideAnnualCtc: false,
+    hideFeePercent: false
+  }, settings);
+  const nameOnlyParser = new PDFParse({ data: Buffer.from(nameOnlyResult.fileData, "base64") });
+  try {
+    const nameOnlyText = String((await nameOnlyParser.getText())?.text || "");
+    assert.doesNotMatch(nameOnlyText, /Confidential Candidate 927/);
+    assert.match(nameOnlyText, /CTC:\s*Rs\./);
+    assert.match(nameOnlyText, /13\.75%/);
+  } finally {
+    await nameOnlyParser.destroy().catch(() => {});
   }
 }
 

@@ -77,7 +77,8 @@ export default function InvoiceGenerator({ token, api, clients = [], bootstrap =
   const [client, setClient] = useState(EMPTY_CLIENT);
   const [invoice, setInvoice] = useState({
     invoiceNumber: "", invoiceDate: new Date().toISOString().slice(0, 10),
-    items: [{ ...EMPTY_ITEM }], gstRate: "18", taxMode: "auto", notes: "", hideCandidateCommercialDetails: false
+    items: [{ ...EMPTY_ITEM }], gstRate: "18", taxMode: "auto", notes: "",
+    hideCandidateName: false, hideAnnualCtc: false, hideFeePercent: false
   });
   const [status, setStatus] = useState({ text: "", kind: "" });
   const [loading, setLoading] = useState(true);
@@ -128,8 +129,18 @@ export default function InvoiceGenerator({ token, api, clients = [], bootstrap =
     const masterClient = clientProfiles[editClientName] || {};
     const savedClient = filledClientFields(next.clientDetails);
     const clientStateCode = masterClient.stateCode || savedClient.stateCode;
+    const legacyHideCommercialDetails = next.hideCandidateCommercialDetails === true;
     setClient({ ...EMPTY_CLIENT, ...masterClient, ...savedClient, legalName: savedClient.legalName || masterClient.legalName || editClientName });
-    setInvoice((current) => ({ ...current, ...next, taxMode: taxModeFromStateCodes(clientStateCode, profile.stateCode, next.taxMode || current.taxMode), invoiceNumber: editingInvoice.invoice?.invoiceNumber || next.invoiceNumber || "", items: Array.isArray(editingInvoice.items) && editingInvoice.items.length ? editingInvoice.items : (next.items || current.items) }));
+    setInvoice((current) => ({
+      ...current,
+      ...next,
+      hideCandidateName: next.hideCandidateName ?? legacyHideCommercialDetails,
+      hideAnnualCtc: next.hideAnnualCtc ?? legacyHideCommercialDetails,
+      hideFeePercent: next.hideFeePercent ?? legacyHideCommercialDetails,
+      taxMode: taxModeFromStateCodes(clientStateCode, profile.stateCode, next.taxMode || current.taxMode),
+      invoiceNumber: editingInvoice.invoice?.invoiceNumber || next.invoiceNumber || "",
+      items: Array.isArray(editingInvoice.items) && editingInvoice.items.length ? editingInvoice.items : (next.items || current.items)
+    }));
     setReviewed(false);
   }, [editingInvoice, loading, clientProfiles, profile.stateCode]);
 
@@ -252,7 +263,9 @@ export default function InvoiceGenerator({ token, api, clients = [], bootstrap =
           <label><span>GST rate %</span><input type="number" min="0" value={invoice.gstRate} onChange={(e) => updateInvoice("gstRate", e.target.value)} /></label>
           <label><span>Tax type</span><select value={invoice.taxMode} onChange={(e) => updateInvoice("taxMode", e.target.value)}><option value="auto">Auto from state codes</option><option value="igst">IGST</option><option value="cgst_sgst">CGST + SGST</option><option value="none">No GST</option></select></label>
           <label className="span-all"><span>Notes / payment terms</span><textarea rows="2" value={invoice.notes} onChange={(e) => updateInvoice("notes", e.target.value)} /></label>
-          <label className="checkbox-row span-all"><input type="checkbox" checked={invoice.hideCandidateCommercialDetails === true} onChange={(e) => updateInvoice("hideCandidateCommercialDetails", e.target.checked)} /><span>Hide candidate name, annual CTC/package and recruitment fee percentage from the client PDF</span></label>
+          <label className="checkbox-row"><input type="checkbox" checked={invoice.hideCandidateName === true} onChange={(e) => updateInvoice("hideCandidateName", e.target.checked)} /><span>Hide candidate name from client PDF</span></label>
+          <label className="checkbox-row"><input type="checkbox" checked={invoice.hideAnnualCtc === true} onChange={(e) => updateInvoice("hideAnnualCtc", e.target.checked)} /><span>Hide annual CTC/package from client PDF</span></label>
+          <label className="checkbox-row"><input type="checkbox" checked={invoice.hideFeePercent === true} onChange={(e) => updateInvoice("hideFeePercent", e.target.checked)} /><span>Hide recruitment fee percentage from client PDF</span></label>
         </div>
         <div className="invoice-line-items">
           <div className="invoice-card-heading"><div><h4>Candidate line items</h4><p className="muted">Add up to 4 candidates in one invoice.</p></div><button className="ghost-btn" type="button" disabled={invoice.items.length >= 4} onClick={addItem}>+ Add Candidate</button></div>

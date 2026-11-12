@@ -15,6 +15,10 @@ function number(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function booleanFlag(value) {
+  return value === true || text(value).toLowerCase() === "true";
+}
+
 function normalizedStateCode(value) {
   const digits = String(value ?? "").replace(/\D/g, "");
   return digits ? digits.padStart(2, "0") : "";
@@ -202,8 +206,10 @@ function normalizeInvoiceInput(input = {}, savedSettings = {}) {
   const sgst = taxMode === "cgst_sgst" ? totalGst / 2 : 0;
   const igst = taxMode === "igst" ? totalGst : 0;
   const total = taxableAmount + totalGst;
-  const hideCandidateCommercialDetails = input.hideCandidateCommercialDetails === true
-    || text(input.hideCandidateCommercialDetails).toLowerCase() === "true";
+  const legacyHideCommercialDetails = booleanFlag(input.hideCandidateCommercialDetails);
+  const hideCandidateName = input.hideCandidateName == null ? legacyHideCommercialDetails : booleanFlag(input.hideCandidateName);
+  const hideAnnualCtc = input.hideAnnualCtc == null ? legacyHideCommercialDetails : booleanFlag(input.hideAnnualCtc);
+  const hideFeePercent = input.hideFeePercent == null ? legacyHideCommercialDetails : booleanFlag(input.hideFeePercent);
   return {
     invoiceNumber: text(input.invoiceNumber),
     invoiceDate: text(input.invoiceDate),
@@ -227,7 +233,9 @@ function normalizeInvoiceInput(input = {}, savedSettings = {}) {
     total,
     roundedTotal: Math.round(total),
     notes: text(input.notes),
-    hideCandidateCommercialDetails
+    hideCandidateName,
+    hideAnnualCtc,
+    hideFeePercent
   };
 }
 
@@ -316,11 +324,13 @@ async function generateInvoicePdf(input = {}, savedSettings = {}) {
     const itemTaxLabel = invoice.taxMode === "cgst_sgst"
       ? `CGST: ${money(itemGst / 2)}\nSGST: ${money(itemGst / 2)}`
       : invoice.taxMode === "igst" ? `IGST: ${money(itemGst)}` : "Nil";
-    const serviceLabel = invoice.hideCandidateCommercialDetails
-      ? item.serviceDescription
-      : [item.serviceDescription, `Candidate: ${item.candidateName}`, item.annualCtc ? `CTC: Rs. ${ctcMoney(item.annualCtc)}` : ""].filter(Boolean).join("\n");
+    const serviceLabel = [
+      item.serviceDescription,
+      !invoice.hideCandidateName && item.candidateName ? `Candidate: ${item.candidateName}` : "",
+      !invoice.hideAnnualCtc && item.annualCtc ? `CTC: Rs. ${ctcMoney(item.annualCtc)}` : ""
+    ].filter(Boolean).join("\n");
     const rateLabel = invoice.taxMode === "cgst_sgst" ? `CGST ${Number(invoice.gstRate / 2)}%\nSGST ${Number(invoice.gstRate / 2)}%` : invoice.taxMode === "none" ? "Nil" : `${invoice.gstRate}%`;
-    const feeLabel = invoice.hideCandidateCommercialDetails ? "-" : (item.feePercent ? `${item.feePercent}%` : "-");
+    const feeLabel = invoice.hideFeePercent ? "-" : (item.feePercent ? `${item.feePercent}%` : "-");
     const rowValues = [String(itemIndex + 1), serviceLabel, item.hsnSac, feeLabel, `Rs. ${money(item.taxableAmount)}`, rateLabel, itemTaxLabel, `Rs. ${money(itemTotal)}`];
     x = left;
     for (let i = 0; i < cols.length; i += 1) {
