@@ -3,15 +3,17 @@ const fs = require("fs");
 const path = require("path");
 const {
   buildJobShareMessage,
+  buildConfirmedCandidatePatch,
   buildScreeningTemplatePayload,
   formatConfirmation,
+  listCandidateScreenings,
   normalizeWhatsAppPhone,
   parseCombinedScreeningAnswers,
   parseInterest,
   parseYesNo
 } = require("../src/whatsapp-screening");
 
-function run() {
+async function run() {
   assert.equal(normalizeWhatsAppPhone("98765 43210"), "919876543210");
   assert.equal(normalizeWhatsAppPhone("+44 7700 900123"), "447700900123");
   assert.equal(normalizeWhatsAppPhone("123"), "");
@@ -28,6 +30,18 @@ function run() {
     { current_ctc: "12 LPA", expected_ctc: "16 LPA", notice_period: "30 days" }
   );
 
+  const requestedUrls = [];
+  await listCandidateScreenings("candidate-1", "company-1", {
+    jobId: "job-1",
+    supabaseUrl: "https://example.supabase.co",
+    serviceRoleKey: "test-service-key",
+    fetchImpl: async (url) => {
+      requestedUrls.push(String(url));
+      return { ok: true, status: 200, text: async () => "[]" };
+    }
+  });
+  assert.ok(requestedUrls.some((url) => url.includes("candidate_id=eq.candidate-1") && url.includes("assigned_jd_id=eq.job-1")));
+
   const anonymousJd = buildJobShareMessage({
     client_visibility: "anonymous",
     assigned_jd_title: "Backend Engineer",
@@ -41,6 +55,21 @@ function run() {
   assert.ok(!anonymousJd.includes("Secret Client"));
   assert.ok(anonymousJd.includes("Client: Confidential"));
   assert.ok(formatConfirmation({ current_ctc: "12 LPA", expected_ctc: "16 LPA", notice_period: "30 days", recruiter_call_requested: true }).includes("Recruiter call: Yes"));
+
+  assert.deepEqual(
+    buildConfirmedCandidatePatch(
+      { current_ctc: "10 LPA", expected_ctc: "14 LPA", notice_period: "60 days" },
+      { current_ctc: "12 LPA", expected_ctc: "16 LPA", notice_period: "30 days" }
+    ),
+    {
+      patch: { current_ctc: "12 LPA", expected_ctc: "16 LPA", notice_period: "30 days" },
+      replacedValues: {
+        current_ctc: { existing: "10 LPA", confirmed: "12 LPA", resolution: "candidate_confirmed_overwrite" },
+        expected_ctc: { existing: "14 LPA", confirmed: "16 LPA", resolution: "candidate_confirmed_overwrite" },
+        notice_period: { existing: "60 days", confirmed: "30 days", resolution: "candidate_confirmed_overwrite" }
+      }
+    }
+  );
 
   const templatePayload = buildScreeningTemplatePayload({
     id: "screening-session-1",
@@ -83,13 +112,12 @@ function run() {
 }
 
 if (require.main === module) {
-  try {
-    run();
+  run().then(() => {
     process.stdout.write("whatsapp-screening.spec passed\n");
-  } catch (error) {
+  }).catch((error) => {
     console.error(error);
     process.exitCode = 1;
-  }
+  });
 }
 
 module.exports = { run };

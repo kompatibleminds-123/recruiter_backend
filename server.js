@@ -24353,7 +24353,8 @@ const server = http.createServer(async (req, res) => {
       const actor = await requireSessionUser(getBearerToken(req));
       const candidateId = String(requestUrl.pathname.replace(/^\/company\/candidates\//, "").replace(/\/whatsapp-screenings$/, "")).trim();
       await ensureCandidateVisibleToActor(actor, candidateId);
-      const sessions = await listCandidateScreenings(candidateId, actor.companyId);
+      const jobId = String(requestUrl.searchParams.get("jobId") || "").trim();
+      const sessions = await listCandidateScreenings(candidateId, actor.companyId, { jobId });
       sendJson(res, 200, { ok: true, result: { sessions } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });

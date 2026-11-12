@@ -12542,10 +12542,12 @@ function PortalApp({ token, onLogout }) {
     })();
   }
 
-  async function loadWhatsappScreeningDetails(candidateId, preferredSessionId = "") {
+  async function loadWhatsappScreeningDetails(candidateId, preferredSessionId = "", assignedJobId = "") {
     const safeCandidateId = String(candidateId || "").trim();
     if (!safeCandidateId) return { sessions: [], activeSession: null, messages: [] };
-    const listResult = await api(`/company/candidates/${encodeURIComponent(safeCandidateId)}/whatsapp-screenings`, token);
+    const safeJobId = String(assignedJobId || "").trim();
+    const jobQuery = safeJobId ? `?jobId=${encodeURIComponent(safeJobId)}` : "";
+    const listResult = await api(`/company/candidates/${encodeURIComponent(safeCandidateId)}/whatsapp-screenings${jobQuery}`, token);
     const sessions = Array.isArray(listResult?.sessions) ? listResult.sessions : [];
     const activeSession = sessions.find((item) => String(item?.id || "") === String(preferredSessionId || "")) || sessions[0] || null;
     let messages = [];
@@ -12563,7 +12565,7 @@ function PortalApp({ token, onLogout }) {
     if (!candidateId) return;
     setWhatsappTemplatePicker((current) => ({ ...current, screeningBusy: true, screeningStatus: "Refreshing screening...", screeningStatusKind: "" }));
     try {
-      const details = await loadWhatsappScreeningDetails(candidateId, preferredSessionId || whatsappTemplatePicker.activeSession?.id || "");
+      const details = await loadWhatsappScreeningDetails(candidateId, preferredSessionId || whatsappTemplatePicker.activeSession?.id || "", whatsappTemplatePicker.assignJobId);
       setWhatsappTemplatePicker((current) => ({ ...current, ...details, screeningBusy: false, screeningStatus: "", screeningStatusKind: "" }));
     } catch (error) {
       setWhatsappTemplatePicker((current) => ({ ...current, screeningBusy: false, screeningStatus: String(error?.message || error), screeningStatusKind: "error" }));
@@ -12572,6 +12574,7 @@ function PortalApp({ token, onLogout }) {
 
   async function openWhatsappScreeningPicker(candidate = {}) {
     const candidateId = String(candidate?.id || "").trim();
+    const assignedJobId = String(candidate?.assigned_jd_id || candidate?.assignedJdId || "").trim();
     setWhatsappTemplatePicker((current) => ({
       ...current,
       open: true,
@@ -12579,7 +12582,7 @@ function PortalApp({ token, onLogout }) {
       row: { ...(current.row || {}), ...(candidate || {}) },
       phone: candidate?.phone || candidate?.phoneNumber || current.phone || "",
       statusKey: "captured",
-      assignJobId: String(candidate?.assigned_jd_id || candidate?.assignedJdId || current.assignJobId || "").trim(),
+      assignJobId: assignedJobId || String(current.assignJobId || "").trim(),
       candidateId,
       screeningBusy: true,
       screeningStatus: "Loading screening history...",
@@ -12591,7 +12594,7 @@ function PortalApp({ token, onLogout }) {
       manualMessage: ""
     }));
     try {
-      const details = await loadWhatsappScreeningDetails(candidateId);
+      const details = await loadWhatsappScreeningDetails(candidateId, "", assignedJobId);
       setWhatsappTemplatePicker((current) => current.open && current.mode === "screening"
         ? { ...current, ...details, screeningBusy: false, screeningStatus: "", screeningStatusKind: "" }
         : current);
@@ -12614,7 +12617,7 @@ function PortalApp({ token, onLogout }) {
         clientVisibility: whatsappTemplatePicker.clientVisibility
       });
       const sessionId = String(result?.session?.id || "").trim();
-      const details = await loadWhatsappScreeningDetails(candidateId, sessionId);
+      const details = await loadWhatsappScreeningDetails(candidateId, sessionId, whatsappTemplatePicker.assignJobId);
       setWhatsappTemplatePicker((current) => ({
         ...current,
         ...details,
@@ -12634,7 +12637,7 @@ function PortalApp({ token, onLogout }) {
     setWhatsappTemplatePicker((current) => ({ ...current, screeningBusy: true, screeningStatus: action === "resume" ? "Resuming automation..." : "Pausing automation...", screeningStatusKind: "" }));
     try {
       await api(`/company/whatsapp-screenings/${encodeURIComponent(sessionId)}/takeover`, token, "POST", { action });
-      const details = await loadWhatsappScreeningDetails(whatsappTemplatePicker.candidateId, sessionId);
+      const details = await loadWhatsappScreeningDetails(whatsappTemplatePicker.candidateId, sessionId, whatsappTemplatePicker.assignJobId);
       setWhatsappTemplatePicker((current) => ({ ...current, ...details, screeningBusy: false, screeningStatus: action === "resume" ? "Automation resumed." : "Manual takeover active.", screeningStatusKind: "ok" }));
     } catch (error) {
       setWhatsappTemplatePicker((current) => ({ ...current, screeningBusy: false, screeningStatus: String(error?.message || error), screeningStatusKind: "error" }));
@@ -12648,7 +12651,7 @@ function PortalApp({ token, onLogout }) {
     setWhatsappTemplatePicker((current) => ({ ...current, screeningBusy: true, screeningStatus: "Sending message...", screeningStatusKind: "" }));
     try {
       await api(`/company/whatsapp-screenings/${encodeURIComponent(sessionId)}/messages`, token, "POST", { message });
-      const details = await loadWhatsappScreeningDetails(whatsappTemplatePicker.candidateId, sessionId);
+      const details = await loadWhatsappScreeningDetails(whatsappTemplatePicker.candidateId, sessionId, whatsappTemplatePicker.assignJobId);
       setWhatsappTemplatePicker((current) => ({ ...current, ...details, manualMessage: "", screeningBusy: false, screeningStatus: "Message sent. Automation is paused.", screeningStatusKind: "ok" }));
     } catch (error) {
       setWhatsappTemplatePicker((current) => ({ ...current, screeningBusy: false, screeningStatus: String(error?.message || error), screeningStatusKind: "error" }));
@@ -29160,6 +29163,10 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   const recruiterNoteIsTruncated = recruiterNoteFull.length > recruiterNoteClipLength;
                   const recruiterNoteShort = recruiterNoteIsTruncated ? `${recruiterNoteFull.slice(0, recruiterNoteClipLength).trim()}...` : recruiterNoteFull;
                   const recruiterNoteRemainder = recruiterNoteIsTruncated ? recruiterNoteFull.slice(recruiterNoteClipLength).trim() : "";
+                  const whatsappScreeningAnswers = parsePortalObjectField(item.screening_answers || item.screeningAnswers);
+                  const whatsappCallRequested = ["yes", "true", "1"].includes(
+                    String(whatsappScreeningAnswers["WhatsApp recruiter call requested"] || "").trim().toLowerCase()
+                  );
                   const linkedinRaw = String(item.linkedin || item.linkedinUrl || "").trim();
                   const linkedinHref = linkedinRaw
                     ? (/^https?:\/\//i.test(linkedinRaw) ? linkedinRaw : `https://${linkedinRaw}`)
@@ -29318,6 +29325,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       <div className="chip-row">
                         {statusState.followUp ? <span className="chip">Follow-up: {new Date(statusState.followUp).toLocaleString()}</span> : null}
                         {statusState.interviewAt ? <span className="chip">Interview: {new Date(statusState.interviewAt).toLocaleString()}</span> : null}
+                        {whatsappCallRequested ? (
+                          <span className="chip" style={{ background: "#fff3e0", borderColor: "#f59e0b", color: "#9a4d00", fontWeight: 700 }}>
+                            WhatsApp: Call requested
+                          </span>
+                        ) : null}
                       </div>
                       {item.last_contact_outcome || latestAttemptRemarks ? (
                         <div className="status-line" style={{ justifyContent: "flex-end", textAlign: "right" }}>
@@ -32714,7 +32726,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     >
                       {(whatsappTemplatePicker.sessions || []).map((session) => (
                         <option key={session.id} value={session.id}>
-                          {new Date(session.created_at).toLocaleString()} | {String(session.status || "-").replace(/_/g, " ")}
+                          {session.assigned_jd_title || "Assigned job"} | {new Date(session.created_at).toLocaleString()} | {String(session.status || "-").replace(/_/g, " ")}
                         </option>
                       ))}
                     </select>
@@ -32722,15 +32734,35 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 ) : null}
                 {whatsappTemplatePicker.activeSession ? (
                   <>
-                    <div className="whatsapp-template-picker__summary">
-                      <div className="whatsapp-template-picker__summary-title">
-                        Screening status: {String(whatsappTemplatePicker.activeSession.status || "-").replace(/_/g, " ")}
-                      </div>
-                      <div className="whatsapp-template-picker__summary-subtitle">
-                        Question: {String(whatsappTemplatePicker.activeSession.current_question || "-").replace(/_/g, " ")}
-                        {whatsappTemplatePicker.activeSession.needs_recruiter_follow_up ? " | Recruiter follow-up requested" : ""}
-                      </div>
-                    </div>
+                    {(() => {
+                      const session = whatsappTemplatePicker.activeSession;
+                      const answers = session.confirmed_answers && Object.keys(session.confirmed_answers || {}).length
+                        ? session.confirmed_answers
+                        : session.proposed_answers || {};
+                      const status = String(session.status || "");
+                      const interestResult = ["not_interested", "opted_out"].includes(status)
+                        ? "Not Interested"
+                        : answers.interested === true || ["awaiting_current_ctc", "awaiting_expected_ctc", "awaiting_notice_period", "awaiting_recruiter_call", "awaiting_confirmation", "completed", "review_required", "human_takeover"].includes(status)
+                          ? "Interested"
+                          : status === "not_responding" ? "No response" : "Pending";
+                      const callRequested = answers.recruiter_call_requested === true;
+                      return (
+                        <div className="whatsapp-template-picker__summary">
+                          <div className="whatsapp-template-picker__summary-title">
+                            Screening status: {status.replace(/_/g, " ") || "-"}
+                          </div>
+                          <div className="whatsapp-template-picker__summary-subtitle">Result: {interestResult}</div>
+                          <div className="whatsapp-template-picker__summary-subtitle">
+                            Question: {String(session.current_question || "-").replace(/_/g, " ")}
+                          </div>
+                          <div className="whatsapp-template-picker__summary-subtitle">
+                            Last response: {session.last_inbound_at ? new Date(session.last_inbound_at).toLocaleString() : "No response yet"}
+                          </div>
+                          {callRequested ? <div className="status" style={{ marginTop: 8 }}>Recruiter call requested</div> : null}
+                          {session.needs_recruiter_follow_up && !callRequested ? <div className="status error" style={{ marginTop: 8 }}>Recruiter review required</div> : null}
+                        </div>
+                      );
+                    })()}
                     {Object.keys(whatsappTemplatePicker.activeSession.confirmed_answers || whatsappTemplatePicker.activeSession.proposed_answers || {}).length ? (
                       <div className="candidate-snippet" style={{ whiteSpace: "pre-wrap", marginBottom: 12 }}>
                         {(() => {
@@ -32747,7 +32779,22 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       </div>
                     ) : null}
                     {Object.keys(whatsappTemplatePicker.activeSession.conflicts || {}).length ? (
-                      <div className="status error">Some confirmed answers differ from existing Captured Notes. Review is required before overwriting them.</div>
+                      <details className="captured-note-summary-bar" style={{ marginBottom: 12 }}>
+                        <summary>
+                          <span className="captured-note-summary-badge">Previous values</span>
+                          <span className="captured-note-summary-preview">View values replaced by candidate-confirmed WhatsApp answers</span>
+                        </summary>
+                        <div className="captured-note-summary-full">
+                          {Object.entries(whatsappTemplatePicker.activeSession.conflicts || {}).map(([field, change]) => {
+                            const labels = { current_ctc: "Current CTC", expected_ctc: "Expected CTC", notice_period: "Notice period" };
+                            return (
+                              <div key={field} style={{ marginBottom: 6 }}>
+                                <strong>{labels[field] || field}:</strong> {change?.existing || "-"} → {change?.confirmed || change?.proposed || "-"}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </details>
                     ) : null}
                     <div style={{ maxHeight: 280, overflowY: "auto", border: "1px solid rgba(148,163,184,.35)", borderRadius: 14, padding: 12, marginBottom: 12 }}>
                       {(whatsappTemplatePicker.messages || []).length ? (whatsappTemplatePicker.messages || []).map((message) => (

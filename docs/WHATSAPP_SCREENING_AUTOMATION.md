@@ -53,8 +53,8 @@ Expired chat messages, raw webhook events and processing claims are purged oppor
 The deterministic state machine collects current CTC, expected CTC, notice period, and recruiter-call preference. It asks the candidate to confirm the summary before writing anything.
 
 - Blank answers never overwrite candidate data.
-- A confirmed value fills an empty or identical candidate field.
-- A confirmed value that conflicts with an existing field is retained in the screening session and flagged for recruiter review instead of silently overwriting Captured Notes.
+- A confirmed value updates the corresponding candidate field so Captured Notes and later drafts use the latest candidate-provided information.
+- When a confirmed value replaces an existing value, the previous and confirmed values remain in the screening session audit data.
 - Interest history uses the existing `contact_attempts` flow.
 - Recruiter identity and candidate/JD assignments are never changed by screening automation.
 

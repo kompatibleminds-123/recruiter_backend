@@ -164,6 +164,25 @@ function formatConfirmation(answers = {}) {
   ].join("\n");
 }
 
+function buildConfirmedCandidatePatch(candidate = {}, answers = {}) {
+  const patch = {};
+  const replacedValues = {};
+  ["current_ctc", "expected_ctc", "notice_period"].forEach((field) => {
+    const nextValue = cleanAnswer(answers[field]);
+    if (!nextValue) return;
+    const existingValue = cleanAnswer(candidate[field]);
+    patch[field] = nextValue;
+    if (existingValue && existingValue.toLowerCase() !== nextValue.toLowerCase()) {
+      replacedValues[field] = {
+        existing: existingValue,
+        confirmed: nextValue,
+        resolution: "candidate_confirmed_overwrite"
+      };
+    }
+  });
+  return { patch, replacedValues };
+}
+
 function stripClientName(value, clientName) {
   const source = String(value || "");
   const client = String(clientName || "").trim();
@@ -286,9 +305,11 @@ async function getScreeningSession(sessionId, companyId = "", options = {}) {
 
 async function listCandidateScreenings(candidateId, companyId, options = {}) {
   await purgeExpiredScreeningData(companyId, options).catch(() => null);
+  const jobId = String(options.jobId || options.assignedJdId || "").trim();
+  const jobFilter = jobId ? `&assigned_jd_id=eq.${encodeURIComponent(jobId)}` : "";
   let sessions = await supabaseRequest(
     "whatsapp_screening_sessions",
-    `?candidate_id=eq.${encodeURIComponent(candidateId)}&company_id=eq.${encodeURIComponent(companyId)}&select=*&order=created_at.desc&limit=25`,
+    `?candidate_id=eq.${encodeURIComponent(candidateId)}&company_id=eq.${encodeURIComponent(companyId)}${jobFilter}&select=*&order=created_at.desc&limit=25`,
     options
   );
   sessions = Array.isArray(sessions) ? sessions : [];
@@ -501,19 +522,7 @@ async function completeConfirmedSession(session, answers, options = {}) {
   const candidates = await listCandidates({ id: session.candidate_id, companyId: session.company_id, limit: 1 });
   const candidate = Array.isArray(candidates) ? candidates[0] : null;
   if (!candidate) throw new Error("Linked candidate no longer exists.");
-  const conflicts = {};
-  const patch = {};
-  const fields = ["current_ctc", "expected_ctc", "notice_period"];
-  fields.forEach((field) => {
-    const nextValue = cleanAnswer(answers[field]);
-    if (!nextValue) return;
-    const existingValue = cleanAnswer(candidate[field]);
-    if (existingValue && existingValue.toLowerCase() !== nextValue.toLowerCase()) {
-      conflicts[field] = { existing: existingValue, proposed: nextValue };
-      return;
-    }
-    patch[field] = nextValue;
-  });
+  const { patch, replacedValues } = buildConfirmedCandidatePatch(candidate, answers);
   const screeningAnswers = parseJsonObject(candidate.screening_answers);
   patch.screening_answers = {
     ...screeningAnswers,
@@ -532,13 +541,12 @@ async function completeConfirmedSession(session, answers, options = {}) {
     `Recruiter call requested: ${answers.recruiter_call_requested === true ? "Yes" : "No"}.`
   ].join(" ");
   const attemptResult = await recordOutcome(session, "Interested", notes, options);
-  const status = Object.keys(conflicts).length ? "review_required" : "completed";
   const updated = await updateSession(session.id, {
-    status,
+    status: "completed",
     current_question: "completed",
     confirmed_answers: answers,
-    conflicts,
-    needs_recruiter_follow_up: answers.recruiter_call_requested === true || Object.keys(conflicts).length > 0,
+    conflicts: replacedValues,
+    needs_recruiter_follow_up: answers.recruiter_call_requested === true,
     completed_at: new Date().toISOString()
   }, options);
   if (typeof options.onCandidateUpdated === "function") {
@@ -743,6 +751,7 @@ async function sendManualScreeningMessage(session, actor, message, options = {})
 
 module.exports = {
   ACTIVE_SCREENING_STATUSES,
+  buildConfirmedCandidatePatch,
   buildJobShareMessage,
   buildScreeningTemplatePayload,
   createScreeningSession,
