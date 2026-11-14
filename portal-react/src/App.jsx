@@ -12549,7 +12549,10 @@ function PortalApp({ token, onLogout }) {
     const jobQuery = safeJobId ? `?jobId=${encodeURIComponent(safeJobId)}` : "";
     const listResult = await api(`/company/candidates/${encodeURIComponent(safeCandidateId)}/whatsapp-screenings${jobQuery}`, token);
     const sessions = Array.isArray(listResult?.sessions) ? listResult.sessions : [];
-    const activeSession = sessions.find((item) => String(item?.id || "") === String(preferredSessionId || "")) || sessions[0] || null;
+    const preferredSession = sessions.find((item) => String(item?.id || "") === String(preferredSessionId || "")) || null;
+    const currentSession = sessions.find((item) => WHATSAPP_SCREENING_ACTIVE_STATUSES.has(String(item?.status || ""))) || null;
+    const latestSession = sessions[0] || null;
+    const activeSession = preferredSession || currentSession || (String(latestSession?.status || "") === "failed" ? null : latestSession);
     let messages = [];
     let hydratedSession = activeSession;
     if (activeSession?.id) {
@@ -32716,17 +32719,22 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   {whatsappTemplatePicker.row?.assigned_jd_title || whatsappTemplatePicker.row?.jd_title || "Assigned job"}
                   {whatsappTemplatePicker.phone ? ` | ${whatsappTemplatePicker.phone}` : ""}
                 </p>
-                {(whatsappTemplatePicker.sessions || []).length && whatsappTemplatePicker.activeSession ? (
+                {(whatsappTemplatePicker.sessions || []).length ? (
                   <label className="full">
                     <span>Screening history</span>
                     <select
                       value={whatsappTemplatePicker.activeSession?.id || ""}
                       disabled={whatsappTemplatePicker.screeningBusy}
-                      onChange={(event) => void refreshWhatsappScreeningView(event.target.value)}
+                      onChange={(event) => {
+                        const sessionId = String(event.target.value || "").trim();
+                        if (sessionId) void refreshWhatsappScreeningView(sessionId);
+                        else setWhatsappTemplatePicker((current) => ({ ...current, activeSession: null, messages: [], screeningStatus: "", screeningStatusKind: "" }));
+                      }}
                     >
+                      {!whatsappTemplatePicker.activeSession ? <option value="">No screening selected — ready to send</option> : null}
                       {(whatsappTemplatePicker.sessions || []).map((session) => (
                         <option key={session.id} value={session.id}>
-                          {session.assigned_jd_title || "Assigned job"} | {new Date(session.created_at).toLocaleString()} | {String(session.status || "-").replace(/_/g, " ")}
+                          {session.assigned_jd_title || "Assigned job"} | {new Date(session.created_at).toLocaleString()} | {String(session.status || "-").replace(/_/g, " ")}{String(session.status || "") === "failed" ? " (not sent)" : ""}
                         </option>
                       ))}
                     </select>
@@ -32758,6 +32766,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           <div className="whatsapp-template-picker__summary-subtitle">
                             Last response: {session.last_inbound_at ? new Date(session.last_inbound_at).toLocaleString() : "No response yet"}
                           </div>
+                          {status === "failed" ? (
+                            <div className="status error" style={{ marginTop: 8 }}>
+                              WhatsApp template was not sent.{session.last_error ? ` ${session.last_error}` : ""}
+                            </div>
+                          ) : null}
                           {callRequested ? <div className="status" style={{ marginTop: 8 }}>Recruiter call requested</div> : null}
                           {session.needs_recruiter_follow_up && !callRequested ? <div className="status error" style={{ marginTop: 8 }}>Recruiter review required</div> : null}
                         </div>

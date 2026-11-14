@@ -320,6 +320,26 @@ async function listCandidateScreenings(candidateId, companyId, options = {}) {
   sessions = Array.isArray(sessions) ? sessions : [];
   const refreshed = [];
   for (const session of sessions) refreshed.push(await expireSessionIfNeeded(session, options));
+  const activeSessionIds = refreshed
+    .filter((session) => ACTIVE_SCREENING_STATUSES.includes(String(session?.status || "")))
+    .map((session) => String(session?.id || "").trim())
+    .filter(Boolean);
+  if (activeSessionIds.length) {
+    const failedMessages = await supabaseRequest(
+      "whatsapp_screening_messages",
+      `?screening_session_id=in.(${activeSessionIds.join(",")})&delivery_status=eq.failed&select=screening_session_id&limit=100`,
+      options
+    ).catch(() => []);
+    const failedSessionIds = new Set((Array.isArray(failedMessages) ? failedMessages : []).map((message) => String(message?.screening_session_id || "")));
+    for (let index = 0; index < refreshed.length; index += 1) {
+      const session = refreshed[index];
+      if (!failedSessionIds.has(String(session?.id || "")) || !ACTIVE_SCREENING_STATUSES.includes(String(session?.status || ""))) continue;
+      refreshed[index] = await updateSession(session.id, {
+        status: "failed",
+        last_error: session.last_error || "Meta accepted the request but could not deliver the WhatsApp message."
+      }, options) || session;
+    }
+  }
   return refreshed;
 }
 
@@ -696,7 +716,23 @@ async function processStatusEvent(event, options = {}) {
   await supabaseRequest("whatsapp_screening_messages", `?id=eq.${encodeURIComponent(message.id)}`, {
     ...options, method: "PATCH", prefer: "return=minimal", body: patch
   });
+  if (status === "failed") {
+    await updateSession(message.screening_session_id, {
+      status: "failed",
+      last_error: extractMetaStatusError(event) || "Meta accepted the request but could not deliver the WhatsApp message."
+    }, options);
+  }
   return message.screening_session_id || null;
+}
+
+function extractMetaStatusError(event = {}) {
+  const statusPayload = event?.payload?.status || {};
+  const error = Array.isArray(statusPayload?.errors) ? statusPayload.errors[0] : null;
+  if (!error) return "";
+  const code = String(error.code || "").trim();
+  const title = cleanAnswer(error.title || error.message, 300);
+  const detail = cleanAnswer(error?.error_data?.details, 600);
+  return [code ? `Meta error ${code}` : "", title, detail].filter(Boolean).join(": ").slice(0, 1000);
 }
 
 async function processWhatsAppScreeningEvents(events, options = {}) {
@@ -760,6 +796,7 @@ module.exports = {
   buildJobShareMessage,
   buildScreeningTemplatePayload,
   createScreeningSession,
+  extractMetaStatusError,
   extractInboundReplyId,
   extractInboundText,
   formatConfirmation,

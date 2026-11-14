@@ -5,6 +5,7 @@ const {
   buildJobShareMessage,
   buildConfirmedCandidatePatch,
   buildScreeningTemplatePayload,
+  extractMetaStatusError,
   formatConfirmation,
   listCandidateScreenings,
   normalizeWhatsAppPhone,
@@ -24,6 +25,10 @@ async function run() {
   assert.equal(parseInterest("STOP"), "opt_out");
   assert.equal(parseYesNo("haan"), true);
   assert.equal(parseYesNo("nahi"), false);
+  assert.equal(
+    extractMetaStatusError({ payload: { status: { errors: [{ code: 131026, title: "Message undeliverable", error_data: { details: "Recipient is unavailable." } }] } } }),
+    "Meta error 131026: Message undeliverable: Recipient is unavailable."
+  );
 
   assert.deepEqual(
     parseCombinedScreeningAnswers("Current CTC: 12 LPA, Expected CTC: 16 LPA; Notice period: 30 days"),
