@@ -29192,7 +29192,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   const whatsappCallRequested = ["yes", "true", "1"].includes(
                     String(whatsappScreeningAnswers["WhatsApp recruiter call requested"] || "").trim().toLowerCase()
                   );
-                  const whatsappPreferredCallTime = String(whatsappScreeningAnswers["WhatsApp preferred call time"] || "").trim();
                   const linkedinRaw = String(item.linkedin || item.linkedinUrl || "").trim();
                   const linkedinHref = linkedinRaw
                     ? (/^https?:\/\//i.test(linkedinRaw) ? linkedinRaw : `https://${linkedinRaw}`)
@@ -29353,7 +29352,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         {statusState.interviewAt ? <span className="chip">Interview: {new Date(statusState.interviewAt).toLocaleString()}</span> : null}
                         {whatsappCallRequested ? (
                           <span className="chip" style={{ background: "#fff3e0", borderColor: "#f59e0b", color: "#9a4d00", fontWeight: 700 }}>
-                            WhatsApp: Call requested{whatsappPreferredCallTime ? ` — Preferred: ${whatsappPreferredCallTime}` : ""}
+                            WhatsApp: Call requested
                           </span>
                         ) : null}
                       </div>
@@ -32777,7 +32776,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           ? "Interested"
                           : status === "not_responding" ? "No response" : "Pending";
                       const callRequested = answers.recruiter_call_requested === true;
-                          const preferredCallTime = String(answers.preferred_call_time || "").trim();
                       return (
                         <div className="whatsapp-template-picker__summary">
                           <div className="whatsapp-template-picker__summary-title">
@@ -32795,7 +32793,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                               WhatsApp template was not sent.{session.last_error ? ` ${session.last_error}` : ""}
                             </div>
                           ) : null}
-                          {callRequested ? <div className="status" style={{ marginTop: 8 }}>Recruiter call requested{preferredCallTime ? ` — Preferred: ${preferredCallTime}` : ""}</div> : null}
+                          {callRequested ? <div className="status" style={{ marginTop: 8 }}>Recruiter call requested</div> : null}
                           {session.needs_recruiter_follow_up && !callRequested ? <div className="status error" style={{ marginTop: 8 }}>Recruiter review required</div> : null}
                         </div>
                       );
@@ -32811,7 +32809,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             answers.expected_ctc ? `Expected CTC: ${answers.expected_ctc}` : "",
                             answers.notice_period ? `Notice: ${answers.notice_period}` : "",
                             typeof answers.recruiter_call_requested === "boolean" ? `Recruiter call: ${answers.recruiter_call_requested ? "Yes" : "No"}` : "",
-                            answers.recruiter_call_requested === true && answers.preferred_call_time ? `Preferred call time: ${answers.preferred_call_time}` : "",
                             answers.additional_input ? `Additional information: ${answers.additional_input}` : ""
                           ].filter(Boolean).join("\n");
                         })()}

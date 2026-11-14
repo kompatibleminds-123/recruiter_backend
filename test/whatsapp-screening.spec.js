@@ -9,11 +9,11 @@ const {
   formatConfirmation,
   isCtcNonDisclosureAnswer,
   isPlausibleCtcAnswer,
-  isPlausibleCallTimeAnswer,
   isPlausibleNoticeAnswer,
   listCandidateScreenings,
   normalizeWhatsAppPhone,
   parseCombinedScreeningAnswers,
+  parseEditSelection,
   parseInterest,
   parseYesNo,
   registerClarification
@@ -32,6 +32,8 @@ async function run() {
   assert.equal(parseYesNo("nahi"), false);
   assert.equal(parseYesNo("", "ws:session:call_yes"), true);
   assert.equal(parseYesNo("", "ws:session:call_no"), false);
+  assert.equal(parseEditSelection("", "ws:session:edit_expected_ctc"), "expected_ctc");
+  assert.equal(parseEditSelection("Notice period"), "notice_period");
   assert.equal(isPlausibleCtcAnswer("10.5 fixed + 5 var"), true);
   assert.equal(isPlausibleCtcAnswer("₹80,000 per month"), true);
   assert.equal(isPlausibleCtcAnswer("Negotiable"), true);
@@ -42,8 +44,6 @@ async function run() {
   assert.equal(isPlausibleNoticeAnswer("30 days"), true);
   assert.equal(isPlausibleNoticeAnswer("Immediate joiner"), true);
   assert.equal(isPlausibleNoticeAnswer("Okay"), false);
-  assert.equal(isPlausibleCallTimeAnswer("Tomorrow after 4 PM"), true);
-  assert.equal(isPlausibleCallTimeAnswer("Hello"), false);
   let clarificationAnswers = {};
   for (let count = 1; count <= 2; count += 1) {
     const result = registerClarification(clarificationAnswers, "current_ctc");
@@ -102,7 +102,9 @@ async function run() {
   assert.ok(anonymousJd.includes("• Node.js"));
   assert.ok(!anonymousJd.includes("<strong>"));
   assert.ok(anonymousJd.includes("https://example.com/apply-public/job-1"));
-  assert.ok(formatConfirmation({ current_ctc: "12 LPA", expected_ctc: "16 LPA", notice_period: "30 days", recruiter_call_requested: true, preferred_call_time: "Tomorrow after 4 PM" }).includes("Preferred call time: Tomorrow after 4 PM"));
+  const confirmation = formatConfirmation({ current_ctc: "12 LPA", expected_ctc: "16 LPA", notice_period: "30 days", recruiter_call_requested: true, additional_input: "Please call after 4 PM" });
+  assert.ok(confirmation.includes("Additional information: Please call after 4 PM"));
+  assert.ok(!confirmation.includes("Preferred call time"));
 
   assert.deepEqual(
     buildConfirmedCandidatePatch(

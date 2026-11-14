@@ -183,14 +183,6 @@ function isPlausibleNoticeAnswer(value) {
   return /\b(?:immediate|immediately|serving|available|join|joining|notice|negotiable|buyout|released|release|anytime)\b/i.test(normalized);
 }
 
-function isPlausibleCallTimeAnswer(value) {
-  const answer = cleanAnswer(value, 240);
-  if (!answer || looksLikeCandidateQuestion(answer)) return false;
-  const normalized = answer.toLowerCase().replace(/[^a-z0-9:\s/-]/g, " ").replace(/\s+/g, " ").trim();
-  if (/\d/.test(normalized)) return true;
-  return /\b(?:today|tomorrow|morning|afternoon|evening|night|anytime|weekday|weekend|monday|tuesday|wednesday|thursday|friday|saturday|sunday|office hours|after office|before office)\b/i.test(normalized);
-}
-
 function registerClarification(answers = {}, question = "") {
   const questionKey = cleanAnswer(question, 80) || "unknown";
   const counts = parseJsonObject(answers._clarification_counts);
@@ -213,7 +205,6 @@ function nextMissingQuestion(answers = {}) {
   if (!cleanAnswer(answers.expected_ctc)) return "expected_ctc";
   if (!cleanAnswer(answers.notice_period)) return "notice_period";
   if (typeof answers.recruiter_call_requested !== "boolean") return "recruiter_call";
-  if (answers.recruiter_call_requested === true && !cleanAnswer(answers.preferred_call_time)) return "call_time";
   if (typeof answers.additional_input_requested !== "boolean") return "additional_input_choice";
   if (answers.additional_input_requested === true && !cleanAnswer(answers.additional_input)) return "additional_input";
   return "confirmation";
@@ -230,7 +221,6 @@ function formatConfirmation(answers = {}) {
     `Expected CTC: ${cleanAnswer(answers.expected_ctc) || "Not provided"}`,
     `Notice period: ${cleanAnswer(answers.notice_period) || "Not provided"}`,
     `Recruiter call: ${answers.recruiter_call_requested === true ? "Yes" : "No"}`,
-    answers.recruiter_call_requested === true ? `Preferred call time: ${cleanAnswer(answers.preferred_call_time) || "Not provided"}` : "",
     cleanAnswer(answers.additional_input) ? `Additional information: ${cleanAnswer(answers.additional_input, 1000)}` : "",
     "Please choose Confirm to save, or Edit to revise these details."
   ].filter(Boolean).join("\n");
@@ -390,6 +380,27 @@ async function sendInteractiveButtons(to, body, buttons, options = {}) {
       type: "button",
       body: { text: String(body || "").slice(0, 1024) },
       action: { buttons: replies }
+    }
+  }, options);
+}
+
+async function sendInteractiveList(to, body, buttonTitle, rows, options = {}) {
+  const listRows = (Array.isArray(rows) ? rows : []).slice(0, 10).map((row) => ({
+    id: cleanAnswer(row?.id, 200),
+    title: cleanAnswer(row?.title, 24),
+    ...(cleanAnswer(row?.description, 72) ? { description: cleanAnswer(row.description, 72) } : {})
+  })).filter((row) => row.id && row.title);
+  if (!listRows.length) return sendText(to, body, options);
+  return sendMetaPayload({
+    to,
+    type: "interactive",
+    interactive: {
+      type: "list",
+      body: { text: String(body || "").slice(0, 1024) },
+      action: {
+        button: cleanAnswer(buttonTitle, 20) || "Choose field",
+        sections: [{ title: "Screening details", rows: listRows }]
+      }
     }
   }, options);
 }
@@ -660,6 +671,22 @@ async function sendButtonsAndRecord(session, body, questionContext, buttons, opt
   return updateSession(session.id, { last_outbound_at: now }, options);
 }
 
+async function sendListAndRecord(session, body, questionContext, buttonTitle, rows, options = {}) {
+  const result = await sendInteractiveList(session.candidate_wa_id, body, buttonTitle, rows, options);
+  const now = new Date().toISOString();
+  await insertMessage(session, {
+    direction: "outbound",
+    sender_type: "automation",
+    message_type: "interactive",
+    body,
+    question_context: questionContext || null,
+    meta_message_id: firstMetaMessageId(result),
+    delivery_status: "accepted",
+    sent_at: now
+  }, options);
+  return updateSession(session.id, { last_outbound_at: now }, options);
+}
+
 function interestButtons(sessionId) {
   return [
     { id: `ws:${sessionId}:interested`, title: "Interested" },
@@ -681,19 +708,42 @@ function additionalInputButtons(sessionId) {
   ];
 }
 
-function preferredCallTimeButtons(sessionId) {
-  return [
-    { id: `ws:${sessionId}:call_today`, title: "Today" },
-    { id: `ws:${sessionId}:call_tomorrow`, title: "Tomorrow" },
-    { id: `ws:${sessionId}:call_custom`, title: "Choose date/time" }
-  ];
-}
-
 function confirmationButtons(sessionId) {
   return [
     { id: `ws:${sessionId}:confirm`, title: "Confirm" },
     { id: `ws:${sessionId}:edit`, title: "Edit" }
   ];
+}
+
+function editSelectionRows(sessionId) {
+  return [
+    { id: `ws:${sessionId}:edit_current_ctc`, title: "Current CTC" },
+    { id: `ws:${sessionId}:edit_expected_ctc`, title: "Expected CTC" },
+    { id: `ws:${sessionId}:edit_notice_period`, title: "Notice period" },
+    { id: `ws:${sessionId}:edit_recruiter_call`, title: "Recruiter call" },
+    { id: `ws:${sessionId}:edit_additional_input`, title: "Additional information" }
+  ];
+}
+
+function parseEditSelection(value, replyId = "") {
+  const source = `${String(replyId || "").toLowerCase()} ${cleanAnswer(value).toLowerCase()}`;
+  if (/edit_current_ctc|current\s*ctc/.test(source)) return "current_ctc";
+  if (/edit_expected_ctc|expected\s*ctc/.test(source)) return "expected_ctc";
+  if (/edit_notice_period|notice\s*(?:period)?/.test(source)) return "notice_period";
+  if (/edit_recruiter_call|recruiter\s*call/.test(source)) return "recruiter_call";
+  if (/edit_additional_input|additional\s*(?:information|input)/.test(source)) return "additional_input";
+  return "";
+}
+
+function sendEditSelection(session, options = {}) {
+  return sendListAndRecord(
+    session,
+    "What would you like to edit? Only the selected detail will be asked again.",
+    "edit_selection",
+    "Choose field",
+    editSelectionRows(session.id),
+    options
+  );
 }
 
 async function recordOutcome(session, outcome, notes, options = {}) {
@@ -745,7 +795,6 @@ async function completeConfirmedSession(session, answers, options = {}) {
     "WhatsApp expected CTC": cleanAnswer(answers.expected_ctc),
     "WhatsApp notice period": cleanAnswer(answers.notice_period),
     "WhatsApp recruiter call requested": answers.recruiter_call_requested === true ? "Yes" : "No",
-    "WhatsApp preferred call time": answers.recruiter_call_requested === true ? cleanAnswer(answers.preferred_call_time) : "",
     "WhatsApp additional information": cleanAnswer(answers.additional_input, 1000)
   };
   const originalAnswers = parseJsonObject(answers._revision_original);
@@ -753,7 +802,7 @@ async function completeConfirmedSession(session, answers, options = {}) {
     current_ctc: "Current CTC",
     expected_ctc: "Expected CTC",
     notice_period: "Notice period",
-    preferred_call_time: "Preferred call time"
+    additional_input: "Additional information"
   };
   const revisionLines = Object.keys(revisionLabels).map((field) => {
     const previous = cleanAnswer(originalAnswers[field]);
@@ -768,7 +817,6 @@ async function completeConfirmedSession(session, answers, options = {}) {
     `Expected CTC: ${cleanAnswer(answers.expected_ctc) || "Not provided"}`,
     `Notice period: ${cleanAnswer(answers.notice_period) || "Not provided"}`,
     `Recruiter call requested: ${answers.recruiter_call_requested === true ? "Yes" : "No"}`,
-    answers.recruiter_call_requested === true ? `Preferred call time: ${cleanAnswer(answers.preferred_call_time) || "Not provided"}` : "",
     cleanAnswer(answers.additional_input) ? `Additional information: ${cleanAnswer(answers.additional_input, 1000)}` : "",
     ...revisionLines
   ].filter(Boolean).join("\n");
@@ -783,7 +831,6 @@ async function completeConfirmedSession(session, answers, options = {}) {
     `Expected CTC: ${cleanAnswer(answers.expected_ctc) || "Not provided"}.`,
     `Notice: ${cleanAnswer(answers.notice_period) || "Not provided"}.`,
     `Recruiter call requested: ${answers.recruiter_call_requested === true ? "Yes" : "No"}.`,
-    answers.recruiter_call_requested === true ? `Preferred contact time: ${cleanAnswer(answers.preferred_call_time) || "Not provided"}.` : "",
     cleanAnswer(answers.additional_input) ? `Additional information: ${cleanAnswer(answers.additional_input, 1000)}.` : "",
     ...revisionLines.map((line) => `${line}.`)
   ].filter(Boolean).join(" ");
@@ -807,7 +854,7 @@ async function sendQuestion(session, question, options = {}) {
     return sendButtonsAndRecord(session, QUESTION_PROMPTS.recruiter_call, question, recruiterCallButtons(session.id), options);
   }
   if (question === "call_time") {
-    return sendButtonsAndRecord(session, "When would you prefer the recruiter to contact you?", question, preferredCallTimeButtons(session.id), options);
+    return sendAndRecord(session, QUESTION_PROMPTS.additional_input, "additional_input", "automation", options);
   }
   if (question === "additional_input_choice") {
     return sendButtonsAndRecord(session, QUESTION_PROMPTS.additional_input_choice, question, additionalInputButtons(session.id), options);
@@ -951,26 +998,11 @@ async function processInboundForSession(session, event, options = {}) {
       return handleUnclearAnswer(session, answers, "recruiter_call", (updated) => sendQuestion(updated, "recruiter_call", options), options);
     }
     answers.recruiter_call_requested = yesNo;
-    if (yesNo === false) delete answers.preferred_call_time;
   }
   if (currentQuestion === "call_time") {
-    const normalizedReplyId = String(replyId || "").toLowerCase();
-    if (normalizedReplyId.endsWith(":call_custom")) {
-      session = await updateSession(session.id, { proposed_answers: answers }, options);
-      return sendAndRecord(session, QUESTION_PROMPTS.call_time, "call_time", "automation", options);
-    }
-    if (normalizedReplyId.endsWith(":call_today")) answers.preferred_call_time = "Today";
-    else if (normalizedReplyId.endsWith(":call_tomorrow")) answers.preferred_call_time = "Tomorrow";
-    else answers.preferred_call_time = cleanAnswer(text);
-    if (!answers.preferred_call_time || /^choose date\/time$/i.test(answers.preferred_call_time) || !isPlausibleCallTimeAnswer(answers.preferred_call_time)) {
-      return handleUnclearAnswer(
-        session,
-        answers,
-        "call_time",
-        (updated) => sendAndRecord(updated, "Sorry, we could not understand your preferred contact time. Please share a date or time, for example ‘Tomorrow after 4 PM’.", "call_time", "automation", options),
-        options
-      );
-    }
+    const legacyCallTime = cleanAnswer(text, 1000);
+    answers.additional_input_requested = Boolean(legacyCallTime);
+    if (legacyCallTime) answers.additional_input = legacyCallTime;
   }
   if (currentQuestion === "additional_input_choice") {
     const normalizedReplyId = String(replyId || "").toLowerCase();
@@ -992,6 +1024,19 @@ async function processInboundForSession(session, event, options = {}) {
     }
     answers.additional_input = additionalInput;
   }
+  if (currentQuestion === "edit_selection") {
+    const selectedField = parseEditSelection(text, replyId);
+    if (!selectedField) {
+      return handleUnclearAnswer(session, answers, "edit_selection", (updated) => sendEditSelection(updated, options), options);
+    }
+    if (selectedField === "additional_input") answers.additional_input_requested = true;
+    session = await updateSession(session.id, {
+      status: questionStatus(selectedField),
+      current_question: selectedField,
+      proposed_answers: { ...answers, _editing_field: selectedField }
+    }, options);
+    return sendQuestion(session, selectedField, options);
+  }
   if (session.status === "awaiting_confirmation") {
     const normalizedReplyId = String(replyId || "").toLowerCase();
     if (normalizedReplyId.endsWith(":edit")) {
@@ -1001,20 +1046,20 @@ async function processInboundForSession(session, event, options = {}) {
         expected_ctc: cleanAnswer(answers.expected_ctc),
         notice_period: cleanAnswer(answers.notice_period),
         recruiter_call_requested: answers.recruiter_call_requested === true,
-        preferred_call_time: cleanAnswer(answers.preferred_call_time)
+        additional_input: cleanAnswer(answers.additional_input, 1000)
       };
-      const restartedAnswers = {
-        interested: true,
+      const editableAnswers = {
+        ...answers,
         _revision_original: revisionOriginal,
         _revision_count: Number(answers._revision_count || 0) + 1
       };
       session = await updateSession(session.id, {
-        status: "awaiting_current_ctc",
-        current_question: "current_ctc",
-        proposed_answers: restartedAnswers,
+        status: "awaiting_confirmation",
+        current_question: "edit_selection",
+        proposed_answers: editableAnswers,
         needs_recruiter_follow_up: false
       }, options);
-      return sendQuestion(session, "current_ctc", options);
+      return sendEditSelection(session, options);
     }
     const corrections = parseCombinedScreeningAnswers(text);
     if (Object.keys(corrections).length) {
@@ -1240,9 +1285,9 @@ module.exports = {
   normalizeWhatsAppPhone,
   isPlausibleCtcAnswer,
   isCtcNonDisclosureAnswer,
-  isPlausibleCallTimeAnswer,
   isPlausibleNoticeAnswer,
   parseCombinedScreeningAnswers,
+  parseEditSelection,
   parseInterest,
   parseYesNo,
   registerClarification,
