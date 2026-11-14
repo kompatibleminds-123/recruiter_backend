@@ -12630,9 +12630,9 @@ function PortalApp({ token, onLogout }) {
         ...details,
         screeningBusy: false,
         screeningStatus: deliveryFailed
-          ? String(details?.activeSession?.last_error || "WhatsApp could not deliver the screening template.")
+          ? ""
           : "Template submitted to WhatsApp. Delivery confirmation is pending.",
-        screeningStatusKind: deliveryFailed ? "error" : ""
+        screeningStatusKind: ""
       }));
       setCapturedInlineStatus(
         candidateId,
@@ -32888,7 +32888,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     </div>
                   </>
                 )}
-                {whatsappTemplatePicker.screeningStatus ? (
+                {whatsappTemplatePicker.screeningStatus && String(whatsappTemplatePicker.activeSession?.status || "") !== "failed" ? (
                   <div className={`status ${whatsappTemplatePicker.screeningStatusKind || ""}`} aria-live="polite" style={{ marginTop: 12 }}>
                     {whatsappTemplatePicker.screeningStatus}
                   </div>
