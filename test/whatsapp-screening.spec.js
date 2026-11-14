@@ -83,7 +83,7 @@ async function run() {
     }
   }, { name: "Asha Sharma" });
   assert.equal(templatePayload.template.name, "km_job_opportunity_screening");
-  assert.equal(templatePayload.template.language.code, "en_US");
+  assert.equal(templatePayload.template.language.code, "en");
   assert.equal(templatePayload.template.components.some((component) => component.type === "header"), false);
   assert.deepEqual(templatePayload.template.components[0], {
     type: "body",
@@ -100,6 +100,15 @@ async function run() {
       { index: "2", payload: "ws:screening-session-1:not_interested" }
     ]
   );
+
+  const legacyLanguagePayload = buildScreeningTemplatePayload({
+    id: "screening-session-2",
+    candidate_wa_id: "919876543210",
+    client_visibility: "named",
+    assigned_jd_title: "Senior Backend Engineer",
+    job_snapshot: { title: "Senior Backend Engineer" }
+  }, { name: "Asha Sharma" }, { templateLanguage: "en_US" });
+  assert.equal(legacyLanguagePayload.template.language.code, "en");
 
   const migration = fs.readFileSync(path.join(__dirname, "..", "sql", "2026-11-13-whatsapp-screening-automation.sql"), "utf8");
   assert.match(migration, /create table if not exists public\.whatsapp_screening_sessions/i);

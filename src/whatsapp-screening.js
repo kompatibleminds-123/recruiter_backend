@@ -21,14 +21,19 @@ const QUESTION_PROMPTS = {
 };
 
 function screeningConfig(options = {}) {
+  const templateName = String(options.templateName || process.env.META_WHATSAPP_SCREENING_TEMPLATE_NAME || "km_job_opportunity_screening").trim();
+  const configuredTemplateLanguage = String(options.templateLanguage || process.env.META_WHATSAPP_SCREENING_TEMPLATE_LANGUAGE || "en").trim() || "en";
+  const templateLanguage = templateName === "km_job_opportunity_screening" && /^(?:en_us|english)$/i.test(configuredTemplateLanguage)
+    ? "en"
+    : configuredTemplateLanguage;
   return {
     supabaseUrl: String(options.supabaseUrl || process.env.SUPABASE_URL || "").trim().replace(/\/+$/, ""),
     serviceRoleKey: String(options.serviceRoleKey || process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim(),
     accessToken: String(options.accessToken || process.env.META_WHATSAPP_ACCESS_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN || "").trim(),
     phoneNumberId: String(options.phoneNumberId || process.env.META_WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_NUMBER_ID || "").trim(),
     graphVersion: String(options.graphVersion || process.env.META_WHATSAPP_GRAPH_VERSION || "v22.0").trim() || "v22.0",
-    templateName: String(options.templateName || process.env.META_WHATSAPP_SCREENING_TEMPLATE_NAME || "km_job_opportunity_screening").trim(),
-    templateLanguage: String(options.templateLanguage || process.env.META_WHATSAPP_SCREENING_TEMPLATE_LANGUAGE || "en_US").trim() || "en_US",
+    templateName,
+    templateLanguage,
     retentionDays: Math.max(30, Math.min(730, Number(options.retentionDays || process.env.WHATSAPP_SCREENING_RETENTION_DAYS || 180))),
     fetchImpl: options.fetchImpl || fetch
   };

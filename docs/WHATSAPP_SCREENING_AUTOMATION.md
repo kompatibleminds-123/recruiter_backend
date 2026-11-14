@@ -17,7 +17,7 @@ The migration creates service-role-only tables for consent evidence, screening s
 - `META_WHATSAPP_ACCESS_TOKEN` — permanent system-user token used only by the backend. The existing `WHATSAPP_ACCESS_TOKEN` is accepted as a compatibility fallback.
 - `META_WHATSAPP_PHONE_NUMBER_ID` — sender phone-number ID. The existing `WHATSAPP_PHONE_NUMBER_ID` is accepted as a compatibility fallback.
 - `META_WHATSAPP_SCREENING_TEMPLATE_NAME` — approved opportunity template name. Defaults to `km_job_opportunity_screening`.
-- `META_WHATSAPP_SCREENING_TEMPLATE_LANGUAGE` — approved template language code. Defaults to `en_US`.
+- `META_WHATSAPP_SCREENING_TEMPLATE_LANGUAGE` — approved template language code. Use `en` for the approved English translation. Legacy `en_US` is normalized to `en` for `km_job_opportunity_screening`.
 - `META_WHATSAPP_GRAPH_VERSION` — optional Graph API version. Defaults to `v22.0`.
 - `WHATSAPP_SCREENING_RETENTION_DAYS` — optional chat/raw-event retention period, from 30 to 730 days. Defaults to `180`.
 
@@ -25,7 +25,7 @@ Never add these values to the React build or expose them through portal endpoint
 
 ## Meta template contract
 
-Create and approve the `km_job_opportunity_screening` marketing template in `en_US` with:
+Create and approve the `km_job_opportunity_screening` marketing template in `en` with:
 
 - No header component.
 - Named body variable `{{candidate_name}}`: candidate first name.
