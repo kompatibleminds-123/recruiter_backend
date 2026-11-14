@@ -97,7 +97,7 @@ create unique index if not exists whatsapp_screening_one_interactive_session_idx
   where status in (
     'creating', 'template_sent', 'awaiting_interest', 'awaiting_current_ctc',
     'awaiting_expected_ctc', 'awaiting_notice_period', 'awaiting_recruiter_call',
-    'awaiting_confirmation', 'human_takeover'
+    'awaiting_call_time', 'awaiting_confirmation', 'human_takeover'
   );
 
 create table if not exists public.whatsapp_screening_messages (

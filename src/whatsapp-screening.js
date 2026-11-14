@@ -9,15 +9,17 @@ const ACTIVE_SCREENING_STATUSES = [
   "awaiting_expected_ctc",
   "awaiting_notice_period",
   "awaiting_recruiter_call",
+  "awaiting_call_time",
   "awaiting_confirmation",
   "human_takeover"
 ];
 
 const QUESTION_PROMPTS = {
-  current_ctc: "What is your current CTC? Please share it in LPA, for example 12 LPA.",
-  expected_ctc: "What is your expected CTC? Please share it in LPA.",
+  current_ctc: "What is your current CTC?",
+  expected_ctc: "What is your expected CTC?",
   notice_period: "What is your notice period or earliest joining availability?",
-  recruiter_call: "Would you like to connect with our recruiter for more details? Please reply Yes or No."
+  recruiter_call: "Would you like to connect with our recruiter for more details?",
+  call_time: "Please share a convenient date and time for the recruiter to contact you."
 };
 
 function screeningConfig(options = {}) {
@@ -113,7 +115,10 @@ function extractInboundReplyId(event = {}) {
   );
 }
 
-function parseYesNo(value) {
+function parseYesNo(value, replyId = "") {
+  const id = String(replyId || "").trim().toLowerCase();
+  if (/:(?:call_)?yes$|:confirm$/.test(id)) return true;
+  if (/:(?:call_)?no$/.test(id)) return false;
   const normalized = cleanAnswer(value).toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
   if (/^(yes|y|yeah|yep|sure|ok|okay|please|interested|connect|call me|haan|ha|ji)$/.test(normalized)) return true;
   if (/^(no|n|nope|not interested|do not call|dont call|nah|nahi|na)$/.test(normalized)) return false;
@@ -151,6 +156,7 @@ function nextMissingQuestion(answers = {}) {
   if (!cleanAnswer(answers.expected_ctc)) return "expected_ctc";
   if (!cleanAnswer(answers.notice_period)) return "notice_period";
   if (typeof answers.recruiter_call_requested !== "boolean") return "recruiter_call";
+  if (answers.recruiter_call_requested === true && !cleanAnswer(answers.preferred_call_time)) return "call_time";
   return "confirmation";
 }
 
@@ -165,8 +171,9 @@ function formatConfirmation(answers = {}) {
     `Expected CTC: ${cleanAnswer(answers.expected_ctc) || "Not provided"}`,
     `Notice period: ${cleanAnswer(answers.notice_period) || "Not provided"}`,
     `Recruiter call: ${answers.recruiter_call_requested === true ? "Yes" : "No"}`,
-    "Reply Confirm to save these details, or send a correction such as ‘Expected CTC: 18 LPA’."
-  ].join("\n");
+    answers.recruiter_call_requested === true ? `Preferred call time: ${cleanAnswer(answers.preferred_call_time) || "Not provided"}` : "",
+    "Please choose Confirm to save, or Edit to revise these details."
+  ].filter(Boolean).join("\n");
 }
 
 function buildConfirmedCandidatePatch(candidate = {}, answers = {}) {
@@ -188,11 +195,45 @@ function buildConfirmedCandidatePatch(candidate = {}, answers = {}) {
   return { patch, replacedValues };
 }
 
-function stripClientName(value, clientName) {
+function stripClientName(value, clientName, replacement = "") {
   const source = String(value || "");
   const client = String(clientName || "").trim();
   if (!client) return source;
-  return source.replace(new RegExp(client.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "Confidential client");
+  return source
+    .replace(new RegExp(client.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), String(replacement || ""))
+    .replace(/\s*[-|]\s*(?=$|\n)/g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+function decodeHtmlEntities(value) {
+  return String(value || "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code) || 32))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16) || 32));
+}
+
+function htmlToWhatsAppText(value) {
+  return decodeHtmlEntities(
+    String(value || "")
+      .replace(/<\s*br\s*\/?\s*>/gi, "\n")
+      .replace(/<\s*\/\s*(?:p|div|section|h[1-6])\s*>/gi, "\n\n")
+      .replace(/<\s*li\b[^>]*>/gi, "\n• ")
+      .replace(/<\s*\/\s*li\s*>/gi, "")
+      .replace(/<\s*(?:strong|b)\b[^>]*>/gi, "*")
+      .replace(/<\s*\/\s*(?:strong|b)\s*>/gi, "*")
+      .replace(/<[^>]+>/g, " ")
+  )
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 function buildJobShareMessage(session = {}) {
@@ -204,9 +245,18 @@ function buildJobShareMessage(session = {}) {
     : String(job.title || session.assigned_jd_title || "Opportunity");
   const descriptionSource = String(job.jobDescription || job.job_description || "").trim();
   const title = cleanAnswer(anonymous ? stripClientName(titleSource, clientName) : titleSource, 220);
-  const description = (anonymous ? stripClientName(descriptionSource, clientName) : descriptionSource).trim().slice(0, 3200);
-  const clientLine = anonymous ? "Client: Confidential" : (clientName ? `Client: ${clientName}` : "");
-  return ["Job description", `Role: ${title}`, clientLine, description].filter(Boolean).join("\n\n");
+  const publicCompanyLine = cleanAnswer(job.publicCompanyLine || job.public_company_line, 300);
+  const companyLine = anonymous
+    ? (publicCompanyLine || "A leading organization in this sector")
+    : clientName;
+  const description = htmlToWhatsAppText(anonymous ? stripClientName(descriptionSource, clientName, "the company") : descriptionSource).slice(0, 2500);
+  const applyLink = String(job.publicApplyLink || job.public_apply_link || job.applyLink || job.apply_link || "").trim();
+  return [
+    `*Position:* ${title}`,
+    companyLine ? `*Company:* ${companyLine}` : "",
+    description ? `*About the role:*\n${description}` : "",
+    applyLink ? `*View full JD / Apply:*\n${applyLink}` : ""
+  ].filter(Boolean).join("\n\n");
 }
 
 async function sendMetaPayload(payload, options = {}) {
@@ -261,6 +311,26 @@ async function sendScreeningTemplate(session, candidate, options = {}) {
 
 async function sendText(to, body, options = {}) {
   return sendMetaPayload({ to, type: "text", text: { preview_url: false, body: String(body || "").slice(0, 4096) } }, options);
+}
+
+async function sendInteractiveButtons(to, body, buttons, options = {}) {
+  const replies = (Array.isArray(buttons) ? buttons : []).slice(0, 3).map((button) => ({
+    type: "reply",
+    reply: {
+      id: cleanAnswer(button?.id, 240),
+      title: cleanAnswer(button?.title, 20)
+    }
+  })).filter((button) => button.reply.id && button.reply.title);
+  if (!replies.length) return sendText(to, body, options);
+  return sendMetaPayload({
+    to,
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: String(body || "").slice(0, 1024) },
+      action: { buttons: replies }
+    }
+  }, options);
 }
 
 function firstMetaMessageId(result) {
@@ -433,6 +503,12 @@ async function createScreeningSession({ actor, candidate, job, consent, clientVi
   const assignedUserId = String(candidate.assigned_to_user_id || candidate.assignedToUserId || actor.id || "").trim() || null;
   const assignedName = String(candidate.assigned_to_name || candidate.assignedToName || actor.name || "").trim();
   const sessionId = crypto.randomUUID();
+  const publicPortalBaseUrl = String(process.env.PUBLIC_PORTAL_BASE_URL || "https://recruit.kompatibleminds.com").trim().replace(/\/+$/, "");
+  const jobSnapshot = {
+    ...job,
+    publicApplyLink: String(job.publicApplyLink || job.public_apply_link || "").trim()
+      || `${publicPortalBaseUrl}/apply-public/${encodeURIComponent(String(job.id || "").trim())}`
+  };
   const sessionRows = await supabaseRequest("whatsapp_screening_sessions", "", {
     ...options,
     method: "POST",
@@ -461,7 +537,7 @@ async function createScreeningSession({ actor, candidate, job, consent, clientVi
         expected_ctc: candidate.expected_ctc || "",
         notice_period: candidate.notice_period || ""
       },
-      job_snapshot: job,
+      job_snapshot: jobSnapshot,
       expires_at: new Date(now.getTime() + 7 * 86400000).toISOString(),
       retention_until: retentionUntil
     }
@@ -505,6 +581,51 @@ async function sendAndRecord(session, body, questionContext, senderType = "autom
     sent_at: now
   }, options);
   return updateSession(session.id, { last_outbound_at: now }, options);
+}
+
+async function sendButtonsAndRecord(session, body, questionContext, buttons, options = {}) {
+  const result = await sendInteractiveButtons(session.candidate_wa_id, body, buttons, options);
+  const now = new Date().toISOString();
+  await insertMessage(session, {
+    direction: "outbound",
+    sender_type: "automation",
+    message_type: "interactive",
+    body,
+    question_context: questionContext || null,
+    meta_message_id: firstMetaMessageId(result),
+    delivery_status: "accepted",
+    sent_at: now
+  }, options);
+  return updateSession(session.id, { last_outbound_at: now }, options);
+}
+
+function interestButtons(sessionId) {
+  return [
+    { id: `ws:${sessionId}:interested`, title: "Interested" },
+    { id: `ws:${sessionId}:not_interested`, title: "Not Interested" }
+  ];
+}
+
+function recruiterCallButtons(sessionId) {
+  return [
+    { id: `ws:${sessionId}:call_yes`, title: "Yes" },
+    { id: `ws:${sessionId}:call_no`, title: "No" }
+  ];
+}
+
+function preferredCallTimeButtons(sessionId) {
+  return [
+    { id: `ws:${sessionId}:call_today`, title: "Today" },
+    { id: `ws:${sessionId}:call_tomorrow`, title: "Tomorrow" },
+    { id: `ws:${sessionId}:call_custom`, title: "Choose date/time" }
+  ];
+}
+
+function confirmationButtons(sessionId) {
+  return [
+    { id: `ws:${sessionId}:confirm`, title: "Confirm" },
+    { id: `ws:${sessionId}:edit`, title: "Edit" }
+  ];
 }
 
 async function recordOutcome(session, outcome, notes, options = {}) {
@@ -555,16 +676,46 @@ async function completeConfirmedSession(session, answers, options = {}) {
     "WhatsApp current CTC": cleanAnswer(answers.current_ctc),
     "WhatsApp expected CTC": cleanAnswer(answers.expected_ctc),
     "WhatsApp notice period": cleanAnswer(answers.notice_period),
-    "WhatsApp recruiter call requested": answers.recruiter_call_requested === true ? "Yes" : "No"
+    "WhatsApp recruiter call requested": answers.recruiter_call_requested === true ? "Yes" : "No",
+    "WhatsApp preferred call time": answers.recruiter_call_requested === true ? cleanAnswer(answers.preferred_call_time) : ""
   };
+  const originalAnswers = parseJsonObject(answers._revision_original);
+  const revisionLabels = {
+    current_ctc: "Current CTC",
+    expected_ctc: "Expected CTC",
+    notice_period: "Notice period",
+    preferred_call_time: "Preferred call time"
+  };
+  const revisionLines = Object.keys(revisionLabels).map((field) => {
+    const previous = cleanAnswer(originalAnswers[field]);
+    const confirmed = cleanAnswer(answers[field]);
+    return previous && previous.toLowerCase() !== confirmed.toLowerCase()
+      ? `${revisionLabels[field]} revised: ${previous} → ${confirmed || "Not provided"}`
+      : "";
+  }).filter(Boolean);
+  const recruiterNoteEntry = [
+    "WhatsApp screening confirmed.",
+    `Current CTC: ${cleanAnswer(answers.current_ctc) || "Not provided"}`,
+    `Expected CTC: ${cleanAnswer(answers.expected_ctc) || "Not provided"}`,
+    `Notice period: ${cleanAnswer(answers.notice_period) || "Not provided"}`,
+    `Recruiter call requested: ${answers.recruiter_call_requested === true ? "Yes" : "No"}`,
+    answers.recruiter_call_requested === true ? `Preferred call time: ${cleanAnswer(answers.preferred_call_time) || "Not provided"}` : "",
+    ...revisionLines
+  ].filter(Boolean).join("\n");
+  patch.recruiter_context_notes = [String(candidate.recruiter_context_notes || "").trim().slice(-6000), recruiterNoteEntry]
+    .filter(Boolean)
+    .join("\n\n")
+    .slice(-8000);
   if (Object.keys(patch).length) await patchCandidate(candidate.id, patch, { companyId: session.company_id });
   const notes = [
     `WhatsApp screening completed for ${session.assigned_jd_title}.`,
     `Current CTC: ${cleanAnswer(answers.current_ctc) || "Not provided"}.`,
     `Expected CTC: ${cleanAnswer(answers.expected_ctc) || "Not provided"}.`,
     `Notice: ${cleanAnswer(answers.notice_period) || "Not provided"}.`,
-    `Recruiter call requested: ${answers.recruiter_call_requested === true ? "Yes" : "No"}.`
-  ].join(" ");
+    `Recruiter call requested: ${answers.recruiter_call_requested === true ? "Yes" : "No"}.`,
+    answers.recruiter_call_requested === true ? `Preferred contact time: ${cleanAnswer(answers.preferred_call_time) || "Not provided"}.` : "",
+    ...revisionLines.map((line) => `${line}.`)
+  ].filter(Boolean).join(" ");
   const attemptResult = await recordOutcome(session, "Interested", notes, options);
   const updated = await updateSession(session.id, {
     status: "completed",
@@ -578,6 +729,19 @@ async function completeConfirmedSession(session, answers, options = {}) {
     options.onCandidateUpdated(attemptResult?.candidate || null, attemptResult?.attempt || null, updated);
   }
   return updated;
+}
+
+async function sendQuestion(session, question, options = {}) {
+  if (question === "recruiter_call") {
+    return sendButtonsAndRecord(session, QUESTION_PROMPTS.recruiter_call, question, recruiterCallButtons(session.id), options);
+  }
+  if (question === "call_time") {
+    return sendButtonsAndRecord(session, "When would you prefer the recruiter to contact you?", question, preferredCallTimeButtons(session.id), options);
+  }
+  if (question === "confirmation") {
+    return sendButtonsAndRecord(session, formatConfirmation(parseJsonObject(session.proposed_answers)), question, confirmationButtons(session.id), options);
+  }
+  return sendAndRecord(session, QUESTION_PROMPTS[question], question, "automation", options);
 }
 
 function looksLikeCandidateQuestion(value) {
@@ -616,10 +780,18 @@ async function processInboundForSession(session, event, options = {}) {
     }
     if (interest === "share_jd") {
       session = await sendAndRecord(session, buildJobShareMessage(session), "jd_shared", "automation", options);
-      return sendAndRecord(session, "Would you be interested in exploring this opportunity? Please reply Interested or Not Interested.", "interest", "automation", options);
+      const attemptResult = await recordOutcome(session, "JD shared", `JD shared via WhatsApp screening for ${session.assigned_jd_title}.`, options);
+      if (typeof options.onCandidateUpdated === "function") options.onCandidateUpdated(attemptResult?.candidate || null, attemptResult?.attempt || null, session);
+      return sendButtonsAndRecord(
+        session,
+        "Would you be interested in exploring this opportunity?",
+        "interest",
+        interestButtons(session.id),
+        options
+      );
     }
     if (interest !== "interested") {
-      return sendAndRecord(session, "Please choose Interested, Share JD, or Not Interested.", "interest", "automation", options);
+      return sendButtonsAndRecord(session, "Please choose an option below.", "interest", interestButtons(session.id), options);
     }
     session = await updateSession(session.id, { status: "awaiting_current_ctc", current_question: "current_ctc", proposed_answers: { interested: true } }, options);
     return sendAndRecord(session, QUESTION_PROMPTS.current_ctc, "current_ctc", "automation", options);
@@ -640,19 +812,56 @@ async function processInboundForSession(session, event, options = {}) {
   if (currentQuestion === "expected_ctc" && !answers.expected_ctc) answers.expected_ctc = cleanAnswer(text);
   if (currentQuestion === "notice_period" && !answers.notice_period) answers.notice_period = cleanAnswer(text);
   if (currentQuestion === "recruiter_call") {
-    const yesNo = parseYesNo(text);
-    if (yesNo === null) return sendAndRecord(session, QUESTION_PROMPTS.recruiter_call, "recruiter_call", "automation", options);
+    const yesNo = parseYesNo(text, replyId);
+    if (yesNo === null) return sendQuestion(session, "recruiter_call", options);
     answers.recruiter_call_requested = yesNo;
+    if (yesNo === false) delete answers.preferred_call_time;
+  }
+  if (currentQuestion === "call_time") {
+    const normalizedReplyId = String(replyId || "").toLowerCase();
+    if (normalizedReplyId.endsWith(":call_custom")) {
+      session = await updateSession(session.id, { proposed_answers: answers }, options);
+      return sendAndRecord(session, QUESTION_PROMPTS.call_time, "call_time", "automation", options);
+    }
+    if (normalizedReplyId.endsWith(":call_today")) answers.preferred_call_time = "Today";
+    else if (normalizedReplyId.endsWith(":call_tomorrow")) answers.preferred_call_time = "Tomorrow";
+    else answers.preferred_call_time = cleanAnswer(text);
+    if (!answers.preferred_call_time || /^choose date\/time$/i.test(answers.preferred_call_time)) {
+      return sendAndRecord(session, QUESTION_PROMPTS.call_time, "call_time", "automation", options);
+    }
   }
   if (session.status === "awaiting_confirmation") {
+    const normalizedReplyId = String(replyId || "").toLowerCase();
+    if (normalizedReplyId.endsWith(":edit")) {
+      const originalAnswers = parseJsonObject(answers._revision_original);
+      const revisionOriginal = Object.keys(originalAnswers).length ? originalAnswers : {
+        current_ctc: cleanAnswer(answers.current_ctc),
+        expected_ctc: cleanAnswer(answers.expected_ctc),
+        notice_period: cleanAnswer(answers.notice_period),
+        recruiter_call_requested: answers.recruiter_call_requested === true,
+        preferred_call_time: cleanAnswer(answers.preferred_call_time)
+      };
+      const restartedAnswers = {
+        interested: true,
+        _revision_original: revisionOriginal,
+        _revision_count: Number(answers._revision_count || 0) + 1
+      };
+      session = await updateSession(session.id, {
+        status: "awaiting_current_ctc",
+        current_question: "current_ctc",
+        proposed_answers: restartedAnswers,
+        needs_recruiter_follow_up: false
+      }, options);
+      return sendQuestion(session, "current_ctc", options);
+    }
     const corrections = parseCombinedScreeningAnswers(text);
     if (Object.keys(corrections).length) {
       answers = { ...answers, ...corrections };
       session = await updateSession(session.id, { proposed_answers: answers }, options);
-      return sendAndRecord(session, formatConfirmation(answers), "confirmation", "automation", options);
+      return sendButtonsAndRecord(session, formatConfirmation(answers), "confirmation", confirmationButtons(session.id), options);
     }
-    const confirmed = parseYesNo(text) === true || /^(confirm|confirmed|correct|save)$/i.test(cleanAnswer(text));
-    if (!confirmed) return sendAndRecord(session, "Please reply Confirm, or send a labelled correction such as ‘Expected CTC: 18 LPA’.", "confirmation", "automation", options);
+    const confirmed = normalizedReplyId.endsWith(":confirm") || parseYesNo(text, replyId) === true || /^(confirm|confirmed|correct|save)$/i.test(cleanAnswer(text));
+    if (!confirmed) return sendButtonsAndRecord(session, "Please choose Confirm to save or Edit to revise your details.", "confirmation", confirmationButtons(session.id), options);
     return completeConfirmedSession(session, answers, options);
   }
 
@@ -664,7 +873,8 @@ async function processInboundForSession(session, event, options = {}) {
     needs_recruiter_follow_up: answers.recruiter_call_requested === true
   }, options);
   const prompt = nextQuestion === "confirmation" ? formatConfirmation(answers) : QUESTION_PROMPTS[nextQuestion];
-  return sendAndRecord(session, prompt, nextQuestion, "automation", options);
+  if (nextQuestion === "confirmation") return sendButtonsAndRecord(session, prompt, nextQuestion, confirmationButtons(session.id), options);
+  return sendQuestion(session, nextQuestion, options);
 }
 
 async function claimEvent(event, options = {}) {

@@ -324,6 +324,7 @@ const WHATSAPP_SCREENING_ACTIVE_STATUSES = new Set([
   "awaiting_expected_ctc",
   "awaiting_notice_period",
   "awaiting_recruiter_call",
+  "awaiting_call_time",
   "awaiting_confirmation",
   "human_takeover"
 ]);
@@ -12623,22 +12624,31 @@ function PortalApp({ token, onLogout }) {
         clientVisibility: whatsappTemplatePicker.clientVisibility
       });
       const sessionId = String(result?.session?.id || "").trim();
-      const details = await loadWhatsappScreeningDetails(candidateId, sessionId, whatsappTemplatePicker.assignJobId);
-      const deliveryFailed = String(details?.activeSession?.status || "") === "failed";
+      const activeSession = result?.session || null;
+      const messages = Array.isArray(result?.messages) ? result.messages : [];
       setWhatsappTemplatePicker((current) => ({
         ...current,
-        ...details,
+        sessions: activeSession
+          ? [activeSession, ...(current.sessions || []).filter((session) => String(session?.id || "") !== sessionId)]
+          : current.sessions,
+        activeSession,
+        messages,
         screeningBusy: false,
-        screeningStatus: deliveryFailed
-          ? ""
-          : "Template submitted to WhatsApp. Delivery confirmation is pending.",
+        screeningStatus: "Template submitted to WhatsApp. Delivery confirmation is pending.",
         screeningStatusKind: ""
       }));
-      setCapturedInlineStatus(
-        candidateId,
-        deliveryFailed ? "WhatsApp screening delivery failed." : "WhatsApp screening submitted; delivery pending.",
-        deliveryFailed ? "error" : ""
-      );
+      setCapturedInlineStatus(candidateId, "WhatsApp screening submitted; delivery pending.", "");
+      window.setTimeout(() => {
+        void loadWhatsappScreeningDetails(candidateId, sessionId, whatsappTemplatePicker.assignJobId)
+          .then((details) => {
+            const deliveryFailed = String(details?.activeSession?.status || "") === "failed";
+            setWhatsappTemplatePicker((current) => current.open && current.mode === "screening" && String(current.candidateId || "") === candidateId
+              ? { ...current, ...details, screeningStatus: "", screeningStatusKind: "" }
+              : current);
+            if (deliveryFailed) setCapturedInlineStatus(candidateId, "WhatsApp screening delivery failed.", "error");
+          })
+          .catch(() => null);
+      }, 3000);
     } catch (error) {
       setWhatsappTemplatePicker((current) => ({ ...current, screeningBusy: false, screeningStatus: String(error?.message || error), screeningStatusKind: "error" }));
     }
@@ -29180,6 +29190,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   const whatsappCallRequested = ["yes", "true", "1"].includes(
                     String(whatsappScreeningAnswers["WhatsApp recruiter call requested"] || "").trim().toLowerCase()
                   );
+                  const whatsappPreferredCallTime = String(whatsappScreeningAnswers["WhatsApp preferred call time"] || "").trim();
                   const linkedinRaw = String(item.linkedin || item.linkedinUrl || "").trim();
                   const linkedinHref = linkedinRaw
                     ? (/^https?:\/\//i.test(linkedinRaw) ? linkedinRaw : `https://${linkedinRaw}`)
@@ -29340,7 +29351,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         {statusState.interviewAt ? <span className="chip">Interview: {new Date(statusState.interviewAt).toLocaleString()}</span> : null}
                         {whatsappCallRequested ? (
                           <span className="chip" style={{ background: "#fff3e0", borderColor: "#f59e0b", color: "#9a4d00", fontWeight: 700 }}>
-                            WhatsApp: Call requested
+                            WhatsApp: Call requested{whatsappPreferredCallTime ? ` — Preferred: ${whatsappPreferredCallTime}` : ""}
                           </span>
                         ) : null}
                       </div>
@@ -32760,10 +32771,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       const status = String(session.status || "");
                       const interestResult = ["not_interested", "opted_out"].includes(status)
                         ? "Not Interested"
-                        : answers.interested === true || ["awaiting_current_ctc", "awaiting_expected_ctc", "awaiting_notice_period", "awaiting_recruiter_call", "awaiting_confirmation", "completed", "review_required", "human_takeover"].includes(status)
+                        : answers.interested === true || ["awaiting_current_ctc", "awaiting_expected_ctc", "awaiting_notice_period", "awaiting_recruiter_call", "awaiting_call_time", "awaiting_confirmation", "completed", "review_required", "human_takeover"].includes(status)
                           ? "Interested"
                           : status === "not_responding" ? "No response" : "Pending";
                       const callRequested = answers.recruiter_call_requested === true;
+                          const preferredCallTime = String(answers.preferred_call_time || "").trim();
                       return (
                         <div className="whatsapp-template-picker__summary">
                           <div className="whatsapp-template-picker__summary-title">
@@ -32781,7 +32793,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                               WhatsApp template was not sent.{session.last_error ? ` ${session.last_error}` : ""}
                             </div>
                           ) : null}
-                          {callRequested ? <div className="status" style={{ marginTop: 8 }}>Recruiter call requested</div> : null}
+                          {callRequested ? <div className="status" style={{ marginTop: 8 }}>Recruiter call requested{preferredCallTime ? ` — Preferred: ${preferredCallTime}` : ""}</div> : null}
                           {session.needs_recruiter_follow_up && !callRequested ? <div className="status error" style={{ marginTop: 8 }}>Recruiter review required</div> : null}
                         </div>
                       );
@@ -32796,7 +32808,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             answers.current_ctc ? `Current CTC: ${answers.current_ctc}` : "",
                             answers.expected_ctc ? `Expected CTC: ${answers.expected_ctc}` : "",
                             answers.notice_period ? `Notice: ${answers.notice_period}` : "",
-                            typeof answers.recruiter_call_requested === "boolean" ? `Recruiter call: ${answers.recruiter_call_requested ? "Yes" : "No"}` : ""
+                            typeof answers.recruiter_call_requested === "boolean" ? `Recruiter call: ${answers.recruiter_call_requested ? "Yes" : "No"}` : "",
+                            answers.recruiter_call_requested === true && answers.preferred_call_time ? `Preferred call time: ${answers.preferred_call_time}` : ""
                           ].filter(Boolean).join("\n");
                         })()}
                       </div>

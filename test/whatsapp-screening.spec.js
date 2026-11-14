@@ -25,6 +25,8 @@ async function run() {
   assert.equal(parseInterest("STOP"), "opt_out");
   assert.equal(parseYesNo("haan"), true);
   assert.equal(parseYesNo("nahi"), false);
+  assert.equal(parseYesNo("", "ws:session:call_yes"), true);
+  assert.equal(parseYesNo("", "ws:session:call_no"), false);
   assert.equal(
     extractMetaStatusError({ payload: { status: { errors: [{ code: 131026, title: "Message undeliverable", error_data: { details: "Recipient is unavailable." } }] } } }),
     "Meta error 131026: Message undeliverable: Recipient is unavailable."
@@ -53,13 +55,18 @@ async function run() {
     job_snapshot: {
       title: "Backend Engineer - Secret Client",
       publicPostingTitle: "Backend Engineer",
+      publicCompanyLine: "A leading AI infrastructure company",
       clientName: "Secret Client",
-      jobDescription: "Secret Client needs a Node.js engineer."
+      jobDescription: "<strong>Secret Client</strong><br><ul><li>Node.js</li><li>PostgreSQL</li></ul>",
+      publicApplyLink: "https://example.com/apply-public/job-1"
     }
   });
   assert.ok(!anonymousJd.includes("Secret Client"));
-  assert.ok(anonymousJd.includes("Client: Confidential"));
-  assert.ok(formatConfirmation({ current_ctc: "12 LPA", expected_ctc: "16 LPA", notice_period: "30 days", recruiter_call_requested: true }).includes("Recruiter call: Yes"));
+  assert.ok(anonymousJd.includes("*Company:* A leading AI infrastructure company"));
+  assert.ok(anonymousJd.includes("• Node.js"));
+  assert.ok(!anonymousJd.includes("<strong>"));
+  assert.ok(anonymousJd.includes("https://example.com/apply-public/job-1"));
+  assert.ok(formatConfirmation({ current_ctc: "12 LPA", expected_ctc: "16 LPA", notice_period: "30 days", recruiter_call_requested: true, preferred_call_time: "Tomorrow after 4 PM" }).includes("Preferred call time: Tomorrow after 4 PM"));
 
   assert.deepEqual(
     buildConfirmedCandidatePatch(
@@ -123,6 +130,8 @@ async function run() {
   assert.match(migration, /assigned_jd_id uuid references public\.company_jobs\(id\) on delete set null/i);
   assert.match(migration, /revoke all on table public\.whatsapp_screening_messages from anon, authenticated/i);
   assert.match(migration, /grant select, insert, update on table public\.whatsapp_screening_sessions to service_role/i);
+  const callTimeMigration = fs.readFileSync(path.join(__dirname, "..", "sql", "2026-11-14-whatsapp-screening-call-time-state.sql"), "utf8");
+  assert.match(callTimeMigration, /awaiting_call_time/i);
 }
 
 if (require.main === module) {

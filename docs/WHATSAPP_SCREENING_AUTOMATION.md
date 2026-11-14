@@ -60,7 +60,18 @@ The deterministic state machine collects current CTC, expected CTC, notice perio
 
 ## Anonymous JD sharing
 
-Anonymous mode uses the public posting title when present and removes the known client name from the title and job-description text before sending. Recruiters should still review job descriptions for indirect client-identifying information before using anonymous mode.
+Anonymous mode uses the public posting title and `Public company line (anonymous apply link)` when present, and removes the known client name from the title and job-description text before sending. Named mode displays the actual client name. JD HTML is converted to compact WhatsApp text and includes the public apply link. Recruiters should still review job descriptions for indirect client-identifying information before using anonymous mode.
+
+## Interactive screening flow
+
+- After **Share JD**, the candidate receives **Interested** and **Not Interested** buttons.
+- Current CTC, expected CTC and notice period accept free-form answers.
+- Recruiter-call preference uses **Yes** and **No** buttons.
+- A **Yes** response asks for **Today**, **Tomorrow**, or **Choose date/time**. Custom time remains free text and is not silently converted into a calendar appointment.
+- Final review uses **Confirm** and **Edit** buttons. Edit restarts from Current CTC while preserving the original values for the recruiter-note audit.
+- A confirmed call request and preferred time are saved in screening answers and displayed in the Captured Notes follow-up indicator.
+
+The `2026-11-14-whatsapp-screening-call-time-state.sql` follow-up migration extends the active-session uniqueness guard to the preferred-call-time step. Run it once after the original screening migration.
 
 ## Deployment order
 
