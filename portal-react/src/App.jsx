@@ -12560,7 +12560,10 @@ function PortalApp({ token, onLogout }) {
       hydratedSession = detailResult?.session || activeSession;
       messages = Array.isArray(detailResult?.messages) ? detailResult.messages : [];
     }
-    return { sessions, activeSession: hydratedSession, messages };
+    const hydratedSessions = hydratedSession?.id
+      ? sessions.map((session) => String(session?.id || "") === String(hydratedSession.id) ? { ...session, ...hydratedSession } : session)
+      : sessions;
+    return { sessions: hydratedSessions, activeSession: hydratedSession, messages };
   }
 
   async function refreshWhatsappScreeningView(preferredSessionId = "") {
@@ -12621,14 +12624,21 @@ function PortalApp({ token, onLogout }) {
       });
       const sessionId = String(result?.session?.id || "").trim();
       const details = await loadWhatsappScreeningDetails(candidateId, sessionId, whatsappTemplatePicker.assignJobId);
+      const deliveryFailed = String(details?.activeSession?.status || "") === "failed";
       setWhatsappTemplatePicker((current) => ({
         ...current,
         ...details,
         screeningBusy: false,
-        screeningStatus: "WhatsApp screening sent successfully.",
-        screeningStatusKind: "ok"
+        screeningStatus: deliveryFailed
+          ? String(details?.activeSession?.last_error || "WhatsApp could not deliver the screening template.")
+          : "Template submitted to WhatsApp. Delivery confirmation is pending.",
+        screeningStatusKind: deliveryFailed ? "error" : ""
       }));
-      setCapturedInlineStatus(candidateId, "WhatsApp screening sent.", "ok");
+      setCapturedInlineStatus(
+        candidateId,
+        deliveryFailed ? "WhatsApp screening delivery failed." : "WhatsApp screening submitted; delivery pending.",
+        deliveryFailed ? "error" : ""
+      );
     } catch (error) {
       setWhatsappTemplatePicker((current) => ({ ...current, screeningBusy: false, screeningStatus: String(error?.message || error), screeningStatusKind: "error" }));
     }
@@ -32869,7 +32879,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                     <div className="button-row">
                       <button className="ghost-btn" onClick={() => setWhatsappTemplatePicker((current) => ({ ...current, open: false }))}>Cancel</button>
                       <button disabled={whatsappTemplatePicker.screeningBusy} onClick={() => void startWhatsappScreening()}>
-                        {whatsappTemplatePicker.screeningBusy ? "Sending..." : "Send WhatsApp Screening"}
+                        {whatsappTemplatePicker.screeningBusy
+                          ? String(whatsappTemplatePicker.screeningStatus || "").toLowerCase().includes("sending")
+                            ? "Sending..."
+                            : "Loading..."
+                          : "Send WhatsApp Screening"}
                       </button>
                     </div>
                   </>
