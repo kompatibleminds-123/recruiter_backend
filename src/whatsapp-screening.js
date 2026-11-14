@@ -10,16 +10,25 @@ const ACTIVE_SCREENING_STATUSES = [
   "awaiting_notice_period",
   "awaiting_recruiter_call",
   "awaiting_call_time",
+  "awaiting_additional_input_choice",
+  "awaiting_additional_input",
   "awaiting_confirmation",
   "human_takeover"
 ];
+
+const MAX_CLARIFICATIONS_PER_QUESTION = 2;
+const MAX_CLARIFICATIONS_PER_SESSION = 4;
+const RECRUITER_REVIEW_MESSAGE = "Sorry, we could not understand some of your responses. Our recruiter will review them and get in touch with you.";
+const POST_COMPLETION_ACKNOWLEDGEMENT = "Thank you. Our recruiter will review your message and get in touch with you.";
 
 const QUESTION_PROMPTS = {
   current_ctc: "What is your current CTC?",
   expected_ctc: "What is your expected CTC?",
   notice_period: "What is your notice period or earliest joining availability?",
   recruiter_call: "Would you like to connect with our recruiter for more details?",
-  call_time: "Please share a convenient date and time for the recruiter to contact you."
+  call_time: "Please share a convenient date and time for the recruiter to contact you.",
+  additional_input_choice: "Is there any other information you would like to share?",
+  additional_input: "Please share any additional information you would like our recruiter to know."
 };
 
 function screeningConfig(options = {}) {
@@ -151,12 +160,62 @@ function parseCombinedScreeningAnswers(value) {
   return answers;
 }
 
+function isPlausibleCtcAnswer(value) {
+  const answer = cleanAnswer(value, 240);
+  if (!answer || looksLikeCandidateQuestion(answer)) return false;
+  const normalized = answer.toLowerCase().replace(/[^a-z0-9.+%₹\s/-]/g, " ").replace(/\s+/g, " ").trim();
+  if (/^(?:hi|hello|hey|ok|okay|yes|no|sure|thanks|thank you|will tell|let me check|call me|share jd)$/i.test(normalized)) return false;
+  if (/\d/.test(normalized)) return true;
+  return /\b(?:negotiable|open|confidential|not disclosed|market standard|as per company|company standard|not applicable|na|n\/a)\b/i.test(normalized);
+}
+
+function isCtcNonDisclosureAnswer(value) {
+  const normalized = cleanAnswer(value, 240).toLowerCase().replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ").trim();
+  return /\b(?:confidential|not disclosed|prefer not to share|will discuss|discuss with recruiter)\b/i.test(normalized);
+}
+
+function isPlausibleNoticeAnswer(value) {
+  const answer = cleanAnswer(value, 240);
+  if (!answer || looksLikeCandidateQuestion(answer)) return false;
+  const normalized = answer.toLowerCase().replace(/[^a-z0-9\s/-]/g, " ").replace(/\s+/g, " ").trim();
+  if (/^(?:hi|hello|hey|ok|okay|yes|no|sure|thanks|thank you|call me|share jd)$/i.test(normalized)) return false;
+  if (/\d/.test(normalized)) return true;
+  return /\b(?:immediate|immediately|serving|available|join|joining|notice|negotiable|buyout|released|release|anytime)\b/i.test(normalized);
+}
+
+function isPlausibleCallTimeAnswer(value) {
+  const answer = cleanAnswer(value, 240);
+  if (!answer || looksLikeCandidateQuestion(answer)) return false;
+  const normalized = answer.toLowerCase().replace(/[^a-z0-9:\s/-]/g, " ").replace(/\s+/g, " ").trim();
+  if (/\d/.test(normalized)) return true;
+  return /\b(?:today|tomorrow|morning|afternoon|evening|night|anytime|weekday|weekend|monday|tuesday|wednesday|thursday|friday|saturday|sunday|office hours|after office|before office)\b/i.test(normalized);
+}
+
+function registerClarification(answers = {}, question = "") {
+  const questionKey = cleanAnswer(question, 80) || "unknown";
+  const counts = parseJsonObject(answers._clarification_counts);
+  const questionCount = Number(counts[questionKey] || 0) + 1;
+  const totalCount = Number(answers._clarification_total || 0) + 1;
+  return {
+    answers: {
+      ...answers,
+      _clarification_counts: { ...counts, [questionKey]: questionCount },
+      _clarification_total: totalCount
+    },
+    questionCount,
+    totalCount,
+    exceeded: questionCount > MAX_CLARIFICATIONS_PER_QUESTION || totalCount > MAX_CLARIFICATIONS_PER_SESSION
+  };
+}
+
 function nextMissingQuestion(answers = {}) {
   if (!cleanAnswer(answers.current_ctc)) return "current_ctc";
   if (!cleanAnswer(answers.expected_ctc)) return "expected_ctc";
   if (!cleanAnswer(answers.notice_period)) return "notice_period";
   if (typeof answers.recruiter_call_requested !== "boolean") return "recruiter_call";
   if (answers.recruiter_call_requested === true && !cleanAnswer(answers.preferred_call_time)) return "call_time";
+  if (typeof answers.additional_input_requested !== "boolean") return "additional_input_choice";
+  if (answers.additional_input_requested === true && !cleanAnswer(answers.additional_input)) return "additional_input";
   return "confirmation";
 }
 
@@ -172,6 +231,7 @@ function formatConfirmation(answers = {}) {
     `Notice period: ${cleanAnswer(answers.notice_period) || "Not provided"}`,
     `Recruiter call: ${answers.recruiter_call_requested === true ? "Yes" : "No"}`,
     answers.recruiter_call_requested === true ? `Preferred call time: ${cleanAnswer(answers.preferred_call_time) || "Not provided"}` : "",
+    cleanAnswer(answers.additional_input) ? `Additional information: ${cleanAnswer(answers.additional_input, 1000)}` : "",
     "Please choose Confirm to save, or Edit to revise these details."
   ].filter(Boolean).join("\n");
 }
@@ -182,6 +242,7 @@ function buildConfirmedCandidatePatch(candidate = {}, answers = {}) {
   ["current_ctc", "expected_ctc", "notice_period"].forEach((field) => {
     const nextValue = cleanAnswer(answers[field]);
     if (!nextValue) return;
+    if ((field === "current_ctc" || field === "expected_ctc") && isCtcNonDisclosureAnswer(nextValue)) return;
     const existingValue = cleanAnswer(candidate[field]);
     patch[field] = nextValue;
     if (existingValue && existingValue.toLowerCase() !== nextValue.toLowerCase()) {
@@ -613,6 +674,13 @@ function recruiterCallButtons(sessionId) {
   ];
 }
 
+function additionalInputButtons(sessionId) {
+  return [
+    { id: `ws:${sessionId}:additional_yes`, title: "Yes" },
+    { id: `ws:${sessionId}:additional_no`, title: "No" }
+  ];
+}
+
 function preferredCallTimeButtons(sessionId) {
   return [
     { id: `ws:${sessionId}:call_today`, title: "Today" },
@@ -677,7 +745,8 @@ async function completeConfirmedSession(session, answers, options = {}) {
     "WhatsApp expected CTC": cleanAnswer(answers.expected_ctc),
     "WhatsApp notice period": cleanAnswer(answers.notice_period),
     "WhatsApp recruiter call requested": answers.recruiter_call_requested === true ? "Yes" : "No",
-    "WhatsApp preferred call time": answers.recruiter_call_requested === true ? cleanAnswer(answers.preferred_call_time) : ""
+    "WhatsApp preferred call time": answers.recruiter_call_requested === true ? cleanAnswer(answers.preferred_call_time) : "",
+    "WhatsApp additional information": cleanAnswer(answers.additional_input, 1000)
   };
   const originalAnswers = parseJsonObject(answers._revision_original);
   const revisionLabels = {
@@ -700,6 +769,7 @@ async function completeConfirmedSession(session, answers, options = {}) {
     `Notice period: ${cleanAnswer(answers.notice_period) || "Not provided"}`,
     `Recruiter call requested: ${answers.recruiter_call_requested === true ? "Yes" : "No"}`,
     answers.recruiter_call_requested === true ? `Preferred call time: ${cleanAnswer(answers.preferred_call_time) || "Not provided"}` : "",
+    cleanAnswer(answers.additional_input) ? `Additional information: ${cleanAnswer(answers.additional_input, 1000)}` : "",
     ...revisionLines
   ].filter(Boolean).join("\n");
   patch.recruiter_context_notes = [String(candidate.recruiter_context_notes || "").trim().slice(-6000), recruiterNoteEntry]
@@ -714,6 +784,7 @@ async function completeConfirmedSession(session, answers, options = {}) {
     `Notice: ${cleanAnswer(answers.notice_period) || "Not provided"}.`,
     `Recruiter call requested: ${answers.recruiter_call_requested === true ? "Yes" : "No"}.`,
     answers.recruiter_call_requested === true ? `Preferred contact time: ${cleanAnswer(answers.preferred_call_time) || "Not provided"}.` : "",
+    cleanAnswer(answers.additional_input) ? `Additional information: ${cleanAnswer(answers.additional_input, 1000)}.` : "",
     ...revisionLines.map((line) => `${line}.`)
   ].filter(Boolean).join(" ");
   const attemptResult = await recordOutcome(session, "Interested", notes, options);
@@ -738,10 +809,38 @@ async function sendQuestion(session, question, options = {}) {
   if (question === "call_time") {
     return sendButtonsAndRecord(session, "When would you prefer the recruiter to contact you?", question, preferredCallTimeButtons(session.id), options);
   }
+  if (question === "additional_input_choice") {
+    return sendButtonsAndRecord(session, QUESTION_PROMPTS.additional_input_choice, question, additionalInputButtons(session.id), options);
+  }
   if (question === "confirmation") {
     return sendButtonsAndRecord(session, formatConfirmation(parseJsonObject(session.proposed_answers)), question, confirmationButtons(session.id), options);
   }
   return sendAndRecord(session, QUESTION_PROMPTS[question], question, "automation", options);
+}
+
+async function handleUnclearAnswer(session, answers, question, repeatSender, options = {}) {
+  const clarification = registerClarification(answers, question);
+  if (!clarification.exceeded) {
+    const updated = await updateSession(session.id, { proposed_answers: clarification.answers }, options);
+    return repeatSender(updated || session);
+  }
+  const reviewSession = await updateSession(session.id, {
+    status: "review_required",
+    current_question: "review_required",
+    proposed_answers: clarification.answers,
+    needs_recruiter_follow_up: true
+  }, options) || session;
+  const attemptResult = await recordOutcome(
+    reviewSession,
+    "Interested",
+    `WhatsApp screening requires recruiter review for ${reviewSession.assigned_jd_title}; candidate responses could not be understood after the allowed clarification attempts.`,
+    options
+  );
+  const acknowledged = await sendAndRecord(reviewSession, RECRUITER_REVIEW_MESSAGE, "review_required", "automation", options);
+  if (typeof options.onCandidateUpdated === "function") {
+    options.onCandidateUpdated(attemptResult?.candidate || null, attemptResult?.attempt || null, acknowledged);
+  }
+  return acknowledged;
 }
 
 function looksLikeCandidateQuestion(value) {
@@ -791,29 +890,66 @@ async function processInboundForSession(session, event, options = {}) {
       );
     }
     if (interest !== "interested") {
-      return sendButtonsAndRecord(session, "Please choose an option below.", "interest", interestButtons(session.id), options);
+      const answers = parseJsonObject(session.proposed_answers);
+      return handleUnclearAnswer(
+        session,
+        answers,
+        "interest",
+        (updated) => sendButtonsAndRecord(updated, "Sorry, we could not understand your response. Please choose an option below.", "interest", interestButtons(updated.id), options),
+        options
+      );
     }
     session = await updateSession(session.id, { status: "awaiting_current_ctc", current_question: "current_ctc", proposed_answers: { interested: true } }, options);
     return sendAndRecord(session, QUESTION_PROMPTS.current_ctc, "current_ctc", "automation", options);
   }
 
-  if (looksLikeCandidateQuestion(text) && !Object.keys(parseCombinedScreeningAnswers(text)).length) {
-    session = await updateSession(session.id, {
-      status: "human_takeover",
-      paused_from_status: session.status,
-      needs_recruiter_follow_up: true
-    }, options);
-    return sendAndRecord(session, "Thank you. Our recruiter will help with your question and continue the screening with you.", "human_takeover", "automation", options);
-  }
-
-  let answers = { ...parseJsonObject(session.proposed_answers), ...parseCombinedScreeningAnswers(text) };
+  const parsedAnswers = parseCombinedScreeningAnswers(text);
+  let answers = { ...parseJsonObject(session.proposed_answers), ...parsedAnswers };
   const currentQuestion = String(session.current_question || "");
-  if (currentQuestion === "current_ctc" && !answers.current_ctc) answers.current_ctc = cleanAnswer(text);
-  if (currentQuestion === "expected_ctc" && !answers.expected_ctc) answers.expected_ctc = cleanAnswer(text);
-  if (currentQuestion === "notice_period" && !answers.notice_period) answers.notice_period = cleanAnswer(text);
+  if (currentQuestion === "current_ctc") {
+    const currentCtc = cleanAnswer(parsedAnswers.current_ctc || text, 240);
+    if (!isPlausibleCtcAnswer(currentCtc)) {
+      return handleUnclearAnswer(
+        session,
+        answers,
+        "current_ctc",
+        (updated) => sendAndRecord(updated, "Sorry, we could not understand your current CTC. Please share it in your preferred format, for example ‘10.5 fixed + 5 variable’ or ‘12 LPA’.", "current_ctc", "automation", options),
+        options
+      );
+    }
+    answers.current_ctc = currentCtc;
+  }
+  if (currentQuestion === "expected_ctc") {
+    const expectedCtc = cleanAnswer(parsedAnswers.expected_ctc || text, 240);
+    if (!isPlausibleCtcAnswer(expectedCtc)) {
+      return handleUnclearAnswer(
+        session,
+        answers,
+        "expected_ctc",
+        (updated) => sendAndRecord(updated, "Sorry, we could not understand your expected CTC. Please share it in your preferred format, for example ‘15 fixed’ or ‘18 LPA’.", "expected_ctc", "automation", options),
+        options
+      );
+    }
+    answers.expected_ctc = expectedCtc;
+  }
+  if (currentQuestion === "notice_period") {
+    const noticePeriod = cleanAnswer(parsedAnswers.notice_period || text, 240);
+    if (!isPlausibleNoticeAnswer(noticePeriod)) {
+      return handleUnclearAnswer(
+        session,
+        answers,
+        "notice_period",
+        (updated) => sendAndRecord(updated, "Sorry, we could not understand your notice period. Please share it, for example ‘30 days’, ‘Serving notice’, or ‘Immediate joiner’.", "notice_period", "automation", options),
+        options
+      );
+    }
+    answers.notice_period = noticePeriod;
+  }
   if (currentQuestion === "recruiter_call") {
     const yesNo = parseYesNo(text, replyId);
-    if (yesNo === null) return sendQuestion(session, "recruiter_call", options);
+    if (yesNo === null) {
+      return handleUnclearAnswer(session, answers, "recruiter_call", (updated) => sendQuestion(updated, "recruiter_call", options), options);
+    }
     answers.recruiter_call_requested = yesNo;
     if (yesNo === false) delete answers.preferred_call_time;
   }
@@ -826,9 +962,35 @@ async function processInboundForSession(session, event, options = {}) {
     if (normalizedReplyId.endsWith(":call_today")) answers.preferred_call_time = "Today";
     else if (normalizedReplyId.endsWith(":call_tomorrow")) answers.preferred_call_time = "Tomorrow";
     else answers.preferred_call_time = cleanAnswer(text);
-    if (!answers.preferred_call_time || /^choose date\/time$/i.test(answers.preferred_call_time)) {
-      return sendAndRecord(session, QUESTION_PROMPTS.call_time, "call_time", "automation", options);
+    if (!answers.preferred_call_time || /^choose date\/time$/i.test(answers.preferred_call_time) || !isPlausibleCallTimeAnswer(answers.preferred_call_time)) {
+      return handleUnclearAnswer(
+        session,
+        answers,
+        "call_time",
+        (updated) => sendAndRecord(updated, "Sorry, we could not understand your preferred contact time. Please share a date or time, for example ‘Tomorrow after 4 PM’.", "call_time", "automation", options),
+        options
+      );
     }
+  }
+  if (currentQuestion === "additional_input_choice") {
+    const normalizedReplyId = String(replyId || "").toLowerCase();
+    const yesNo = normalizedReplyId.endsWith(":additional_yes")
+      ? true
+      : normalizedReplyId.endsWith(":additional_no")
+        ? false
+        : parseYesNo(text, replyId);
+    if (yesNo === null) {
+      return handleUnclearAnswer(session, answers, "additional_input_choice", (updated) => sendQuestion(updated, "additional_input_choice", options), options);
+    }
+    answers.additional_input_requested = yesNo;
+    if (yesNo === false) delete answers.additional_input;
+  }
+  if (currentQuestion === "additional_input") {
+    const additionalInput = cleanAnswer(text, 1000);
+    if (!additionalInput) {
+      return handleUnclearAnswer(session, answers, "additional_input", (updated) => sendQuestion(updated, "additional_input", options), options);
+    }
+    answers.additional_input = additionalInput;
   }
   if (session.status === "awaiting_confirmation") {
     const normalizedReplyId = String(replyId || "").toLowerCase();
@@ -861,7 +1023,15 @@ async function processInboundForSession(session, event, options = {}) {
       return sendButtonsAndRecord(session, formatConfirmation(answers), "confirmation", confirmationButtons(session.id), options);
     }
     const confirmed = normalizedReplyId.endsWith(":confirm") || parseYesNo(text, replyId) === true || /^(confirm|confirmed|correct|save)$/i.test(cleanAnswer(text));
-    if (!confirmed) return sendButtonsAndRecord(session, "Please choose Confirm to save or Edit to revise your details.", "confirmation", confirmationButtons(session.id), options);
+    if (!confirmed) {
+      return handleUnclearAnswer(
+        session,
+        answers,
+        "confirmation",
+        (updated) => sendButtonsAndRecord(updated, "Sorry, we could not understand your response. Please choose Confirm to save or Edit to revise your details.", "confirmation", confirmationButtons(updated.id), options),
+        options
+      );
+    }
     return completeConfirmedSession(session, answers, options);
   }
 
@@ -910,6 +1080,51 @@ async function findActiveSessionsForEvent(event, options = {}) {
     options
   );
   return Array.isArray(rows) ? rows : [];
+}
+
+async function findRecentCompletedSessionsForEvent(event, options = {}) {
+  const phoneNumberId = cleanAnswer(event.phone_number_id, 200);
+  const waId = normalizeWhatsAppPhone(event.sender_wa_id);
+  if (!phoneNumberId || !waId) return [];
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const rows = await supabaseRequest(
+    "whatsapp_screening_sessions",
+    `?phone_number_id=eq.${encodeURIComponent(phoneNumberId)}&candidate_wa_id=eq.${encodeURIComponent(waId)}&status=eq.completed&completed_at=gte.${encodeURIComponent(cutoff)}&select=*&order=completed_at.desc&limit=2`,
+    options
+  );
+  return Array.isArray(rows) ? rows : [];
+}
+
+async function claimPostCompletionAcknowledgement(sessionId, options = {}) {
+  const claimed = await supabaseRequest("rpc/claim_whatsapp_screening_post_completion_ack", "", {
+    ...options,
+    method: "POST",
+    body: { p_session_id: sessionId }
+  });
+  return claimed === true || (Array.isArray(claimed) && claimed[0] === true);
+}
+
+async function processPostCompletionInbound(session, event, options = {}) {
+  const text = extractInboundText(event);
+  const replyId = extractInboundReplyId(event);
+  const now = event.event_timestamp || new Date().toISOString();
+  await insertMessage(session, {
+    direction: "inbound",
+    sender_type: "candidate",
+    message_type: event.message_type || "text",
+    body: text,
+    question_context: "post_completion",
+    meta_message_id: event.meta_message_id || null,
+    webhook_event_key: event.event_key,
+    delivery_status: "received",
+    created_at: now
+  }, options);
+  let updated = await updateSession(session.id, { last_inbound_at: now, needs_recruiter_follow_up: true }, options) || session;
+  if (!text && !replyId) return updated;
+  if (!(await claimPostCompletionAcknowledgement(session.id, options))) return updated;
+  updated = await sendAndRecord(updated, POST_COMPLETION_ACKNOWLEDGEMENT, "post_completion_acknowledgement", "automation", options);
+  if (typeof options.onCandidateUpdated === "function") options.onCandidateUpdated(null, null, updated);
+  return updated;
 }
 
 async function processStatusEvent(event, options = {}) {
@@ -961,6 +1176,15 @@ async function processWhatsAppScreeningEvents(events, options = {}) {
         continue;
       }
       const sessions = await findActiveSessionsForEvent(event, options);
+      if (!sessions.length) {
+        const completedSessions = await findRecentCompletedSessionsForEvent(event, options);
+        if (completedSessions.length === 1) {
+          const updated = await processPostCompletionInbound(completedSessions[0], event, options);
+          await finishEvent(event.event_key, { status: "processed", screening_session_id: updated?.id || completedSessions[0].id }, options);
+          results.push({ eventKey: event.event_key, status: "processed", sessionId: updated?.id || completedSessions[0].id });
+          continue;
+        }
+      }
       if (sessions.length !== 1) {
         await finishEvent(event.event_key, {
           status: sessions.length > 1 ? "ambiguous" : "ignored",
@@ -1014,9 +1238,14 @@ module.exports = {
   listCandidateScreenings,
   listScreeningMessages,
   normalizeWhatsAppPhone,
+  isPlausibleCtcAnswer,
+  isCtcNonDisclosureAnswer,
+  isPlausibleCallTimeAnswer,
+  isPlausibleNoticeAnswer,
   parseCombinedScreeningAnswers,
   parseInterest,
   parseYesNo,
+  registerClarification,
   processWhatsAppScreeningEvents,
   screeningConfig,
   sendManualScreeningMessage,

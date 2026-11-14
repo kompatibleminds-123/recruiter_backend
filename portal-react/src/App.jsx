@@ -325,6 +325,8 @@ const WHATSAPP_SCREENING_ACTIVE_STATUSES = new Set([
   "awaiting_notice_period",
   "awaiting_recruiter_call",
   "awaiting_call_time",
+  "awaiting_additional_input_choice",
+  "awaiting_additional_input",
   "awaiting_confirmation",
   "human_takeover"
 ]);
@@ -32771,7 +32773,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                       const status = String(session.status || "");
                       const interestResult = ["not_interested", "opted_out"].includes(status)
                         ? "Not Interested"
-                        : answers.interested === true || ["awaiting_current_ctc", "awaiting_expected_ctc", "awaiting_notice_period", "awaiting_recruiter_call", "awaiting_call_time", "awaiting_confirmation", "completed", "review_required", "human_takeover"].includes(status)
+                        : answers.interested === true || ["awaiting_current_ctc", "awaiting_expected_ctc", "awaiting_notice_period", "awaiting_recruiter_call", "awaiting_call_time", "awaiting_additional_input_choice", "awaiting_additional_input", "awaiting_confirmation", "completed", "review_required", "human_takeover"].includes(status)
                           ? "Interested"
                           : status === "not_responding" ? "No response" : "Pending";
                       const callRequested = answers.recruiter_call_requested === true;
@@ -32809,7 +32811,8 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                             answers.expected_ctc ? `Expected CTC: ${answers.expected_ctc}` : "",
                             answers.notice_period ? `Notice: ${answers.notice_period}` : "",
                             typeof answers.recruiter_call_requested === "boolean" ? `Recruiter call: ${answers.recruiter_call_requested ? "Yes" : "No"}` : "",
-                            answers.recruiter_call_requested === true && answers.preferred_call_time ? `Preferred call time: ${answers.preferred_call_time}` : ""
+                            answers.recruiter_call_requested === true && answers.preferred_call_time ? `Preferred call time: ${answers.preferred_call_time}` : "",
+                            answers.additional_input ? `Additional information: ${answers.additional_input}` : ""
                           ].filter(Boolean).join("\n");
                         })()}
                       </div>
@@ -32832,19 +32835,19 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                         </div>
                       </details>
                     ) : null}
-                    <div style={{ maxHeight: 280, overflowY: "auto", border: "1px solid rgba(148,163,184,.35)", borderRadius: 14, padding: 12, marginBottom: 12 }}>
+                    <div className="whatsapp-screening-chat" aria-label="WhatsApp screening conversation">
                       {(whatsappTemplatePicker.messages || []).length ? (whatsappTemplatePicker.messages || []).map((message) => (
-                        <div key={message.id || message.meta_message_id} style={{ marginBottom: 10, textAlign: message.direction === "outbound" ? "right" : "left" }}>
-                          <div style={{ display: "inline-block", maxWidth: "88%", padding: "8px 10px", borderRadius: 12, background: message.direction === "outbound" ? "#e8f1ff" : "#f3f4f6", whiteSpace: "pre-wrap", textAlign: "left" }}>
+                        <div key={message.id || message.meta_message_id} className={`whatsapp-screening-chat__message whatsapp-screening-chat__message--${message.direction === "outbound" ? "outbound" : "inbound"}`}>
+                          <div className="whatsapp-screening-chat__bubble">
                             {message.body || `[${message.message_type || "message"}]`}
-                          </div>
-                          <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>
-                            {message.sender_type || message.direction}
-                            {message.created_at ? ` | ${new Date(message.created_at).toLocaleString()}` : ""}
-                            {message.delivery_status ? ` | ${message.delivery_status}` : ""}
+                            <div className="whatsapp-screening-chat__meta">
+                              <span>{message.sender_type === "candidate" ? "Candidate" : message.sender_type === "recruiter" ? "Recruiter" : "Automation"}</span>
+                              {message.created_at ? <span>{new Date(message.created_at).toLocaleString()}</span> : null}
+                              {message.delivery_status ? <span className={message.delivery_status === "failed" ? "whatsapp-screening-chat__status--failed" : ""}>{message.delivery_status}</span> : null}
+                            </div>
                           </div>
                         </div>
-                      )) : <div className="muted">No screening messages yet.</div>}
+                      )) : <div className="whatsapp-screening-chat__empty">No screening messages yet.</div>}
                     </div>
                     {WHATSAPP_SCREENING_ACTIVE_STATUSES.has(String(whatsappTemplatePicker.activeSession.status || "")) ? (
                       <>

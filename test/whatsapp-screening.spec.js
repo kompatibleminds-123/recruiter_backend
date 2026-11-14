@@ -7,11 +7,16 @@ const {
   buildScreeningTemplatePayload,
   extractMetaStatusError,
   formatConfirmation,
+  isCtcNonDisclosureAnswer,
+  isPlausibleCtcAnswer,
+  isPlausibleCallTimeAnswer,
+  isPlausibleNoticeAnswer,
   listCandidateScreenings,
   normalizeWhatsAppPhone,
   parseCombinedScreeningAnswers,
   parseInterest,
-  parseYesNo
+  parseYesNo,
+  registerClarification
 } = require("../src/whatsapp-screening");
 
 async function run() {
@@ -27,6 +32,30 @@ async function run() {
   assert.equal(parseYesNo("nahi"), false);
   assert.equal(parseYesNo("", "ws:session:call_yes"), true);
   assert.equal(parseYesNo("", "ws:session:call_no"), false);
+  assert.equal(isPlausibleCtcAnswer("10.5 fixed + 5 var"), true);
+  assert.equal(isPlausibleCtcAnswer("₹80,000 per month"), true);
+  assert.equal(isPlausibleCtcAnswer("Negotiable"), true);
+  assert.equal(isPlausibleCtcAnswer("Okay let me check"), false);
+  assert.equal(isPlausibleCtcAnswer("What is the budget?"), false);
+  assert.equal(isCtcNonDisclosureAnswer("Confidential"), true);
+  assert.equal(isCtcNonDisclosureAnswer("10.5 fixed + 5 var"), false);
+  assert.equal(isPlausibleNoticeAnswer("30 days"), true);
+  assert.equal(isPlausibleNoticeAnswer("Immediate joiner"), true);
+  assert.equal(isPlausibleNoticeAnswer("Okay"), false);
+  assert.equal(isPlausibleCallTimeAnswer("Tomorrow after 4 PM"), true);
+  assert.equal(isPlausibleCallTimeAnswer("Hello"), false);
+  let clarificationAnswers = {};
+  for (let count = 1; count <= 2; count += 1) {
+    const result = registerClarification(clarificationAnswers, "current_ctc");
+    clarificationAnswers = result.answers;
+    assert.equal(result.exceeded, false);
+  }
+  assert.equal(registerClarification(clarificationAnswers, "current_ctc").exceeded, true);
+  clarificationAnswers = {};
+  ["current_ctc", "expected_ctc", "notice_period", "recruiter_call"].forEach((question) => {
+    clarificationAnswers = registerClarification(clarificationAnswers, question).answers;
+  });
+  assert.equal(registerClarification(clarificationAnswers, "call_time").exceeded, true);
   assert.equal(
     extractMetaStatusError({ payload: { status: { errors: [{ code: 131026, title: "Message undeliverable", error_data: { details: "Recipient is unavailable." } }] } } }),
     "Meta error 131026: Message undeliverable: Recipient is unavailable."
@@ -35,6 +64,13 @@ async function run() {
   assert.deepEqual(
     parseCombinedScreeningAnswers("Current CTC: 12 LPA, Expected CTC: 16 LPA; Notice period: 30 days"),
     { current_ctc: "12 LPA", expected_ctc: "16 LPA", notice_period: "30 days" }
+  );
+  assert.deepEqual(
+    buildConfirmedCandidatePatch(
+      { current_ctc: "10 LPA", expected_ctc: "14 LPA" },
+      { current_ctc: "Confidential", expected_ctc: "Prefer not to share", notice_period: "30 days" }
+    ),
+    { patch: { notice_period: "30 days" }, replacedValues: {} }
   );
 
   const requestedUrls = [];
@@ -132,6 +168,9 @@ async function run() {
   assert.match(migration, /grant select, insert, update on table public\.whatsapp_screening_sessions to service_role/i);
   const callTimeMigration = fs.readFileSync(path.join(__dirname, "..", "sql", "2026-11-14-whatsapp-screening-call-time-state.sql"), "utf8");
   assert.match(callTimeMigration, /awaiting_call_time/i);
+  const clarificationMigration = fs.readFileSync(path.join(__dirname, "..", "sql", "2026-11-14-whatsapp-screening-clarification-state.sql"), "utf8");
+  assert.match(clarificationMigration, /awaiting_additional_input_choice/i);
+  assert.match(clarificationMigration, /claim_whatsapp_screening_post_completion_ack/i);
 }
 
 if (require.main === module) {
