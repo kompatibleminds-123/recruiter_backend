@@ -2641,7 +2641,7 @@ function parseNaturalFollowUpDate(text, baseDate = new Date()) {
   const hasRelativeDate = /\btoday\b|\btomorrow\b|\bday after tomorrow\b|\bnext week\b|\bthis week\b|\b1st week\b|\b2nd week\b|\byesterday\b/.test(value);
   const hasWeekday = /\b(?:this|next)?\s*(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(value);
   const hasExplicitDate = /\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/.test(value);
-  const hasTime = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b|\bmorning\b|\bevening\b/.test(value);
+  const hasTime = /\b(\d{1,2})(?:(?::|\.)(\d{2}))?\s*(am|pm)\b|\bmorning\b|\bevening\b/.test(value);
   if (!hasRelativeDate && !hasWeekday && !hasExplicitDate && !hasTime) return "";
   const result = new Date(baseDate);
   result.setSeconds(0, 0);
@@ -2690,7 +2690,7 @@ function parseNaturalFollowUpDate(text, baseDate = new Date()) {
     result.setDate(day);
   }
 
-  const timeMatch = value.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/);
+  const timeMatch = value.match(/\b(\d{1,2})(?:(?::|\.)(\d{2}))?\s*(am|pm)\b/);
   if (timeMatch) {
     let hours = Number(timeMatch[1]) % 12;
     const minutes = Number(timeMatch[2] || 0);
@@ -5839,6 +5839,30 @@ function toDateInputValue(value) {
   return local.toISOString().slice(0, 16);
 }
 
+function splitDateTimeInputValue(value) {
+  const match = String(value || "").match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})/);
+  if (!match) return { date: "", hour: "12", minute: "00", meridiem: "PM" };
+  const hour24 = Number(match[2]);
+  return {
+    date: match[1],
+    hour: String((hour24 % 12) || 12),
+    minute: match[3],
+    meridiem: hour24 >= 12 ? "PM" : "AM"
+  };
+}
+
+function updateDateTimeInputPart(currentValue, part, rawValue) {
+  const parts = splitDateTimeInputValue(currentValue);
+  if (part === "date") parts.date = String(rawValue || "").trim();
+  if (part === "hour") parts.hour = String(Math.max(1, Math.min(12, Number(rawValue) || 1)));
+  if (part === "minute") parts.minute = String(Math.max(0, Math.min(59, Number(rawValue) || 0))).padStart(2, "0");
+  if (part === "meridiem") parts.meridiem = String(rawValue || "AM").toUpperCase() === "PM" ? "PM" : "AM";
+  if (!parts.date) return "";
+  let hour24 = Number(parts.hour) % 12;
+  if (parts.meridiem === "PM") hour24 += 12;
+  return `${parts.date}T${String(hour24).padStart(2, "0")}:${parts.minute}`;
+}
+
 function toDateOnlyInputValue(value) {
   if (!value) return "";
   const direct = String(value || "").trim().match(/^(\d{4}-\d{2}-\d{2})/);
@@ -6755,6 +6779,14 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
   const normalizedStatus = String(candidateStatus || "").trim().toLowerCase();
   const shouldShowCalendar = isInterviewAlignedStatus(candidateStatus) || normalizedStatus === "offered" || normalizedStatus === "joined";
   const effectiveAtValue = normalizedStatus === "offered" ? expectedDoj : normalizedStatus === "joined" ? dateOfJoining : atValue;
+  const effectiveAtParts = splitDateTimeInputValue(effectiveAtValue);
+  const updateEffectiveAtValue = (nextValue) => {
+    if (normalizedStatus === "offered") setExpectedDoj(nextValue);
+    else if (normalizedStatus === "joined") setDateOfJoining(nextValue);
+    else setAtValue(nextValue);
+    inferSyncModeRef.current = "programmatic";
+    setInferText((current) => syncAssessmentNotesWithStatus(current, candidateStatus, nextValue, { offerAmount }));
+  };
   const statusHistoryPreview = (Array.isArray(assessment?.statusHistory) ? assessment.statusHistory : [])
     .slice()
     .sort((a, b) => new Date(b?.at || 0) - new Date(a?.at || 0))
@@ -6788,21 +6820,51 @@ function AssessmentStatusModal({ open, assessment, onClose, onSave }) {
           </select>
         </label>
         {shouldShowCalendar ? (
-          <label>
+          <div className="assessment-schedule-field">
             <span>{normalizedStatus === "offered" ? "Expected DOJ" : normalizedStatus === "joined" ? "Date of joining" : "Interview / status date"}</span>
-            <input
-              type="datetime-local"
-              value={effectiveAtValue}
-              onChange={(e) => {
-                const nextValue = e.target.value;
-                if (normalizedStatus === "offered") setExpectedDoj(nextValue);
-                else if (normalizedStatus === "joined") setDateOfJoining(nextValue);
-                else setAtValue(nextValue);
-                inferSyncModeRef.current = "programmatic";
-                setInferText((current) => syncAssessmentNotesWithStatus(current, candidateStatus, nextValue, { offerAmount }));
-              }}
-            />
-          </label>
+            <div className="assessment-schedule-editor">
+              <label>
+                <span>Date</span>
+                <input
+                  type="date"
+                  value={effectiveAtParts.date}
+                  onChange={(event) => updateEffectiveAtValue(updateDateTimeInputPart(effectiveAtValue, "date", event.target.value))}
+                />
+              </label>
+              <label>
+                <span>Hour</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="12"
+                  inputMode="numeric"
+                  value={effectiveAtParts.hour}
+                  onChange={(event) => updateEffectiveAtValue(updateDateTimeInputPart(effectiveAtValue, "hour", event.target.value))}
+                />
+              </label>
+              <label>
+                <span>Minutes</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="59"
+                  inputMode="numeric"
+                  value={Number(effectiveAtParts.minute)}
+                  onChange={(event) => updateEffectiveAtValue(updateDateTimeInputPart(effectiveAtValue, "minute", event.target.value))}
+                />
+              </label>
+              <label>
+                <span>AM / PM</span>
+                <select
+                  value={effectiveAtParts.meridiem}
+                  onChange={(event) => updateEffectiveAtValue(updateDateTimeInputPart(effectiveAtValue, "meridiem", event.target.value))}
+                >
+                  <option value="AM">AM</option>
+                  <option value="PM">PM</option>
+                </select>
+              </label>
+            </div>
+          </div>
         ) : null}
         {normalizedStatus === "offered" || normalizedStatus === "joined" ? (
           <label>
@@ -27487,16 +27549,30 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     }))
     .sort((a, b) => new Date(a.when) - new Date(b.when))
     .slice(0, 5);
+  const dashboardReminderByAssessmentId = new Map();
+  for (const item of [
+    ...(Array.isArray(state.dashboard?.agenda?.lists?.interviews) ? state.dashboard.agenda.lists.interviews : []),
+    ...(Array.isArray(dashboardAgendaData?.lists?.interviews) ? dashboardAgendaData.lists.interviews : [])
+  ]) {
+    const assessmentId = String(item?.assessmentId || item?.assessment_id || item?.id || "").trim();
+    if (assessmentId) dashboardReminderByAssessmentId.set(assessmentId, item);
+  }
   const scheduledInterviewItems = todaysInterviews
-    .map((item) => ({
-      key: `interview-${item.id}`,
-      type: "Interview",
-      title: item.candidateName || "Candidate",
-      subtitle: item.jdTitle || "Untitled role",
-      when: item.interviewAt,
-      raw: item,
-      action: () => setAssessmentStatusId(String(item.id || ""))
-    }))
+    .map((item) => {
+      const reminder = dashboardReminderByAssessmentId.get(String(item.id || "").trim()) || null;
+      return {
+        key: `interview-${item.id}`,
+        type: "Interview",
+        title: item.candidateName || "Candidate",
+        subtitle: item.jdTitle || "Untitled role",
+        when: item.interviewAt,
+        reminderId: reminder?.reminderId || reminder?.reminder_id || "",
+        reminderStatus: reminder?.reminderStatus || reminder?.reminder_status || "",
+        reminderReviewReason: reminder?.reminderReviewReason || reminder?.reminder_review_reason || "",
+        raw: item,
+        action: () => setAssessmentStatusId(String(item.id || ""))
+      };
+    })
     .sort((a, b) => new Date(a.when) - new Date(b.when));
   const liveDashboardAgendaSnapshot = useMemo(() => ({
     agendaRange,
