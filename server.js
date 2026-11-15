@@ -10252,6 +10252,15 @@ function isDashboardAgendaInterviewStatus(value = "") {
   return /\b(screening call aligned|l1 aligned|l2 aligned|l3 aligned|hr discussion aligned|hr interview aligned|aligned for interview|interview scheduled|interview feedback awaited|interview reject|shortlisted|offered|joined)\b/i.test(normalizeDashboardText(value));
 }
 
+function interviewReminderScheduleKey(assessmentId, interviewAt) {
+  const safeAssessmentId = String(assessmentId || "").trim();
+  const raw = String(interviewAt || "").trim();
+  if (!safeAssessmentId || !raw) return "";
+  const normalized = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(raw) ? `${raw}+05:30` : raw;
+  const timestamp = new Date(normalized).getTime();
+  return Number.isFinite(timestamp) ? `${safeAssessmentId}|${timestamp}` : "";
+}
+
 function buildDashboardAgendaPayload({
   user,
   range = "today",
@@ -10273,11 +10282,12 @@ function buildDashboardAgendaPayload({
   }
   const pendingNotes = Number(pendingNotesStats?.active || 0);
   const pendingApplicants = Number(applicantsPage?.total || 0);
-  const reminderByAssessmentId = new Map();
+  const reminderByAssessmentAndTime = new Map();
   for (const reminder of Array.isArray(interviewReminders) ? interviewReminders : []) {
     const assessmentId = String(reminder?.assessment_id || reminder?.assessmentId || "").trim();
-    if (!assessmentId || reminderByAssessmentId.has(assessmentId)) continue;
-    reminderByAssessmentId.set(assessmentId, reminder);
+    const key = interviewReminderScheduleKey(assessmentId, reminder?.interview_at || reminder?.interviewAt);
+    if (!key || reminderByAssessmentAndTime.has(key)) continue;
+    reminderByAssessmentAndTime.set(key, reminder);
   }
   const overdueFollowUps = (Array.isArray(capturedFollowUps) ? capturedFollowUps : [])
     .filter((item) => isDashboardRowInActorScope(item, user, "candidate"))
@@ -10310,7 +10320,7 @@ function buildDashboardAgendaPayload({
       offerDoj: joiningAtRaw
     }, "assessment");
     if (rank >= 2 && interviewAt && interviewAt >= from && interviewAt < to) {
-      const reminder = reminderByAssessmentId.get(String(assessment?.id || "").trim()) || null;
+      const reminder = reminderByAssessmentAndTime.get(interviewReminderScheduleKey(String(assessment?.id || "").trim(), interviewAtRaw)) || null;
       scheduledInterviews.push({
         ...base,
         at: interviewAtRaw,
@@ -21297,7 +21307,7 @@ const server = http.createServer(async (req, res) => {
         supabaseTableFetch(
           "whatsapp_interview_reminders",
           `?${[
-            "select=id,company_id,assessment_id,status,sent_at,review_reason,updated_at",
+            "select=id,company_id,assessment_id,interview_at,status,sent_at,review_reason,updated_at",
             `company_id=eq.${encodeURIComponent(companyId)}`,
             "order=updated_at.desc",
             "limit=1000"
@@ -24504,7 +24514,16 @@ const server = http.createServer(async (req, res) => {
       assertAssessmentReminderAccess(actor, assessment);
       const reminders = await listInterviewReminders(assessmentId, actor.companyId);
       const requestedReminderId = String(requestUrl.searchParams.get("reminderId") || "").trim();
-      const activeReminder = reminders.find((item) => String(item?.id || "") === requestedReminderId) || reminders[0] || null;
+      const currentInterviewKey = interviewReminderScheduleKey(
+        assessmentId,
+        assessment?.interviewAt || assessment?.interview_at || ""
+      );
+      const currentScheduleReminder = reminders.find((item) => interviewReminderScheduleKey(
+        assessmentId,
+        item?.interview_at || item?.interviewAt || ""
+      ) === currentInterviewKey) || null;
+      const requestedReminder = reminders.find((item) => String(item?.id || "") === requestedReminderId) || null;
+      const activeReminder = requestedReminder || currentScheduleReminder;
       const messages = activeReminder ? await listInterviewReminderMessages(activeReminder.id, actor.companyId) : [];
       sendJson(res, 200, { ok: true, result: { reminders, activeReminder, messages } });
     } catch (error) {
