@@ -12,6 +12,7 @@ const {
   isPlausibleNoticeAnswer,
   listCandidateScreenings,
   normalizeWhatsAppPhone,
+  notInterestedCompletionMessage,
   parseCombinedScreeningAnswers,
   parseEditSelection,
   parseInterest,
@@ -23,6 +24,7 @@ async function run() {
   assert.equal(normalizeWhatsAppPhone("98765 43210"), "919876543210");
   assert.equal(normalizeWhatsAppPhone("+44 7700 900123"), "447700900123");
   assert.equal(normalizeWhatsAppPhone("123"), "");
+  assert.ok(notInterestedCompletionMessage().includes("https://kompatibleminds.com/active-openings/"));
 
   assert.equal(parseInterest("Interested"), "interested");
   assert.equal(parseInterest("Please share the JD"), "share_jd");

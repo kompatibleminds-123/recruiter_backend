@@ -694,6 +694,15 @@ function interestButtons(sessionId) {
   ];
 }
 
+function notInterestedCompletionMessage() {
+  return [
+    "Thank you for letting us know. We will close this opportunity screening.",
+    "",
+    "You can explore our other active opportunities here:",
+    "https://kompatibleminds.com/active-openings/"
+  ].join("\n");
+}
+
 function recruiterCallButtons(sessionId) {
   return [
     { id: `ws:${sessionId}:call_yes`, title: "Yes" },
@@ -920,7 +929,7 @@ async function processInboundForSession(session, event, options = {}) {
       if (interest === "opt_out") await revokeSessionConsent(session, options);
       const attemptResult = await recordOutcome(session, "Not interested", `Not interested via WhatsApp screening for ${session.assigned_jd_title}.`, options);
       const closed = await updateSession(session.id, { status: interest === "opt_out" ? "opted_out" : "not_interested", current_question: "completed", completed_at: now }, options);
-      await sendAndRecord(closed, interest === "opt_out" ? "Your WhatsApp opt-out request has been recorded." : "Thank you for letting us know. We will close this opportunity screening.", "completed", "automation", options);
+      await sendAndRecord(closed, interest === "opt_out" ? "Your WhatsApp opt-out request has been recorded." : notInterestedCompletionMessage(), "completed", "automation", options);
       if (typeof options.onCandidateUpdated === "function") options.onCandidateUpdated(attemptResult?.candidate || null, attemptResult?.attempt || null, closed);
       return closed;
     }
@@ -1283,6 +1292,7 @@ module.exports = {
   listCandidateScreenings,
   listScreeningMessages,
   normalizeWhatsAppPhone,
+  notInterestedCompletionMessage,
   isPlausibleCtcAnswer,
   isCtcNonDisclosureAnswer,
   isPlausibleNoticeAnswer,
