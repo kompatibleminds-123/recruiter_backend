@@ -11412,6 +11412,7 @@ function PortalApp({ token, onLogout }) {
     reminderStatusKind: "",
     reminders: [],
     activeReminder: null,
+    selectedReminder: null,
     reminderMessages: []
   });
   const [linkedinTemplatePicker, setLinkedinTemplatePicker] = useState({
@@ -12594,6 +12595,7 @@ function PortalApp({ token, onLogout }) {
       reminderStatusKind: "",
       reminders: [],
       activeReminder: null,
+      selectedReminder: null,
       reminderMessages: []
     });
 
@@ -12772,18 +12774,21 @@ function PortalApp({ token, onLogout }) {
     }
   }
 
-  async function loadAssessmentInterviewReminderDetails(assessmentId) {
+  async function loadAssessmentInterviewReminderDetails(assessmentId, reminderId = "") {
     const safeAssessmentId = String(assessmentId || "").trim();
-    if (!safeAssessmentId) return { reminders: [], activeReminder: null, reminderMessages: [] };
-    const result = await api(`/company/assessments/${encodeURIComponent(safeAssessmentId)}/whatsapp-interview-reminders`, token);
+    if (!safeAssessmentId) return { reminders: [], activeReminder: null, selectedReminder: null, reminderMessages: [] };
+    const params = new URLSearchParams();
+    if (reminderId) params.set("reminderId", reminderId);
+    const result = await api(`/company/assessments/${encodeURIComponent(safeAssessmentId)}/whatsapp-interview-reminders${params.toString() ? `?${params.toString()}` : ""}`, token);
     return {
       reminders: Array.isArray(result?.reminders) ? result.reminders : [],
       activeReminder: result?.activeReminder || null,
+      selectedReminder: result?.selectedReminder || result?.activeReminder || null,
       reminderMessages: Array.isArray(result?.messages) ? result.messages : []
     };
   }
 
-  async function openAssessmentInterviewReminderPicker(row = {}) {
+  async function openAssessmentInterviewReminderPicker(row = {}, reminderId = "") {
     const assessmentId = String(row?.assessment_id || row?.assessmentId || row?.id || "").trim();
     if (!assessmentId) {
       setWhatsappTemplatePicker((current) => ({ ...current, reminderStatus: "Assessment is required before sending a reminder.", reminderStatusKind: "error" }));
@@ -12797,7 +12802,7 @@ function PortalApp({ token, onLogout }) {
       reminderStatusKind: ""
     }));
     try {
-      const details = await loadAssessmentInterviewReminderDetails(assessmentId);
+      const details = await loadAssessmentInterviewReminderDetails(assessmentId, reminderId);
       setWhatsappTemplatePicker((current) => current.open && current.mode === "interview_reminder"
         ? { ...current, ...details, reminderBusy: false, reminderStatus: "", reminderStatusKind: "" }
         : current);
@@ -12829,6 +12834,7 @@ function PortalApp({ token, onLogout }) {
       const details = {
         reminders: Array.isArray(result?.reminders) ? result.reminders : [],
         activeReminder: result?.reminder || null,
+        selectedReminder: result?.reminder || null,
         reminderMessages: Array.isArray(result?.messages) ? result.messages : []
       };
       setWhatsappTemplatePicker((current) => ({
@@ -33128,26 +33134,51 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   {whatsappTemplatePicker.row?.jd_title || "Interview"}
                   {whatsappTemplatePicker.row?.client_name ? ` | ${whatsappTemplatePicker.row.client_name}` : ""}
                 </p>
+                {(whatsappTemplatePicker.reminders || []).length ? (
+                  <label className="full">
+                    <span>Reminder history</span>
+                    <select
+                      value={String(whatsappTemplatePicker.selectedReminder?.id || whatsappTemplatePicker.activeReminder?.id || "")}
+                      disabled={whatsappTemplatePicker.reminderBusy}
+                      onChange={(event) => void openAssessmentInterviewReminderPicker(whatsappTemplatePicker.row || {}, event.target.value)}
+                    >
+                      {(whatsappTemplatePicker.reminders || []).map((reminder) => (
+                        <option key={reminder.id} value={reminder.id}>
+                          {reminder.interview_at ? new Date(reminder.interview_at).toLocaleString() : "Unknown schedule"} | {interviewReminderStatusLabel(reminder.status)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
                 <div className="whatsapp-template-picker__summary">
                   <div className="whatsapp-template-picker__summary-title">
-                    Interview: {whatsappTemplatePicker.row?.interview_at ? new Date(whatsappTemplatePicker.row.interview_at).toLocaleString() : "Not scheduled"}
+                    Interview: {(whatsappTemplatePicker.selectedReminder || whatsappTemplatePicker.activeReminder)?.interview_at
+                      ? new Date((whatsappTemplatePicker.selectedReminder || whatsappTemplatePicker.activeReminder).interview_at).toLocaleString()
+                      : whatsappTemplatePicker.row?.interview_at
+                        ? new Date(whatsappTemplatePicker.row.interview_at).toLocaleString()
+                        : "Not scheduled"}
                   </div>
                   <div className="whatsapp-template-picker__summary-subtitle">
-                    Reminder status: {interviewReminderStatusLabel(whatsappTemplatePicker.activeReminder?.status)}
+                    Reminder status: {interviewReminderStatusLabel((whatsappTemplatePicker.selectedReminder || whatsappTemplatePicker.activeReminder)?.status)}
                   </div>
-                  {whatsappTemplatePicker.activeReminder?.sent_at ? (
+                  {(whatsappTemplatePicker.selectedReminder || whatsappTemplatePicker.activeReminder)?.sent_at ? (
                     <div className="whatsapp-template-picker__summary-subtitle">
-                      Sent: {new Date(whatsappTemplatePicker.activeReminder.sent_at).toLocaleString()}
+                      Sent: {new Date((whatsappTemplatePicker.selectedReminder || whatsappTemplatePicker.activeReminder).sent_at).toLocaleString()}
                     </div>
                   ) : null}
-                  {whatsappTemplatePicker.activeReminder?.review_reason ? (
-                    <div className="status error" style={{ marginTop: 8 }}>
-                      Candidate response: {whatsappTemplatePicker.activeReminder.review_reason}
+                  {(whatsappTemplatePicker.selectedReminder || whatsappTemplatePicker.activeReminder)?.confirmed_at ? (
+                    <div className="whatsapp-template-picker__summary-subtitle">
+                      Confirmed: {new Date((whatsappTemplatePicker.selectedReminder || whatsappTemplatePicker.activeReminder).confirmed_at).toLocaleString()}
                     </div>
                   ) : null}
-                  {whatsappTemplatePicker.activeReminder?.last_error ? (
+                  {(whatsappTemplatePicker.selectedReminder || whatsappTemplatePicker.activeReminder)?.review_reason ? (
                     <div className="status error" style={{ marginTop: 8 }}>
-                      {whatsappTemplatePicker.activeReminder.last_error}
+                      Candidate response: {(whatsappTemplatePicker.selectedReminder || whatsappTemplatePicker.activeReminder).review_reason}
+                    </div>
+                  ) : null}
+                  {(whatsappTemplatePicker.selectedReminder || whatsappTemplatePicker.activeReminder)?.last_error ? (
+                    <div className="status error" style={{ marginTop: 8 }}>
+                      {(whatsappTemplatePicker.selectedReminder || whatsappTemplatePicker.activeReminder).last_error}
                     </div>
                   ) : null}
                 </div>

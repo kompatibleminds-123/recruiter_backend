@@ -24523,9 +24523,10 @@ const server = http.createServer(async (req, res) => {
         item?.interview_at || item?.interviewAt || ""
       ) === currentInterviewKey) || null;
       const requestedReminder = reminders.find((item) => String(item?.id || "") === requestedReminderId) || null;
-      const activeReminder = requestedReminder || currentScheduleReminder;
-      const messages = activeReminder ? await listInterviewReminderMessages(activeReminder.id, actor.companyId) : [];
-      sendJson(res, 200, { ok: true, result: { reminders, activeReminder, messages } });
+      const activeReminder = currentScheduleReminder;
+      const selectedReminder = requestedReminder || activeReminder || reminders[0] || null;
+      const messages = selectedReminder ? await listInterviewReminderMessages(selectedReminder.id, actor.companyId) : [];
+      sendJson(res, 200, { ok: true, result: { reminders, activeReminder, selectedReminder, messages } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
