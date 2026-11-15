@@ -50,6 +50,19 @@ const {
   setHumanTakeover
 } = require("./src/whatsapp-screening");
 const {
+  assertAssessmentReminderAccess,
+  disableInterviewReminder,
+  enableInterviewReminder,
+  getInterviewReminder,
+  listInterviewReminderMessages,
+  listInterviewReminders,
+  loadAssessmentCandidate,
+  processDueInterviewReminders,
+  processWhatsAppInterviewReminderEvents,
+  resolveInterviewReminder,
+  sendInterviewReminderNow
+} = require("./src/whatsapp-interview-reminders");
+const {
   assertCanCreatePlatformCompany,
   bootstrapAdmin,
   createCompanyClient,
@@ -10179,7 +10192,8 @@ function buildDashboardAgendaPayload({
   applicantsPage = null,
   capturedFollowUps = [],
   assessments = [],
-  events = []
+  events = [],
+  interviewReminders = []
 } = {}) {
   const { from, to } = getDashboardAgendaRangeBounds(range);
   const eventsByAssessmentId = new Map();
@@ -10192,6 +10206,12 @@ function buildDashboardAgendaPayload({
   }
   const pendingNotes = Number(pendingNotesStats?.active || 0);
   const pendingApplicants = Number(applicantsPage?.total || 0);
+  const reminderByAssessmentId = new Map();
+  for (const reminder of Array.isArray(interviewReminders) ? interviewReminders : []) {
+    const assessmentId = String(reminder?.assessment_id || reminder?.assessmentId || "").trim();
+    if (!assessmentId || reminderByAssessmentId.has(assessmentId)) continue;
+    reminderByAssessmentId.set(assessmentId, reminder);
+  }
   const overdueFollowUps = (Array.isArray(capturedFollowUps) ? capturedFollowUps : [])
     .filter((item) => isDashboardRowInActorScope(item, user, "candidate"))
     .filter((item) => {
@@ -10223,10 +10243,15 @@ function buildDashboardAgendaPayload({
       offerDoj: joiningAtRaw
     }, "assessment");
     if (rank >= 2 && interviewAt && interviewAt >= from && interviewAt < to) {
+      const reminder = reminderByAssessmentId.get(String(assessment?.id || "").trim()) || null;
       scheduledInterviews.push({
         ...base,
         at: interviewAtRaw,
-        kind: "interview"
+        kind: "interview",
+        reminderId: reminder?.id || "",
+        reminderStatus: reminder?.status || "",
+        reminderSentAt: reminder?.sent_at || "",
+        reminderReviewReason: reminder?.review_reason || ""
       });
     }
     if (rank >= 4 && joiningAt && joiningAt >= from && joiningAt < to && !/\bjoined\b/i.test(candidateStatus)) {
@@ -15877,6 +15902,24 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && requestUrl.pathname === "/internal/whatsapp/interview-reminders/tick") {
+    try {
+      const expectedSecret = String(process.env.WHATSAPP_REMINDER_CRON_SECRET || "").trim();
+      const authHeader = String(req.headers.authorization || "").trim();
+      const providedSecret = authHeader.replace(/^Bearer\s+/i, "").trim();
+      if (!expectedSecret || !providedSecret || !timingSafeEqualString(expectedSecret, providedSecret)) {
+        sendJson(res, 403, { ok: false, error: "Invalid cron authorization." });
+        return;
+      }
+      const result = await processDueInterviewReminders({ limit: 20 });
+      sendJson(res, 200, { ok: true, result });
+    } catch (error) {
+      console.warn("[whatsapp-interview-reminder] cron tick failed", String(error?.message || error || ""));
+      sendJson(res, 500, { ok: false, error: "Interview reminder processing failed." });
+    }
+    return;
+  }
+
   if (req.method === "GET" && (requestUrl.pathname === "/" || requestUrl.pathname === "")) {
     serveStaticFile(res, path.join(ROOT_PUBLIC_DIR, "index.html"));
     return;
@@ -16417,24 +16460,37 @@ const server = http.createServer(async (req, res) => {
       const persisted = await persistMetaWhatsappEvents(events);
       sendJson(res, 200, { ok: true, result: { received: persisted.received } });
       setImmediate(() => {
-        processWhatsAppScreeningEvents(events, {
-          onCandidateUpdated(candidate, attempt, session) {
-            if (!candidate || !session?.company_id) return;
-            emitCapturedStreamEvent(session.company_id, "candidate_attempt", {
-              candidateId: candidate.id,
-              candidate,
-              attempt,
-              whatsappScreeningSession: session
-            });
-            emitApplicantStreamEvent(session.company_id, "candidate_attempt", {
-              candidateId: candidate.id,
-              candidate,
-              attempt,
-              whatsappScreeningSession: session
-            });
-          }
-        }).catch((error) => {
-          console.warn("[whatsapp-screening] background processing failed", String(error?.message || error || ""));
+        void (async () => {
+          const reminderResult = await processWhatsAppInterviewReminderEvents(events, {
+            onReminderUpdated(reminder) {
+              if (!reminder?.company_id || !reminder?.assessment_id) return;
+              emitAssessmentStreamEvent(reminder.company_id, "whatsapp_interview_reminder", {
+                assessmentId: reminder.assessment_id,
+                reminder
+              });
+            }
+          });
+          const handled = new Set(reminderResult?.handledEventKeys || []);
+          const screeningEvents = events.filter((event) => !handled.has(event?.event_key));
+          await processWhatsAppScreeningEvents(screeningEvents, {
+            onCandidateUpdated(candidate, attempt, session) {
+              if (!candidate || !session?.company_id) return;
+              emitCapturedStreamEvent(session.company_id, "candidate_attempt", {
+                candidateId: candidate.id,
+                candidate,
+                attempt,
+                whatsappScreeningSession: session
+              });
+              emitApplicantStreamEvent(session.company_id, "candidate_attempt", {
+                candidateId: candidate.id,
+                candidate,
+                attempt,
+                whatsappScreeningSession: session
+              });
+            }
+          });
+        })().catch((error) => {
+          console.warn("[whatsapp-workflows] background processing failed", String(error?.message || error || ""));
         });
       });
     } catch (error) {
@@ -21139,7 +21195,7 @@ const server = http.createServer(async (req, res) => {
       ).trim();
       if (!companyId) throw new Error("Dashboard agenda missing company context.");
       const range = String(requestUrl.searchParams.get("range") || "today").trim().toLowerCase() || "today";
-      const [pendingNotesStats, applicantsPage, followUpCandidates, assessments, assessmentEvents] = await Promise.all([
+      const [pendingNotesStats, applicantsPage, followUpCandidates, assessments, assessmentEvents, interviewReminders] = await Promise.all([
         getCapturedStatsForUser(user, { filters: { activeStates: ["Active"] } }),
         listApplicantsForUser(user, { limit: 1, page: 1, includeConverted: false, filters: { activeStates: ["Active"] } }),
         supabaseTableFetch(
@@ -21170,6 +21226,16 @@ const server = http.createServer(async (req, res) => {
             "limit=10000"
           ].join("&")}`,
           { method: "GET" }
+        ).catch(() => []),
+        supabaseTableFetch(
+          "whatsapp_interview_reminders",
+          `?${[
+            "select=id,company_id,assessment_id,status,sent_at,review_reason,updated_at",
+            `company_id=eq.${encodeURIComponent(companyId)}`,
+            "order=updated_at.desc",
+            "limit=1000"
+          ].join("&")}`,
+          { method: "GET" }
         ).catch(() => [])
       ]);
       const agenda = buildDashboardAgendaPayload({
@@ -21179,7 +21245,8 @@ const server = http.createServer(async (req, res) => {
         applicantsPage,
         capturedFollowUps: Array.isArray(followUpCandidates) ? followUpCandidates : [],
         assessments: Array.isArray(assessments) ? assessments : [],
-        events: Array.isArray(assessmentEvents) ? assessmentEvents : []
+        events: Array.isArray(assessmentEvents) ? assessmentEvents : [],
+        interviewReminders: Array.isArray(interviewReminders) ? interviewReminders : []
       });
       sendJson(res, 200, {
         ok: true,
@@ -24358,6 +24425,104 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, result: { sessions } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && /^\/company\/assessments\/[^/]+\/whatsapp-interview-reminders$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const assessmentId = String(requestUrl.pathname.replace(/^\/company\/assessments\//, "").replace(/\/whatsapp-interview-reminders$/, "")).trim();
+      const assessment = await getAssessmentById({ companyId: actor.companyId, assessmentId });
+      assertAssessmentReminderAccess(actor, assessment);
+      const reminders = await listInterviewReminders(assessmentId, actor.companyId);
+      const requestedReminderId = String(requestUrl.searchParams.get("reminderId") || "").trim();
+      const activeReminder = reminders.find((item) => String(item?.id || "") === requestedReminderId) || reminders[0] || null;
+      const messages = activeReminder ? await listInterviewReminderMessages(activeReminder.id, actor.companyId) : [];
+      sendJson(res, 200, { ok: true, result: { reminders, activeReminder, messages } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && /^\/company\/assessments\/[^/]+\/whatsapp-interview-reminders\/enable$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const assessmentId = String(requestUrl.pathname.replace(/^\/company\/assessments\//, "").replace(/\/whatsapp-interview-reminders\/enable$/, "")).trim();
+      const assessment = await getAssessmentById({ companyId: actor.companyId, assessmentId });
+      assertAssessmentReminderAccess(actor, assessment);
+      const candidate = await loadAssessmentCandidate(assessment, actor.companyId);
+      const reminder = await enableInterviewReminder({ actor, assessment, candidate });
+      const reminders = await listInterviewReminders(assessmentId, actor.companyId);
+      sendJson(res, 201, { ok: true, result: { reminder, reminders, messages: [] } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && /^\/company\/assessments\/[^/]+\/whatsapp-interview-reminders\/send$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const assessmentId = String(requestUrl.pathname.replace(/^\/company\/assessments\//, "").replace(/\/whatsapp-interview-reminders\/send$/, "")).trim();
+      const assessment = await getAssessmentById({ companyId: actor.companyId, assessmentId });
+      assertAssessmentReminderAccess(actor, assessment);
+      const candidate = await loadAssessmentCandidate(assessment, actor.companyId);
+      const result = await sendInterviewReminderNow({ actor, assessment, candidate });
+      const reminders = await listInterviewReminders(assessmentId, actor.companyId);
+      const activeReminder = result?.reminder || reminders[0] || null;
+      const messages = activeReminder ? await listInterviewReminderMessages(activeReminder.id, actor.companyId) : [];
+      emitAssessmentStreamEvent(actor.companyId, "whatsapp_interview_reminder", {
+        assessmentId,
+        reminder: activeReminder
+      });
+      sendJson(res, result?.sent ? 201 : 200, {
+        ok: true,
+        result: {
+          reminder: activeReminder,
+          reminders,
+          messages,
+          sent: Boolean(result?.sent),
+          alreadySent: Boolean(result?.alreadySent)
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && /^\/company\/whatsapp-interview-reminders\/[^/]+\/disable$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const reminderId = String(requestUrl.pathname.replace(/^\/company\/whatsapp-interview-reminders\//, "").replace(/\/disable$/, "")).trim();
+      const reminder = await getInterviewReminder(reminderId, actor.companyId);
+      if (!reminder) throw new Error("Interview reminder was not found.");
+      const assessment = await getAssessmentById({ companyId: actor.companyId, assessmentId: reminder.assessment_id });
+      assertAssessmentReminderAccess(actor, assessment);
+      const updated = await disableInterviewReminder(reminderId, actor.companyId);
+      sendJson(res, 200, { ok: true, result: { reminder: updated } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && /^\/company\/whatsapp-interview-reminders\/[^/]+\/resolve$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const reminderId = String(requestUrl.pathname.replace(/^\/company\/whatsapp-interview-reminders\//, "").replace(/\/resolve$/, "")).trim();
+      const reminder = await getInterviewReminder(reminderId, actor.companyId);
+      if (!reminder) throw new Error("Interview reminder was not found.");
+      const assessment = await getAssessmentById({ companyId: actor.companyId, assessmentId: reminder.assessment_id });
+      assertAssessmentReminderAccess(actor, assessment);
+      const body = await readJsonBody(req);
+      const updated = await resolveInterviewReminder(reminderId, actor.companyId, actor.id, body.action, body.note || body.notes);
+      if (!updated) throw new Error("Only a review-required reminder can be resolved.");
+      sendJson(res, 200, { ok: true, result: { reminder: updated } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
     return;
   }

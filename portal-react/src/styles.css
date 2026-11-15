@@ -3316,6 +3316,32 @@ textarea { min-height: 92px; resize: vertical; }
   color: #667781;
   text-align: center;
 }
+
+.agenda-reminder-status {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.agenda-reminder-status--confirmed {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.agenda-reminder-status--review_required,
+.agenda-reminder-status--failed {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b42318;
+}
 .whatsapp-template-picker__option {
   display: flex;
   align-items: center;
