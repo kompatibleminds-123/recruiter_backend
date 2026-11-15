@@ -4486,6 +4486,55 @@ function normalizeApplicantBody(body = {}) {
   };
 }
 
+const APPLICANT_INTAKE_IDENTITY_LOCKS = new Map();
+
+function applicantIntakeIdentityKey(payload = {}) {
+  const companyId = String(payload.companyId || "").trim();
+  const phone = normalizeApplicantPhoneForMatch(payload.phone);
+  const email = normalizeApplicantEmailForMatch(payload.email);
+  if (!companyId || (!phone && !email)) return "";
+  return `${companyId}|${phone ? `phone:${phone}` : ""}|${email ? `email:${email}` : ""}`;
+}
+
+async function withApplicantIntakeIdentityLock(key, task) {
+  const safeKey = String(key || "").trim();
+  if (!safeKey) return task();
+  const previous = APPLICANT_INTAKE_IDENTITY_LOCKS.get(safeKey) || Promise.resolve();
+  let releaseCurrent;
+  const current = new Promise((resolve) => { releaseCurrent = resolve; });
+  const queueTail = previous.catch(() => undefined).then(() => current);
+  APPLICANT_INTAKE_IDENTITY_LOCKS.set(safeKey, queueTail);
+  await previous.catch(() => undefined);
+  try {
+    return await task();
+  } finally {
+    releaseCurrent();
+    if (APPLICANT_INTAKE_IDENTITY_LOCKS.get(safeKey) === queueTail) {
+      APPLICANT_INTAKE_IDENTITY_LOCKS.delete(safeKey);
+    }
+  }
+}
+
+function isInvalidApplicantJobTitle(value = "") {
+  const title = String(value || "").trim().toLowerCase().replace(/[._-]+/g, " ").replace(/\s+/g, " ");
+  if (!title) return true;
+  return /^(?:untitled(?: job| role| position)?|unknown(?: job| role| position)?|job|role|position|general|not specified|n\/?a|na|null|undefined)$/i.test(title);
+}
+
+function collapseLatestApplicantCandidates(rows = []) {
+  const seenEmails = new Set();
+  const seenPhones = new Set();
+  return (Array.isArray(rows) ? rows : []).filter((candidate) => {
+    const email = normalizeApplicantEmailForMatch(candidate?.email || candidate?.email_id || candidate?.emailId || "");
+    const phone = normalizeApplicantPhoneForMatch(candidate?.phone || candidate?.phone_number || candidate?.phoneNumber || "");
+    const duplicate = (email && seenEmails.has(email)) || (phone && seenPhones.has(phone));
+    if (duplicate) return false;
+    if (email) seenEmails.add(email);
+    if (phone) seenPhones.add(phone);
+    return true;
+  });
+}
+
 function signRecruiterApplyLink({ companyId, jobId, recruiterId, secret }) {
   const scopedSecret = String(secret || "").trim();
   const scopedCompanyId = String(companyId || "").trim();
@@ -4888,38 +4937,34 @@ async function listApplicantsForUser(user, options = {}) {
       baseFilterParts.push("used_in_assessment=not.is.true");
       baseFilterParts.push("assessment_id=is.null");
     }
-    const listQueryParts = [
-      ...baseFilterParts,
-      "order=created_at.desc",
-      `limit=${limit}`,
-      `offset=${offset}`
-    ];
-    const response = await fetch(`${url}/rest/v1/candidates?${listQueryParts.join("&")}`, {
-      headers: {
-        apikey: key,
-        Authorization: `Bearer ${key}`
+    const identityQueryParts = baseFilterParts.map((part) => String(part || "").startsWith("select=")
+      ? "select=id,email,phone,created_at"
+      : part);
+    identityQueryParts.push("order=created_at.desc");
+    const identityRows = await supabaseTableFetchAll(
+      "candidates",
+      `?${identityQueryParts.join("&")}`,
+      { method: "GET", pageSize: 1000, maxPages: 100 }
+    );
+    const canonicalRows = collapseLatestApplicantCandidates(identityRows);
+    const total = canonicalRows.length;
+    const pageIds = canonicalRows.slice(offset, offset + limit).map((item) => String(item?.id || "").trim()).filter(Boolean);
+    let rows = [];
+    if (pageIds.length) {
+      const pageRows = [];
+      for (let index = 0; index < pageIds.length; index += 100) {
+        const idBatch = pageIds.slice(index, index + 100);
+        const batch = await supabaseTableFetch(
+          "candidates",
+          `?select=*&id=in.(${idBatch.map((id) => encodeURIComponent(id)).join(",")})`,
+          { method: "GET" }
+        );
+        if (Array.isArray(batch)) pageRows.push(...batch);
       }
-    });
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Applied candidates read failed: ${response.status} ${errorText}`);
+      const byId = new Map((Array.isArray(pageRows) ? pageRows : []).map((item) => [String(item?.id || "").trim(), item]));
+      rows = pageIds.map((id) => byId.get(id)).filter(Boolean);
     }
-    const rows = await response.json();
-    const countFilterParts = baseFilterParts.filter((part) => !String(part || "").startsWith("select="));
-    const countResponse = await fetch(`${url}/rest/v1/candidates?select=id&${countFilterParts.join("&")}&limit=1`, {
-      headers: {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-        Prefer: "count=exact"
-      }
-    });
-    let total = 0;
-    if (countResponse.ok) {
-      const contentRange = String(countResponse.headers.get("content-range") || "");
-      const totalPart = contentRange.split("/")[1] || "";
-      total = Math.max(0, Number(totalPart || 0));
-    }
-    const items = (Array.isArray(rows) ? rows : []).map(sanitizeApplicantCandidate);
+    const items = rows.map(sanitizeApplicantCandidate);
     const totalPages = Math.max(1, Math.ceil(total / limit));
     return { items, total, page, limit, totalPages };
   }
@@ -4931,7 +4976,7 @@ async function listApplicantsForUser(user, options = {}) {
   });
   const filtered = rows.filter((candidate) => applyApplicantFiltersLocal(candidate, filters, includeConverted));
   const total = filtered.length;
-  const items = filtered.slice(offset, offset + limit).map(sanitizeApplicantCandidate);
+  const items = collapseLatestApplicantCandidates(filtered.slice(offset, offset + limit)).map(sanitizeApplicantCandidate);
   const totalPages = Math.max(1, Math.ceil(total / limit));
   return { items, total, page, limit, totalPages };
 }
@@ -6972,6 +7017,14 @@ async function moveAssessmentBackToCandidatePool({ actor, assessmentId }) {
 
 async function ingestApplicantSubmission(body, req) {
   const payload = normalizeApplicantBody(body);
+  return withApplicantIntakeIdentityLock(
+    applicantIntakeIdentityKey(payload),
+    () => ingestApplicantSubmissionUnlocked(body, req)
+  );
+}
+
+async function ingestApplicantSubmissionUnlocked(body, req) {
+  const payload = normalizeApplicantBody(body);
   if (!payload.companyId) {
     throw new Error("companyId is required.");
   }
@@ -6998,6 +7051,20 @@ async function ingestApplicantSubmission(body, req) {
     } catch {
       matchedJob = null;
     }
+  }
+  if (matchedJob && String(matchedJob?.companyId || matchedJob?.company_id || "").trim() !== payload.companyId) {
+    matchedJob = null;
+  }
+  if (payload.jobId && !matchedJob) {
+    throw new Error("The selected job opening is invalid, closed or unavailable.");
+  }
+  if (!matchedJob && isInvalidApplicantJobTitle(payload.jdTitle)) {
+    throw new Error("A valid job opening is required. Untitled applications are not accepted.");
+  }
+  if (matchedJob) {
+    payload.jobId = String(matchedJob.id || payload.jobId || "").trim();
+    payload.jdTitle = String(matchedJob.title || payload.jdTitle || "").trim();
+    payload.clientName = String(matchedJob.clientName || matchedJob.client_name || payload.clientName || "").trim();
   }
 
   let storedFile = null;
