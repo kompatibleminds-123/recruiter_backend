@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const {
   buildInterviewReminderTemplatePayload,
+  buildInterviewConfirmationFollowUp,
   formatInterviewDate,
   formatInterviewTime,
   reminderConfig,
@@ -42,6 +43,13 @@ function run() {
   assert.equal(payload.template.components[1].parameters[0].payload, "wi:4f7596f2-bcb5-4acf-a6e6-bbc7e0562225:confirm");
   assert.equal(reminderConfig({ templateLanguage: "en_US" }).templateLanguage, "en");
   assert.equal(typeof sendInterviewReminderNow, "function");
+  assert.equal(
+    buildInterviewConfirmationFollowUp(
+      { company_name: "ARISE IIP" },
+      { aboutCompany: "<p>Global industrial ecosystem developer &amp; operator.</p>" }
+    ),
+    "Thank you for confirming your interview.\n\nBest of luck!\n\nYou can read more about ARISE IIP:\nGlobal industrial ecosystem developer & operator."
+  );
 
   const migration = fs.readFileSync(path.join(__dirname, "..", "sql", "2026-11-13-whatsapp-interview-reminders.sql"), "utf8");
   assert.match(migration, /create table if not exists public\.whatsapp_interview_reminders/i);

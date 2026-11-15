@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { getAssessmentById } = require("./auth-store");
+const { getAssessmentById, listCompanyJobs } = require("./auth-store");
 const { listCandidates } = require("./quick-capture");
 const { normalizeWhatsAppPhone } = require("./whatsapp-screening");
 
@@ -50,6 +50,31 @@ async function supabaseRequest(table, query = "", options = {}) {
 
 function cleanText(value, maxLength = 500) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function readableCompanyContext(value, maxLength = 1400) {
+  return cleanText(
+    String(value || "")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>|<\/li>|<\/div>/gi, "\n")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&nbsp;/gi, " "),
+    maxLength
+  );
+}
+
+function buildInterviewConfirmationFollowUp(reminder, job = {}) {
+  const aboutCompany = readableCompanyContext(job?.aboutCompany || job?.about_company || job?.payload?.aboutCompany || "");
+  const companyName = cleanText(reminder?.company_name || job?.clientName || job?.client_name || "the company", 160);
+  return [
+    "Thank you for confirming your interview.",
+    "",
+    "Best of luck!",
+    aboutCompany ? "" : null,
+    aboutCompany ? `You can read more about ${companyName}:` : null,
+    aboutCompany || null
+  ].filter((line) => line !== null).join("\n");
 }
 
 function parseInterviewDate(value) {
@@ -451,6 +476,7 @@ async function insertReminderMessage(reminder, message, options = {}) {
       webhook_event_key: message.webhook_event_key || null,
       delivery_status: message.delivery_status || null,
       sent_at: message.sent_at || null,
+      failed_at: message.failed_at || null,
       created_at: message.created_at || new Date().toISOString()
     }
   });
@@ -623,7 +649,45 @@ async function processInterviewReminderMessage(event, reminder, action, options 
     created_at: now
   }, options);
   if (action === "confirm") {
-    return patchReminder(reminder.id, { status: "confirmed", confirmed_at: now, last_inbound_at: now, review_reason: null }, options);
+    let confirmed = await patchReminder(reminder.id, { status: "confirmed", confirmed_at: now, last_inbound_at: now, review_reason: null }, options);
+    let followUpBody = buildInterviewConfirmationFollowUp(reminder);
+    try {
+      if (reminder.assigned_jd_id) {
+        const jobs = await listCompanyJobs(reminder.company_id, "", { includeArchived: true, includeJobShortcuts: false });
+        const job = (Array.isArray(jobs) ? jobs : []).find((item) => String(item?.id || "") === String(reminder.assigned_jd_id || "")) || null;
+        followUpBody = buildInterviewConfirmationFollowUp(reminder, job || {});
+      }
+      const result = await sendMetaPayload({
+        to: reminder.candidate_wa_id,
+        type: "text",
+        text: { preview_url: false, body: followUpBody }
+      }, options);
+      const sentAt = new Date().toISOString();
+      await insertReminderMessage(reminder, {
+        direction: "outbound",
+        sender_type: "automation",
+        message_type: "text",
+        body: followUpBody,
+        meta_message_id: result?.messages?.[0]?.id || null,
+        delivery_status: "accepted",
+        sent_at: sentAt,
+        created_at: sentAt
+      }, options);
+      confirmed = await patchReminder(reminder.id, { last_outbound_at: sentAt, last_error: null }, options) || confirmed;
+    } catch (error) {
+      const failedAt = new Date().toISOString();
+      await insertReminderMessage(reminder, {
+        direction: "outbound",
+        sender_type: "automation",
+        message_type: "text",
+        body: followUpBody,
+        delivery_status: "failed",
+        failed_at: failedAt,
+        created_at: failedAt
+      }, options).catch(() => null);
+      confirmed = await patchReminder(reminder.id, { last_error: `Confirmation follow-up failed: ${cleanText(error?.message || error, 800)}` }, options).catch(() => confirmed) || confirmed;
+    }
+    return confirmed;
   }
   return patchReminder(reminder.id, {
     status: "review_required",
@@ -698,6 +762,7 @@ module.exports = {
   OPEN_REMINDER_STATUSES,
   REMINDER_TIMEZONE,
   assertAssessmentReminderAccess,
+  buildInterviewConfirmationFollowUp,
   buildInterviewReminderTemplatePayload,
   disableInterviewReminder,
   enableInterviewReminder,
