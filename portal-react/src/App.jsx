@@ -1229,6 +1229,19 @@ function isTerminalStatus(status) {
   ].includes(String(status || "").trim().toLowerCase());
 }
 
+function getWhatsappScreeningCardMeta(summary = null) {
+  if (!summary || typeof summary !== "object") return null;
+  const status = String(summary.status || "").trim().toLowerCase();
+  if (!status) return null;
+  if (status === "failed") return { tone: "failed", label: "WhatsApp screening sent · Failed" };
+  if (status === "completed") return { tone: "completed", label: "WhatsApp screening sent · Completed" };
+  if (["not_interested", "opted_out"].includes(status)) return { tone: "completed", label: "WhatsApp screening sent · Completed" };
+  if (summary.needs_recruiter_follow_up === true || ["review_required", "human_takeover"].includes(status)) {
+    return { tone: "review", label: "WhatsApp screening sent · Review required" };
+  }
+  return { tone: "pending", label: "WhatsApp screening sent · Awaited" };
+}
+
 function normalizeAssessmentStatusLabel(status) {
   const value = String(status || "").trim();
   if (!value) return "";
@@ -12730,11 +12743,37 @@ function PortalApp({ token, onLogout }) {
         screeningStatus: "Template submitted to WhatsApp. Delivery confirmation is pending.",
         screeningStatusKind: ""
       }));
-      setCapturedInlineStatus(candidateId, "WhatsApp screening submitted; delivery pending.", "");
+      if (activeSession) {
+        setCapturedListItems((current) => current.map((item) => String(item?.id || "") === candidateId
+          ? {
+              ...item,
+              whatsapp_screening_summary: {
+                ...activeSession,
+                sent_at: activeSession.last_outbound_at || activeSession.created_at || new Date().toISOString(),
+                sent_by_user_id: state.user?.id || null,
+                sent_by_name: state.user?.name || activeSession.assigned_to_name || ""
+              }
+            }
+          : item));
+      }
+      setCapturedInlineStatus(candidateId, "WhatsApp screening request saved.", "ok");
       window.setTimeout(() => {
         void loadWhatsappScreeningDetails(candidateId, sessionId, whatsappTemplatePicker.assignJobId)
           .then((details) => {
             const deliveryFailed = String(details?.activeSession?.status || "") === "failed";
+            if (details?.activeSession) {
+              setCapturedListItems((current) => current.map((item) => String(item?.id || "") === candidateId
+                ? {
+                    ...item,
+                    whatsapp_screening_summary: {
+                      ...details.activeSession,
+                      sent_at: details.activeSession.last_outbound_at || details.activeSession.created_at || new Date().toISOString(),
+                      sent_by_user_id: state.user?.id || null,
+                      sent_by_name: state.user?.name || details.activeSession.assigned_to_name || ""
+                    }
+                  }
+                : item));
+            }
             setWhatsappTemplatePicker((current) => current.open && current.mode === "screening" && String(current.candidateId || "") === candidateId
               ? { ...current, ...details, screeningStatus: "", screeningStatusKind: "" }
               : current);
@@ -29386,6 +29425,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   const whatsappCallRequested = ["yes", "true", "1"].includes(
                     String(whatsappScreeningAnswers["WhatsApp recruiter call requested"] || "").trim().toLowerCase()
                   );
+                  const whatsappScreeningCardMeta = getWhatsappScreeningCardMeta(item.whatsapp_screening_summary || item.whatsappScreeningSummary);
                   const linkedinRaw = String(item.linkedin || item.linkedinUrl || "").trim();
                   const linkedinHref = linkedinRaw
                     ? (/^https?:\/\//i.test(linkedinRaw) ? linkedinRaw : `https://${linkedinRaw}`)
@@ -29523,6 +29563,14 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                           </div>
                         </div>
                       </div>
+                      {whatsappScreeningCardMeta ? (
+                        <div className={`captured-whatsapp-status captured-whatsapp-status--${whatsappScreeningCardMeta.tone}`}>
+                          <span className="captured-whatsapp-status__icon" aria-hidden="true"><FaWhatsapp size={17} /></span>
+                          <span className="captured-whatsapp-status__content">
+                            <strong>{whatsappScreeningCardMeta.label}</strong>
+                          </span>
+                        </div>
+                      ) : null}
                       <details className="captured-note-summary-bar">
                         <summary>
                           <span className="captured-note-summary-badge">Summary</span>

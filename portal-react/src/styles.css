@@ -4513,6 +4513,65 @@ button:focus-visible {
   transform: translateZ(0);
 }
 
+.captured-whatsapp-status {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.55rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #b9d7ff;
+  border-radius: 10px;
+  background: #eef6ff;
+  color: #17478f;
+}
+
+.captured-whatsapp-status__icon {
+  display: inline-flex;
+  color: #25a85a;
+  flex: 0 0 auto;
+}
+
+.captured-whatsapp-status__content {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.55rem;
+  min-width: 0;
+  font-size: 0.8rem;
+}
+
+.captured-whatsapp-status__content strong {
+  font-size: 0.84rem;
+}
+
+.captured-whatsapp-status__content span {
+  color: #4b6387;
+}
+
+.captured-whatsapp-status--completed {
+  border-color: #a9dfbb;
+  background: #effaf3;
+  color: #14733a;
+}
+
+.captured-whatsapp-status--review {
+  border-color: #f2c471;
+  background: #fff8e8;
+  color: #8a4b00;
+}
+
+.captured-whatsapp-status--failed {
+  border-color: #f1b4b4;
+  background: #fff2f2;
+  color: #b42318;
+}
+
+.captured-whatsapp-status--closed {
+  border-color: #d7deea;
+  background: #f6f8fb;
+  color: #46556d;
+}
+
 .captured-note-card--inactive {
   border-color: rgba(120, 138, 170, 0.35);
   background: linear-gradient(180deg, rgba(242, 246, 255, 0.92) 0%, rgba(230, 236, 246, 0.96) 100%);

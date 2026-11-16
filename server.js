@@ -5265,6 +5265,49 @@ function applyCapturedFiltersLocal(row = {}, filters = {}, user = null) {
   return true;
 }
 
+async function attachLatestWhatsappScreeningSummaries(items = [], companyId = "", serviceConfig = {}) {
+  const rows = Array.isArray(items) ? items : [];
+  const scopedCompanyId = String(companyId || "").trim();
+  const { on, url, key } = serviceConfig || {};
+  const candidateIds = Array.from(new Set(rows.map((row) => String(row?.id || "").trim()).filter(Boolean)));
+  if (!rows.length || !scopedCompanyId || !on || !url || !key || !candidateIds.length) return rows;
+
+  try {
+    const candidateFilter = candidateIds.map((id) => encodeURIComponent(id)).join(",");
+    const sessionResponse = await fetch(
+      `${url}/rest/v1/whatsapp_screening_sessions?company_id=eq.${encodeURIComponent(scopedCompanyId)}&candidate_id=in.(${candidateFilter})&select=id,candidate_id,status,needs_recruiter_follow_up,last_outbound_at,last_inbound_at,completed_at,last_error,created_at,updated_at&order=created_at.desc&limit=${Math.max(25, candidateIds.length * 10)}`,
+      { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+    );
+    if (!sessionResponse.ok) return rows;
+    const sessions = await sessionResponse.json().catch(() => []);
+    const latestByCandidateId = new Map();
+    (Array.isArray(sessions) ? sessions : []).forEach((session) => {
+      const candidateId = String(session?.candidate_id || "").trim();
+      if (candidateId && !latestByCandidateId.has(candidateId)) latestByCandidateId.set(candidateId, session);
+    });
+
+    return rows.map((row) => {
+      const session = latestByCandidateId.get(String(row?.id || "").trim());
+      if (!session) return row;
+      return {
+        ...row,
+        whatsapp_screening_summary: {
+          id: session.id,
+          status: session.status || "",
+          needs_recruiter_follow_up: session.needs_recruiter_follow_up === true,
+          sent_at: session.last_outbound_at || session.created_at || null,
+          last_response_at: session.last_inbound_at || null,
+          completed_at: session.completed_at || null,
+          updated_at: session.updated_at || session.created_at || null,
+          last_error: session.last_error || ""
+        }
+      };
+    });
+  } catch (_error) {
+    return rows;
+  }
+}
+
 async function listCapturedForUser(user, options = {}) {
   const limit = Math.max(1, Math.min(200, Number(options.limit || 25)));
   const page = Math.max(1, Number(options.page || 1));
@@ -5376,10 +5419,11 @@ async function listCapturedForUser(user, options = {}) {
       const totalPart = contentRange.split("/")[1] || "";
       total = Math.max(0, Number(totalPart || 0));
     }
-    const items = (Array.isArray(rows) ? rows : []).map((row) => ({
+    const baseItems = (Array.isArray(rows) ? rows : []).map((row) => ({
       ...(row || {}),
       ...sanitizeApplicantCandidate(row)
     }));
+    const items = await attachLatestWhatsappScreeningSummaries(baseItems, companyId, { on, url, key });
     return { items, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) };
   }
 
