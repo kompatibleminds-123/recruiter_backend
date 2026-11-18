@@ -7128,14 +7128,15 @@ function NewDraftModal({
           <label><span>Highest qualification</span><input value={form.highest_education} onChange={(e) => onChange("highest_education", e.target.value)} placeholder="MBA / B.Tech / MCA" /></label>
           <label>
             <span>JD / Role</span>
-            <select value={form.jd_title} onChange={(e) => {
-              const selectedTitle = e.target.value;
-              const matchedJob = (jobs || []).find((job) => String(job.title || "") === String(selectedTitle));
-              onChange("jd_title", selectedTitle);
+            <select value={form.assigned_jd_id || ""} onChange={(e) => {
+              const selectedJobId = e.target.value;
+              const matchedJob = (jobs || []).find((job) => String(job.id || "") === String(selectedJobId));
+              onChange("assigned_jd_id", selectedJobId);
+              onChange("jd_title", matchedJob?.title || "");
               onChange("client_name", matchedJob?.clientName || "");
             }}>
               <option value="">Select JD / role</option>
-              {(jobs || []).map((job) => <option key={job.id} value={job.title}>{job.title}</option>)}
+              {(jobs || []).map((job) => <option key={job.id} value={job.id}>{job.title}</option>)}
             </select>
           </label>
           <label><span>Client</span><input value={form.client_name} readOnly /></label>
@@ -11012,6 +11013,7 @@ function PortalApp({ token, onLogout }) {
     current_ctc: "",
     notice_period: "",
     highest_education: "",
+    assigned_jd_id: "",
     jd_title: "",
     client_name: "",
     tags: "",
@@ -11034,6 +11036,7 @@ function PortalApp({ token, onLogout }) {
       current_ctc: "",
       notice_period: "",
       highest_education: "",
+      assigned_jd_id: "",
       jd_title: "",
       client_name: "",
       tags: "",
@@ -18708,6 +18711,9 @@ function PortalApp({ token, onLogout }) {
       linkedin: draftForm.linkedin || "",
       company_name: draftForm.company_name || state.user?.companyName || "",
       client_name: canonicalClientName || "",
+      assigned_jd_id: String(draftForm.assigned_jd_id || "").trim() || null,
+      assigned_jd_title: String(draftForm.jd_title || "").trim() || null,
+      jd_title: String(draftForm.jd_title || "").trim(),
       last_contact_outcome: importedAttemptOutcome && importedAttemptOutcome !== "No outcome" ? importedAttemptOutcome : "",
       assigned_to_user_id: assignedRecruiter?.id || "",
       assigned_to_name: assignedRecruiter?.name || "",
