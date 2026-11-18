@@ -32,9 +32,9 @@ const QUESTION_PROMPTS = {
 };
 
 function screeningConfig(options = {}) {
-  const templateName = String(options.templateName || process.env.META_WHATSAPP_SCREENING_TEMPLATE_NAME || "km_job_opportunity_screening").trim();
+  const templateName = String(options.templateName || process.env.META_WHATSAPP_SCREENING_TEMPLATE_NAME || "km_job_opportunity_screening_v2").trim();
   const configuredTemplateLanguage = String(options.templateLanguage || process.env.META_WHATSAPP_SCREENING_TEMPLATE_LANGUAGE || "en").trim() || "en";
-  const templateLanguage = templateName === "km_job_opportunity_screening" && /^(?:en_us|english)$/i.test(configuredTemplateLanguage)
+  const templateLanguage = /^km_job_opportunity_screening(?:_v2)?$/i.test(templateName) && /^(?:en_us|english)$/i.test(configuredTemplateLanguage)
     ? "en"
     : configuredTemplateLanguage;
   return {
@@ -143,6 +143,10 @@ function parseInterest(value, replyId = "") {
   if (yesNo === false || /\b(not interested|no thanks|not looking)\b/.test(text)) return "not_interested";
   if (yesNo === true || /\b(interested|explore|tell me more)\b/.test(text)) return "interested";
   return "";
+}
+
+function usesJdFirstTemplate(templateName) {
+  return String(templateName || "").trim().toLowerCase() === "km_job_opportunity_screening_v2";
 }
 
 function parseCombinedScreeningAnswers(value) {
@@ -334,6 +338,16 @@ function buildScreeningTemplatePayload(session, candidate, options = {}) {
     ? (job.publicPostingTitle || job.public_posting_title || job.title || session.assigned_jd_title)
     : (job.title || session.assigned_jd_title);
   const title = cleanAnswer(session.client_visibility === "anonymous" ? stripClientName(titleSource, clientName) : titleSource, 220);
+  const buttons = usesJdFirstTemplate(config.templateName)
+    ? [
+        { index: "0", payload: `ws:${session.id}:yes_share_jd` },
+        { index: "1", payload: `ws:${session.id}:not_interested` }
+      ]
+    : [
+        { index: "0", payload: `ws:${session.id}:interested` },
+        { index: "1", payload: `ws:${session.id}:share_jd` },
+        { index: "2", payload: `ws:${session.id}:not_interested` }
+      ];
   return {
     to: session.candidate_wa_id,
     type: "template",
@@ -348,9 +362,12 @@ function buildScreeningTemplatePayload(session, candidate, options = {}) {
             { type: "text", parameter_name: "job_title", text: title }
           ]
         },
-        { type: "button", sub_type: "quick_reply", index: "0", parameters: [{ type: "payload", payload: `ws:${session.id}:interested` }] },
-        { type: "button", sub_type: "quick_reply", index: "1", parameters: [{ type: "payload", payload: `ws:${session.id}:share_jd` }] },
-        { type: "button", sub_type: "quick_reply", index: "2", parameters: [{ type: "payload", payload: `ws:${session.id}:not_interested` }] }
+        ...buttons.map((button) => ({
+          type: "button",
+          sub_type: "quick_reply",
+          index: button.index,
+          parameters: [{ type: "payload", payload: button.payload }]
+        }))
       ]
     }
   };
@@ -874,6 +891,29 @@ async function sendQuestion(session, question, options = {}) {
   return sendAndRecord(session, QUESTION_PROMPTS[question], question, "automation", options);
 }
 
+async function shareJdOnce(session, now, options = {}) {
+  const answers = parseJsonObject(session.proposed_answers);
+  if (answers._jd_shared_at) return { session, shared: false };
+  let updated = await sendAndRecord(session, buildJobShareMessage(session), "jd_shared", "automation", options);
+  const nextAnswers = { ...answers, _jd_shared_at: now || new Date().toISOString() };
+  updated = await updateSession(updated.id, { proposed_answers: nextAnswers }, options) || updated;
+  const attemptResult = await recordOutcome(updated, "JD shared", `JD shared via WhatsApp screening for ${updated.assigned_jd_title}.`, options);
+  if (typeof options.onCandidateUpdated === "function") {
+    options.onCandidateUpdated(attemptResult?.candidate || null, attemptResult?.attempt || null, updated);
+  }
+  return { session: updated, shared: true };
+}
+
+async function resumeAfterJdShare(session, options = {}) {
+  const question = String(session.current_question || "").trim();
+  if (!question || question === "interest") {
+    return sendButtonsAndRecord(session, "Would you be interested in exploring this opportunity?", "interest", interestButtons(session.id), options);
+  }
+  if (question === "edit_selection") return sendEditSelection(session, options);
+  if (QUESTION_PROMPTS[question] || question === "confirmation") return sendQuestion(session, question, options);
+  return session;
+}
+
 async function handleUnclearAnswer(session, answers, question, repeatSender, options = {}) {
   const clarification = registerClarification(answers, question);
   if (!clarification.exceeded) {
@@ -934,16 +974,8 @@ async function processInboundForSession(session, event, options = {}) {
       return closed;
     }
     if (interest === "share_jd") {
-      session = await sendAndRecord(session, buildJobShareMessage(session), "jd_shared", "automation", options);
-      const attemptResult = await recordOutcome(session, "JD shared", `JD shared via WhatsApp screening for ${session.assigned_jd_title}.`, options);
-      if (typeof options.onCandidateUpdated === "function") options.onCandidateUpdated(attemptResult?.candidate || null, attemptResult?.attempt || null, session);
-      return sendButtonsAndRecord(
-        session,
-        "Would you be interested in exploring this opportunity?",
-        "interest",
-        interestButtons(session.id),
-        options
-      );
+      const shared = await shareJdOnce(session, now, options);
+      return resumeAfterJdShare(shared.session, options);
     }
     if (interest !== "interested") {
       const answers = parseJsonObject(session.proposed_answers);
@@ -955,8 +987,17 @@ async function processInboundForSession(session, event, options = {}) {
         options
       );
     }
-    session = await updateSession(session.id, { status: "awaiting_current_ctc", current_question: "current_ctc", proposed_answers: { interested: true } }, options);
+    session = await updateSession(session.id, {
+      status: "awaiting_current_ctc",
+      current_question: "current_ctc",
+      proposed_answers: { ...parseJsonObject(session.proposed_answers), interested: true }
+    }, options);
     return sendAndRecord(session, QUESTION_PROMPTS.current_ctc, "current_ctc", "automation", options);
+  }
+
+  if (parseInterest(text, replyId) === "share_jd") {
+    const shared = await shareJdOnce(session, now, options);
+    return resumeAfterJdShare(shared.session, options);
   }
 
   const parsedAnswers = parseCombinedScreeningAnswers(text);

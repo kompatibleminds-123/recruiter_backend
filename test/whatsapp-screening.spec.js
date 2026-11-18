@@ -27,6 +27,8 @@ async function run() {
   assert.ok(notInterestedCompletionMessage().includes("https://kompatibleminds.com/active-openings/"));
 
   assert.equal(parseInterest("Interested"), "interested");
+  assert.equal(parseInterest("Yes, Share JD"), "share_jd");
+  assert.equal(parseInterest("", "ws:session:yes_share_jd"), "share_jd");
   assert.equal(parseInterest("Please share the JD"), "share_jd");
   assert.equal(parseInterest("Not interested"), "not_interested");
   assert.equal(parseInterest("STOP"), "opt_out");
@@ -134,7 +136,7 @@ async function run() {
       clientName: "Secret Client"
     }
   }, { name: "Asha Sharma" });
-  assert.equal(templatePayload.template.name, "km_job_opportunity_screening");
+  assert.equal(templatePayload.template.name, "km_job_opportunity_screening_v2");
   assert.equal(templatePayload.template.language.code, "en");
   assert.equal(templatePayload.template.components.some((component) => component.type === "header"), false);
   assert.deepEqual(templatePayload.template.components[0], {
@@ -147,9 +149,24 @@ async function run() {
   assert.deepEqual(
     templatePayload.template.components.slice(1).map((component) => ({ index: component.index, payload: component.parameters[0].payload })),
     [
-      { index: "0", payload: "ws:screening-session-1:interested" },
-      { index: "1", payload: "ws:screening-session-1:share_jd" },
-      { index: "2", payload: "ws:screening-session-1:not_interested" }
+      { index: "0", payload: "ws:screening-session-1:yes_share_jd" },
+      { index: "1", payload: "ws:screening-session-1:not_interested" }
+    ]
+  );
+
+  const legacyTemplatePayload = buildScreeningTemplatePayload({
+    id: "screening-session-legacy",
+    candidate_wa_id: "919876543210",
+    client_visibility: "named",
+    assigned_jd_title: "Senior Backend Engineer",
+    job_snapshot: { title: "Senior Backend Engineer" }
+  }, { name: "Asha Sharma" }, { templateName: "km_job_opportunity_screening" });
+  assert.deepEqual(
+    legacyTemplatePayload.template.components.slice(1).map((component) => ({ index: component.index, payload: component.parameters[0].payload })),
+    [
+      { index: "0", payload: "ws:screening-session-legacy:interested" },
+      { index: "1", payload: "ws:screening-session-legacy:share_jd" },
+      { index: "2", payload: "ws:screening-session-legacy:not_interested" }
     ]
   );
 
