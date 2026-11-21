@@ -2796,6 +2796,35 @@ function readSignedCandidateShareToken(token) {
   }
 }
 
+function createApplicantCvUploadToken(payload) {
+  const encoded = Buffer.from(JSON.stringify({ ...payload, type: "applicant_cv_upload" }), "utf8").toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", getCvShareSecret())
+    .update(encoded)
+    .digest("base64url");
+  return `${encoded}.${signature}`;
+}
+
+function readApplicantCvUploadToken(token) {
+  const raw = String(token || "").trim();
+  if (!raw) return null;
+  const [encoded, signature] = raw.split(".");
+  if (!encoded || !signature) return null;
+  const expected = crypto
+    .createHmac("sha256", getCvShareSecret())
+    .update(encoded)
+    .digest("base64url");
+  if (!timingSafeEqualString(signature, expected)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    if (payload?.type !== "applicant_cv_upload") return null;
+    if (payload.expiresAt && Date.now() > Number(payload.expiresAt)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 function buildSharedCandidateProfile({ candidate = {}, assessment = null } = {}) {
   const c = candidate && typeof candidate === "object" ? candidate : {};
   const a = assessment && typeof assessment === "object" ? assessment : null;
@@ -4383,6 +4412,8 @@ function scheduleApplicantCvEnrichment({
       delete nextMeta.pendingFilename;
       delete nextMeta.pendingMimeType;
       delete nextMeta.pendingSizeBytes;
+      delete nextMeta.pendingCvUploadId;
+      delete nextMeta.pendingCvUploadStatus;
       nextMeta.searchDocV1 = deriveCandidateSearchDocV1FromParts({
         candidate: {
           ...(refreshed || {}),
@@ -4440,6 +4471,7 @@ function scheduleApplicantCvEnrichment({
             mimeType: persistedFile.mimeType || "",
             sizeBytes: persistedFile.sizeBytes || 0
           } : {}),
+          pendingCvUploadStatus: persistedFile ? "processing_failed" : "upload_failed",
           cvAnalysisCache: {
             ...(refreshedMeta?.cvAnalysisCache && typeof refreshedMeta.cvAnalysisCache === "object" ? refreshedMeta.cvAnalysisCache : {}),
             ...(persistedFile ? {
@@ -7150,7 +7182,8 @@ async function ingestApplicantSubmissionUnlocked(body, req) {
   };
 
   const normalized = null;
-  const parseStatus = payload.file?.fileData ? "submitted_with_cv_pending" : "submitted_without_cv";
+  const hasSubmittedCv = Boolean(payload.file?.fileData || payload.file?.filename);
+  const parseStatus = hasSubmittedCv ? "submitted_with_cv_pending" : "submitted_without_cv";
 
   const merged = mergeApplicantCandidateFields(parsed, normalized, payload);
   const metadata = {
@@ -7158,10 +7191,12 @@ async function ingestApplicantSubmissionUnlocked(body, req) {
     parseStatus,
     sourcePlatform: payload.sourcePlatform,
     sourceLabel: payload.sourceLabel,
-    ...(payload.file?.fileData ? {
+    ...(hasSubmittedCv ? {
       pendingFilename: String(payload.file.filename || "resume").trim(),
       pendingMimeType: String(payload.file.mimeType || "application/octet-stream").trim(),
-      pendingSizeBytes: Math.floor(String(payload.file.fileData || "").length * 0.75),
+      pendingSizeBytes: Number(payload.file.sizeBytes || 0) || Math.floor(String(payload.file.fileData || "").length * 0.75),
+      pendingCvUploadId: String(payload.file.uploadId || "").trim(),
+      pendingCvUploadStatus: payload.file?.fileData ? "received" : "awaiting_upload",
       cvAnalysisCache: {
         parsePending: true,
         updatedAt: new Date().toISOString()
@@ -22785,8 +22820,26 @@ const server = http.createServer(async (req, res) => {
       if (!(await isPortalCompanyApproved(companyId))) {
         throw new Error("Job apply link is available on SaaS Unlimited (Rs 4999).");
       }
-      const result = await ingestApplicantSubmission(body, req);
-      sendJson(res, 200, { ok: true, result });
+      const pendingCv = body?.file?.filename && !body?.file?.fileData
+        ? { ...body.file, uploadId: crypto.randomUUID() }
+        : null;
+      const intakeBody = pendingCv ? { ...body, file: pendingCv } : body;
+      const result = await ingestApplicantSubmission(intakeBody, req);
+      const candidateId = String(result?.id || "").trim();
+      const cvUpload = pendingCv && candidateId ? {
+        candidateId,
+        token: createApplicantCvUploadToken({
+          companyId,
+          candidateId,
+          jobId: String(body?.jobId || body?.job_id || "").trim(),
+          uploadId: pendingCv.uploadId,
+          filename: String(pendingCv.filename || "resume").trim(),
+          mimeType: String(pendingCv.mimeType || "application/octet-stream").trim(),
+          sizeBytes: Number(pendingCv.sizeBytes || 0) || 0,
+          expiresAt: Date.now() + (15 * 60 * 1000)
+        })
+      } : null;
+      sendJson(res, 200, { ok: true, result, cvUpload });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }
@@ -22802,8 +22855,12 @@ const server = http.createServer(async (req, res) => {
         throw new Error("Job apply link is available on SaaS Unlimited (Rs 4999).");
       }
       const body = await readJsonBody(req);
+      const pendingCv = body?.file?.filename && !body?.file?.fileData
+        ? { ...body.file, uploadId: crypto.randomUUID() }
+        : null;
       const payload = {
         ...(body || {}),
+        ...(pendingCv ? { file: pendingCv } : {}),
         companyId: job.companyId,
         jdTitle: String(body?.jdTitle || job.title || "").trim(),
         clientName: String(body?.clientName || job.clientName || "").trim(),
@@ -22819,7 +22876,91 @@ const server = http.createServer(async (req, res) => {
           "x-applicant-intake-secret": String((await getCompanyApplicantIntakeSecret(job.companyId))?.applicantIntakeSecret || "")
         }
       });
-      sendJson(res, 200, { ok: true, result });
+      const candidateId = String(result?.id || "").trim();
+      const cvUpload = pendingCv && candidateId ? {
+        candidateId,
+        token: createApplicantCvUploadToken({
+          companyId: String(job.companyId || "").trim(),
+          candidateId,
+          jobId: String(job.id || "").trim(),
+          uploadId: pendingCv.uploadId,
+          filename: String(pendingCv.filename || "resume").trim(),
+          mimeType: String(pendingCv.mimeType || "application/octet-stream").trim(),
+          sizeBytes: Number(pendingCv.sizeBytes || 0) || 0,
+          expiresAt: Date.now() + (15 * 60 * 1000)
+        })
+      } : null;
+      sendJson(res, 200, { ok: true, result, cvUpload });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && /^\/public\/applicants\/[^/]+\/cv$/.test(requestUrl.pathname)) {
+    try {
+      const candidateId = String(requestUrl.pathname.replace(/^\/public\/applicants\//, "").replace(/\/cv$/, "")).trim();
+      const body = await readJsonBody(req);
+      const grant = readApplicantCvUploadToken(body?.token);
+      if (!grant || String(grant.candidateId || "").trim() !== candidateId) {
+        throw new Error("Invalid or expired CV upload authorization.");
+      }
+      const companyId = String(grant.companyId || "").trim();
+      const uploadedFile = body?.file && typeof body.file === "object" ? body.file : null;
+      if (!companyId || !uploadedFile?.fileData) throw new Error("CV file is required.");
+      const filename = String(uploadedFile.filename || "").trim();
+      const mimeType = String(uploadedFile.mimeType || "application/octet-stream").trim();
+      const sizeBytes = Buffer.from(String(uploadedFile.fileData || ""), "base64").length;
+      if (filename !== String(grant.filename || "").trim()) throw new Error("CV filename does not match the authorized upload.");
+      if (String(grant.mimeType || "").trim() && mimeType !== String(grant.mimeType || "").trim()) {
+        throw new Error("CV type does not match the authorized upload.");
+      }
+      if (Number(grant.sizeBytes || 0) > 0 && sizeBytes !== Number(grant.sizeBytes)) {
+        throw new Error("CV size does not match the authorized upload.");
+      }
+      const candidate = (await listCandidates({ companyId, id: candidateId, limit: 1 }))[0] || null;
+      if (!candidate) throw new Error("Applicant was not found.");
+      const existingMeta = decodeApplicantMetadata(candidate);
+      if (String(existingMeta?.pendingCvUploadId || "").trim() !== String(grant.uploadId || "").trim()) {
+        throw new Error("This CV upload authorization is no longer active.");
+      }
+      const uploadStatus = String(existingMeta?.pendingCvUploadStatus || "").trim();
+      if (!['awaiting_upload', 'upload_failed'].includes(uploadStatus)) {
+        throw new Error("This CV upload has already been received.");
+      }
+      const claimedMeta = {
+        ...existingMeta,
+        pendingCvUploadStatus: "received",
+        cvAnalysisCache: {
+          ...(existingMeta?.cvAnalysisCache && typeof existingMeta.cvAnalysisCache === "object" ? existingMeta.cvAnalysisCache : {}),
+          parsePending: true,
+          updatedAt: new Date().toISOString()
+        }
+      };
+      await patchCandidate(candidateId, { raw_note: encodeApplicantMetadata(claimedMeta) }, { companyId });
+      let matchedJob = null;
+      if (grant.jobId) {
+        matchedJob = await getPublicCompanyJob(String(grant.jobId)).catch(() => null);
+        if (matchedJob && String(matchedJob?.companyId || matchedJob?.company_id || "").trim() !== companyId) matchedJob = null;
+      }
+      scheduleApplicantCvEnrichment({
+        companyId,
+        candidateId,
+        candidate,
+        payload: {
+          candidateName: candidate.name || "",
+          totalExperience: candidate.experience || "",
+          sourcePlatform: candidate.source || "hosted_apply",
+          jobId: String(grant.jobId || "").trim(),
+          jdTitle: matchedJob?.title || candidate.assigned_jd_title || candidate.jd_title || "",
+          clientName: matchedJob?.clientName || candidate.client_name || "",
+          file: uploadedFile,
+          parseWithAi: true
+        },
+        matchedJob,
+        existingMeta: claimedMeta
+      });
+      sendJson(res, 202, { ok: true, result: { candidateId, status: "processing" } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
     }

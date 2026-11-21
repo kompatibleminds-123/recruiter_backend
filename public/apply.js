@@ -343,12 +343,12 @@
     $("applyForm").addEventListener("submit", async (event) => {
       event.preventDefault();
       const submit = $("applySubmit");
+      let applicationSubmitted = false;
       try {
         submit.disabled = true;
         setStatus("Submitting application...");
 
         const cvFile = $("cvFile")?.files?.[0] || null;
-        const file = await readFileAsBase64(cvFile);
         const assignment = getApplyAssignment();
 
         const payload = {
@@ -370,7 +370,11 @@
           screeningAnswers: $("screeningAnswers").value.trim(),
           customFields: readCustomFields(),
           skills: $("skills").value.split(",").map((item) => item.trim()).filter(Boolean),
-          file
+          file: cvFile ? {
+            filename: cvFile.name,
+            mimeType: cvFile.type || "application/octet-stream",
+            sizeBytes: cvFile.size
+          } : null
         };
 
         const response = await fetch(`/public/jobs/${encodeURIComponent(jobId)}/apply`, {
@@ -384,6 +388,26 @@
         if (!response.ok || !data?.ok) {
           throw new Error(data?.error || "Application failed.");
         }
+        applicationSubmitted = true;
+        if (cvFile) {
+          const upload = data?.cvUpload;
+          if (!upload?.candidateId || !upload?.token) {
+            throw new Error("Application was received, but CV upload authorization was not created.");
+          }
+          setStatus("Application received. Uploading your CV — please keep this page open.", "ok");
+          const encodedFile = await readFileAsBase64(cvFile);
+          const uploadResponse = await fetch(`/public/applicants/${encodeURIComponent(upload.candidateId)}/cv`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ token: upload.token, file: encodedFile })
+          });
+          const uploadData = await readJsonSafely(uploadResponse);
+          if (!uploadResponse.ok || !uploadData?.ok) {
+            throw new Error(uploadData?.error || "CV upload failed.");
+          }
+        }
         setStatus(
           cvFile
             ? "Application submitted successfully. Your CV is being processed."
@@ -392,7 +416,12 @@
         );
         $("applyForm").reset();
       } catch (error) {
-        setStatus(String(error?.message || error), "error");
+        setStatus(
+          applicationSubmitted
+            ? `Application submitted, but the CV could not be uploaded: ${String(error?.message || error)}`
+            : String(error?.message || error),
+          "error"
+        );
       } finally {
         submit.disabled = false;
       }
