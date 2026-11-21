@@ -4284,7 +4284,13 @@ function scheduleApplicantCvEnrichment({
   if (!safeCompanyId || !safeCandidateId || !uploadedFile?.fileData) return;
 
   setImmediate(async () => {
+    let persistedFile = storedFile;
     try {
+      if (!persistedFile) {
+        persistedFile = await storeUploadedFile(uploadedFile, {
+          objectPrefix: `applicants/${safeCompanyId}/${payload?.jdTitle || payload?.jobId || "general"}`
+        });
+      }
       const parsed = await parseCandidatePayload({
         sourceType: "cv",
         file: uploadedFile,
@@ -4352,28 +4358,31 @@ function scheduleApplicantCvEnrichment({
         screeningAnswers: String(payload?.screeningAnswers || refreshedMeta?.screeningAnswers || "").trim(),
         customFields: payload?.customFields || refreshedMeta?.customFields || {},
         applicantState: String(refreshedMeta?.applicantState || "new").trim() || "new",
-        fileProvider: storedFile?.provider || refreshedMeta?.fileProvider || "",
-        fileKey: storedFile?.key || refreshedMeta?.fileKey || "",
-        fileUrl: storedFile?.url || refreshedMeta?.fileUrl || "",
-        filename: storedFile?.filename || refreshedMeta?.filename || "",
-        mimeType: storedFile?.mimeType || refreshedMeta?.mimeType || "",
-        sizeBytes: storedFile?.sizeBytes || refreshedMeta?.sizeBytes || 0,
+        fileProvider: persistedFile?.provider || refreshedMeta?.fileProvider || "",
+        fileKey: persistedFile?.key || refreshedMeta?.fileKey || "",
+        fileUrl: persistedFile?.url || refreshedMeta?.fileUrl || "",
+        filename: persistedFile?.filename || refreshedMeta?.filename || "",
+        mimeType: persistedFile?.mimeType || refreshedMeta?.mimeType || "",
+        sizeBytes: persistedFile?.sizeBytes || refreshedMeta?.sizeBytes || 0,
         inferredSearchTags,
         cvAnalysisCache: {
           ...(refreshedMeta?.cvAnalysisCache && typeof refreshedMeta.cvAnalysisCache === "object" ? refreshedMeta.cvAnalysisCache : {}),
-          storedFile: storedFile ? {
-            provider: storedFile.provider || "",
-            key: storedFile.key || "",
-            url: storedFile.url || "",
-            filename: storedFile.filename || "",
-            mimeType: storedFile.mimeType || "",
-            sizeBytes: storedFile.sizeBytes || 0
+          storedFile: persistedFile ? {
+            provider: persistedFile.provider || "",
+            key: persistedFile.key || "",
+            url: persistedFile.url || "",
+            filename: persistedFile.filename || "",
+            mimeType: persistedFile.mimeType || "",
+            sizeBytes: persistedFile.sizeBytes || 0
           } : (refreshedMeta?.cvAnalysisCache?.storedFile || null),
           parsePending: false,
           updatedAt: new Date().toISOString(),
           result: cvResultForSearch || null
         }
       };
+      delete nextMeta.pendingFilename;
+      delete nextMeta.pendingMimeType;
+      delete nextMeta.pendingSizeBytes;
       nextMeta.searchDocV1 = deriveCandidateSearchDocV1FromParts({
         candidate: {
           ...(refreshed || {}),
@@ -4423,8 +4432,26 @@ function scheduleApplicantCvEnrichment({
         const nextMeta = {
           ...(existingMeta && typeof existingMeta === "object" ? existingMeta : {}),
           ...(refreshedMeta && typeof refreshedMeta === "object" ? refreshedMeta : {}),
+          ...(persistedFile ? {
+            fileProvider: persistedFile.provider || "",
+            fileKey: persistedFile.key || "",
+            fileUrl: persistedFile.url || "",
+            filename: persistedFile.filename || "",
+            mimeType: persistedFile.mimeType || "",
+            sizeBytes: persistedFile.sizeBytes || 0
+          } : {}),
           cvAnalysisCache: {
             ...(refreshedMeta?.cvAnalysisCache && typeof refreshedMeta.cvAnalysisCache === "object" ? refreshedMeta.cvAnalysisCache : {}),
+            ...(persistedFile ? {
+              storedFile: {
+                provider: persistedFile.provider || "",
+                key: persistedFile.key || "",
+                url: persistedFile.url || "",
+                filename: persistedFile.filename || "",
+                mimeType: persistedFile.mimeType || "",
+                sizeBytes: persistedFile.sizeBytes || 0
+              }
+            } : {}),
             parsePending: false,
             parseError: String(error?.message || error || "Unknown background parse error."),
             updatedAt: new Date().toISOString()
@@ -7122,11 +7149,6 @@ async function ingestApplicantSubmissionUnlocked(body, req) {
     timeline: []
   };
 
-  if (payload.file?.fileData) {
-    storedFile = await storeUploadedFile(payload.file, {
-      objectPrefix: `applicants/${payload.companyId}/${payload.jdTitle || payload.jobId || "general"}`
-    });
-  }
   const normalized = null;
   const parseStatus = payload.file?.fileData ? "submitted_with_cv_pending" : "submitted_without_cv";
 
@@ -7136,6 +7158,15 @@ async function ingestApplicantSubmissionUnlocked(body, req) {
     parseStatus,
     sourcePlatform: payload.sourcePlatform,
     sourceLabel: payload.sourceLabel,
+    ...(payload.file?.fileData ? {
+      pendingFilename: String(payload.file.filename || "resume").trim(),
+      pendingMimeType: String(payload.file.mimeType || "application/octet-stream").trim(),
+      pendingSizeBytes: Math.floor(String(payload.file.fileData || "").length * 0.75),
+      cvAnalysisCache: {
+        parsePending: true,
+        updatedAt: new Date().toISOString()
+      }
+    } : {}),
     ...(storedFile ? {
       fileProvider: storedFile.provider || "",
       fileKey: storedFile.key || "",
@@ -7256,6 +7287,10 @@ async function ingestApplicantSubmissionUnlocked(body, req) {
     const nextMeta = {
       ...(existingMeta || {}),
       ...(metadata || {}),
+      cvAnalysisCache: {
+        ...(existingMeta?.cvAnalysisCache && typeof existingMeta.cvAnalysisCache === "object" ? existingMeta.cvAnalysisCache : {}),
+        ...(metadata?.cvAnalysisCache && typeof metadata.cvAnalysisCache === "object" ? metadata.cvAnalysisCache : {})
+      },
       appliedToo: true,
       applied_too: true,
       applicationSource: appliedSource,
@@ -7327,19 +7362,17 @@ async function ingestApplicantSubmissionUnlocked(body, req) {
     Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
 
     const updated = await patchCandidate(String(existing.id), patch, { companyId: payload.companyId });
-    try {
-      await upsertCandidateSearchDocV1({
-        companyId: payload.companyId,
-        candidateId: String(existing.id || "").trim(),
-        docV1: String(nextMeta.searchDocV1 || "").trim(),
-        cvTextFull: deriveCandidateCvTerms({
-          rawText: String(parsed?.rawText || ""),
-          cvResult: cvResultForSearch,
-          inferredSearchTags,
-          skills: Array.isArray(existing?.skills) ? existing.skills : Array.isArray(merged?.skills) ? merged.skills : []
-        })
-      });
-    } catch (_) {}
+    deferCandidateSearchDocUpsert({
+      companyId: payload.companyId,
+      candidateId: String(existing.id || "").trim(),
+      docV1: String(nextMeta.searchDocV1 || "").trim(),
+      cvTextFull: deriveCandidateCvTerms({
+        rawText: String(parsed?.rawText || ""),
+        cvResult: cvResultForSearch,
+        inferredSearchTags,
+        skills: Array.isArray(existing?.skills) ? existing.skills : Array.isArray(merged?.skills) ? merged.skills : []
+      })
+    });
     emitCapturedStreamEvent(payload.companyId, "candidate_changed", {
       candidateId: String(updated?.id || existing?.id || "").trim() || undefined,
       candidate: updated
@@ -7434,19 +7467,17 @@ async function ingestApplicantSubmissionUnlocked(body, req) {
     },
     { companyId: payload.companyId }
   );
-  try {
-    await upsertCandidateSearchDocV1({
-      companyId: payload.companyId,
-      candidateId: String(candidate?.id || "").trim(),
-      docV1: String(metadata.searchDocV1 || "").trim(),
-      cvTextFull: deriveCandidateCvTerms({
-        rawText: String(parsed?.rawText || ""),
-        cvResult: cvResultForSearch,
-        inferredSearchTags,
-        skills: Array.isArray(merged?.skills) ? merged.skills : []
-      })
-    });
-  } catch (_) {}
+  deferCandidateSearchDocUpsert({
+    companyId: payload.companyId,
+    candidateId: String(candidate?.id || "").trim(),
+    docV1: String(metadata.searchDocV1 || "").trim(),
+    cvTextFull: deriveCandidateCvTerms({
+      rawText: String(parsed?.rawText || ""),
+      cvResult: cvResultForSearch,
+      inferredSearchTags,
+      skills: Array.isArray(merged?.skills) ? merged.skills : []
+    })
+  });
   emitCapturedStreamEvent(payload.companyId, "candidate_created", {
     candidateId: String(candidate?.id || "").trim() || undefined,
     candidate

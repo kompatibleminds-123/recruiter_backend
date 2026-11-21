@@ -384,7 +384,12 @@
         if (!response.ok || !data?.ok) {
           throw new Error(data?.error || "Application failed.");
         }
-        setStatus("Application submitted successfully.", "ok");
+        setStatus(
+          cvFile
+            ? "Application submitted successfully. Your CV is being processed."
+            : "Application submitted successfully.",
+          "ok"
+        );
         $("applyForm").reset();
       } catch (error) {
         setStatus(String(error?.message || error), "error");
