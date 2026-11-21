@@ -384,14 +384,27 @@ async function findDuplicateCandidate(candidate, options = {}) {
 
   const { url, serviceRoleKey } = getSupabaseConfig();
   if (url && serviceRoleKey) {
-    // Do not cap duplicate protection at the most recent 2,000 records.
-    // A client can have an older matching candidate, so walk every page and
-    // stop as soon as one exact phone/email/LinkedIn match is found.
+    // Narrow the Supabase scan to likely identity matches. The final comparison
+    // below still uses normalized exact matching, so a shared phone suffix alone
+    // can never be treated as a duplicate.
+    const identityFilters = [];
+    if (email) identityFilters.push(`email.ilike.${encodeURIComponent(email)}`);
+    if (phone) {
+      const phoneSuffix = phone.slice(-4);
+      if (phoneSuffix) identityFilters.push(`phone.like.${encodeURIComponent(`*${phoneSuffix}*`)}`);
+    }
+    if (linkedin) {
+      const linkedinSlug = linkedin.split("/").filter(Boolean).pop() || linkedin;
+      if (linkedinSlug) identityFilters.push(`linkedin.ilike.${encodeURIComponent(`*${linkedinSlug}*`)}`);
+    }
     const pageSize = 1000;
     for (let offset = 0; ; offset += pageSize) {
       const filters = ["select=*", "order=created_at.desc,id.desc", `limit=${pageSize}`, `offset=${offset}`];
       if (companyId) {
         filters.push(`company_id=eq.${encodeURIComponent(companyId)}`);
+      }
+      if (identityFilters.length) {
+        filters.push(`or=(${identityFilters.join(",")})`);
       }
       const response = await fetch(`${url}/rest/v1/candidates?${filters.join("&")}`, {
         headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` }
