@@ -302,6 +302,21 @@ body {
   color: var(--ink);
 }
 
+body.jobs-homepage-embed .jobs-shell {
+  max-width: none;
+  padding: 8px 0 20px;
+}
+
+body.jobs-homepage-embed .jobs-head,
+body.jobs-homepage-embed .jobs-search,
+body.jobs-homepage-embed .jobs-status {
+  display: none;
+}
+
+body.jobs-homepage-embed .jobs-layout {
+  grid-template-columns: minmax(0, 1fr) 380px;
+}
+
 @media (max-width: 900px) {
   .jobs-shell {
     padding: 28px 18px 36px;
@@ -328,5 +343,9 @@ body {
 
   .job-spotlight {
     position: static;
+  }
+
+  body.jobs-homepage-embed .jobs-layout {
+    grid-template-columns: 1fr;
   }
 }

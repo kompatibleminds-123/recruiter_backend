@@ -4,6 +4,7 @@ const path = require("path");
 const vm = require("vm");
 
 async function run() {
+  const bodyClasses = [];
   const elements = new Map();
   const makeElement = () => ({
     value: "",
@@ -30,6 +31,7 @@ async function run() {
     encodeURIComponent,
     console,
     document: {
+      body: { classList: { add(value) { bodyClasses.push(value); } } },
       documentElement: { style: { setProperty() {} } },
       getElementById(id) { return elements.get(id) || null; },
       title: ""
@@ -48,7 +50,7 @@ async function run() {
     window: {
       location: {
         pathname: "/jobs/company/kompatible-minds",
-        search: "?search_keywords=SAP+ABAP&search_location=Noida"
+        search: "?layout=homepage&search_keywords=SAP+ABAP&search_location=Noida"
       },
       setInterval() { return 1; },
       clearInterval() {}
@@ -62,6 +64,7 @@ async function run() {
   assert.strictEqual(elements.get("keywordSearch").value, "SAP ABAP");
   assert.strictEqual(elements.get("locationSearch").value, "Noida");
   assert.strictEqual(requestedUrl, "/public/company-jobs/kompatible-minds?mode=anonymous");
+  assert.deepStrictEqual(bodyClasses, ["jobs-homepage-embed"]);
   console.log("public jobs board query prefill test passed");
 }
 

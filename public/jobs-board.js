@@ -4,6 +4,7 @@
   let activeJobId = "";
   let boardLogoUrl = "/portal-app/favicon.png";
   let spotlightTimer = null;
+  let boardLayout = "default";
 
   function readSlug() {
     const parts = String(window.location.pathname || "").split("/").filter(Boolean);
@@ -15,6 +16,12 @@
     return String(new URLSearchParams(window.location.search).get("mode") || "").trim().toLowerCase() === "client"
       ? "client"
       : "anonymous";
+  }
+
+  function readLayout() {
+    return String(new URLSearchParams(window.location.search).get("layout") || "").trim().toLowerCase() === "homepage"
+      ? "homepage"
+      : "default";
   }
 
   function readInitialFilters() {
@@ -133,12 +140,13 @@
     const list = $("jobsList");
     const keyword = String($("keywordSearch")?.value || "").trim().toLowerCase();
     const location = String($("locationSearch")?.value || "").trim().toLowerCase();
-    const jobs = allJobs.filter((job) => {
+    const matchingJobs = allJobs.filter((job) => {
       const keywordOk = !keyword || jobSearchHay(job).includes(keyword);
       const locationOk = !location || String(`${job.location || ""} ${job.workMode || ""}`).toLowerCase().includes(location);
       return keywordOk && locationOk;
     });
-    if (status) status.textContent = jobs.length ? `${jobs.length} active role${jobs.length === 1 ? "" : "s"}` : "No matching jobs right now.";
+    const jobs = boardLayout === "homepage" ? matchingJobs.slice(0, 4) : matchingJobs;
+    if (status) status.textContent = matchingJobs.length ? `${matchingJobs.length} active role${matchingJobs.length === 1 ? "" : "s"}` : "No matching jobs right now.";
     if (!list) return;
     list.innerHTML = jobs.map((job) => `
       <article class="job-card${String(job.id) === activeJobId ? " active" : ""}" data-job-id="${escapeHtml(job.id)}">
@@ -172,6 +180,7 @@
   async function init() {
     const slug = readSlug();
     const mode = readMode();
+    boardLayout = readLayout();
     const initialFilters = readInitialFilters();
     const status = $("jobsStatus");
     if (!slug) {
@@ -180,6 +189,7 @@
     }
     if ($("keywordSearch")) $("keywordSearch").value = initialFilters.keyword;
     if ($("locationSearch")) $("locationSearch").value = initialFilters.location;
+    if (boardLayout === "homepage") document.body.classList.add("jobs-homepage-embed");
     status.textContent = "Loading jobs...";
     try {
       const response = await fetch(`/public/company-jobs/${encodeURIComponent(slug)}?mode=${encodeURIComponent(mode)}`);
