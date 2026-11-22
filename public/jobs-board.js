@@ -17,6 +17,21 @@
       : "anonymous";
   }
 
+  function readInitialFilters() {
+    const params = new URLSearchParams(window.location.search);
+    const firstValue = (...names) => {
+      for (const name of names) {
+        const value = String(params.get(name) || "").trim();
+        if (value) return value;
+      }
+      return "";
+    };
+    return {
+      keyword: firstValue("q", "search_keywords", "keyword"),
+      location: firstValue("location", "search_location")
+    };
+  }
+
   async function readJson(response) {
     const text = await response.text();
     try {
@@ -157,11 +172,14 @@
   async function init() {
     const slug = readSlug();
     const mode = readMode();
+    const initialFilters = readInitialFilters();
     const status = $("jobsStatus");
     if (!slug) {
       status.textContent = "Missing company slug.";
       return;
     }
+    if ($("keywordSearch")) $("keywordSearch").value = initialFilters.keyword;
+    if ($("locationSearch")) $("locationSearch").value = initialFilters.location;
     status.textContent = "Loading jobs...";
     try {
       const response = await fetch(`/public/company-jobs/${encodeURIComponent(slug)}?mode=${encodeURIComponent(mode)}`);
