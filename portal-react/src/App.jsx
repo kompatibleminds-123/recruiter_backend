@@ -1672,7 +1672,7 @@ function isApplicantHiddenForCard(item = {}, linkedCandidate = null) {
 
 function isInboundApplicantSource(value = "") {
   const source = String(value || "").trim().toLowerCase();
-  return ["website_apply", "hosted_apply", "google_sheet", "website", "hosted"].includes(source);
+  return ["website_apply", "hosted_apply", "website_general_profile", "google_sheet", "website", "hosted"].includes(source);
 }
 
 function formatAppliedPlacardDateTime(value) {
@@ -2883,7 +2883,7 @@ function buildAssessmentJourneyEntries(assessment, contactAttempts = [], candida
   const candidateCreatedAt = candidate?.created_at || candidate?.createdAt || "";
   if (candidateCreatedAt) {
     const sourceValue = String(candidate?.source || "").trim();
-    const isApplied = ["website_apply", "hosted_apply", "google_sheet", "website", "hosted"].includes(sourceValue);
+    const isApplied = ["website_apply", "hosted_apply", "website_general_profile", "google_sheet", "website", "hosted"].includes(sourceValue);
     pushJourneyEntry({
       at: candidateCreatedAt,
       text: `${isApplied ? "Applied" : "Captured note created"}${sourceValue ? ` | ${sourceValue}` : ""}`
@@ -3509,7 +3509,7 @@ function isCapturedRowVisibleInCurrentView(row = {}, filters = {}, user = null) 
   const currentUserId = String(user?.id || "").trim();
   const currentUserName = String(user?.name || "").trim().toLowerCase();
   const sourceValue = String(row?.source || "").trim();
-  if (["website_apply", "hosted_apply", "google_sheet", "website", "hosted"].includes(sourceValue)) return false;
+  if (["website_apply", "hosted_apply", "website_general_profile", "google_sheet", "website", "hosted"].includes(sourceValue)) return false;
   const isConverted = Boolean(row?.used_in_assessment) || Boolean(String(row?.assessment_id || row?.assessmentId || "").trim());
   const isHidden = row?.hidden_from_captured === true;
   const stateValue = isHidden ? "Inactive" : (isConverted ? "Converted" : "Active");
@@ -16688,7 +16688,7 @@ function PortalApp({ token, onLogout }) {
     for (const item of capturedOptionPool || []) {
       const matchedAssessment = resolveCapturedAssessment(item);
       const sourceValue = String(item.source || "").trim();
-      const isInboundApplicant = ["website_apply", "hosted_apply", "google_sheet", "website", "hosted"].includes(sourceValue);
+      const isInboundApplicant = ["website_apply", "hosted_apply", "website_general_profile", "google_sheet", "website", "hosted"].includes(sourceValue);
       if (isInboundApplicant) continue;
       if (matchedAssessment) continue;
       const clientValue = String(item.client_name || matchedAssessment?.clientName || "Unassigned").trim();
@@ -16756,7 +16756,7 @@ function PortalApp({ token, onLogout }) {
 
     return (state.candidates || []).filter((item) => {
       const sourceValue = String(item.source || "").trim();
-      const isInboundApplicant = ["website_apply", "hosted_apply", "google_sheet", "website", "hosted"].includes(sourceValue);
+      const isInboundApplicant = ["website_apply", "hosted_apply", "website_general_profile", "google_sheet", "website", "hosted"].includes(sourceValue);
       if (isInboundApplicant) return false;
       if (isAdmin) return true;
       return isMine(item);
@@ -16893,7 +16893,8 @@ function PortalApp({ token, onLogout }) {
       assignedTo: Array.from(assignedTo).sort((a, b) => a.localeCompare(b)),
       sources: [
         { label: "Website apply", value: "website_apply" },
-        { label: "Hosted apply", value: "hosted_apply" }
+        { label: "Hosted apply", value: "hosted_apply" },
+        { label: "Website profile", value: "website_general_profile" }
       ],
       outcomes: APPLIED_OUTCOME_FILTER_ORDER.concat(
         Array.from(outcomes).filter((item) => !APPLIED_OUTCOME_FILTER_ORDER.includes(item)).sort((a, b) => a.localeCompare(b))
@@ -27583,7 +27584,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
     ? Number(capturedNotesStats.active || 0)
     : (state.candidates || []).filter((item) => {
         const sourceValue = String(item.source || "").trim();
-        if (["website_apply", "hosted_apply", "google_sheet", "website", "hosted"].includes(sourceValue)) return false;
+        if (["website_apply", "hosted_apply", "website_general_profile", "google_sheet", "website", "hosted"].includes(sourceValue)) return false;
         const matchedAssessment = resolveCapturedAssessment(item);
         if (matchedAssessment) return false;
         return !item.hidden_from_captured;

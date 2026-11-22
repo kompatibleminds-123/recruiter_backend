@@ -4546,6 +4546,25 @@ function normalizeApplicantBody(body = {}) {
 }
 
 const APPLICANT_INTAKE_IDENTITY_LOCKS = new Map();
+const GENERAL_PROFILE_SUBMISSION_WINDOWS = new Map();
+
+function getRequestIp(req = {}) {
+  const forwarded = String(req?.headers?.["x-forwarded-for"] || "").split(",")[0].trim();
+  return forwarded || String(req?.socket?.remoteAddress || "").trim() || "unknown";
+}
+
+function assertGeneralProfileSubmissionAllowed(req, companyId) {
+  const now = Date.now();
+  const windowMs = 30 * 60 * 1000;
+  const limit = 5;
+  const key = `${String(companyId || "").trim()}|${getRequestIp(req)}`;
+  const recent = (GENERAL_PROFILE_SUBMISSION_WINDOWS.get(key) || []).filter((at) => now - at < windowMs);
+  if (recent.length >= limit) {
+    throw new Error("Too many profile submissions. Please try again later.");
+  }
+  recent.push(now);
+  GENERAL_PROFILE_SUBMISSION_WINDOWS.set(key, recent);
+}
 
 function applicantIntakeIdentityKey(payload = {}) {
   const companyId = String(payload.companyId || "").trim();
@@ -4808,7 +4827,7 @@ function normalizeApplicantFilterOptions(raw = {}) {
 
 function isInboundApplicantSourceValue(value = "") {
   const source = String(value || "").trim().toLowerCase();
-  return ["website_apply", "hosted_apply", "google_sheet", "website", "hosted"].includes(source);
+  return ["website_apply", "hosted_apply", "website_general_profile", "google_sheet", "website", "hosted"].includes(source);
 }
 
 function normalizeJdMatchKey(value = "") {
@@ -4938,7 +4957,7 @@ async function listApplicantsForUser(user, options = {}) {
   const companyId = String(user?.companyId || "").trim();
   const actorId = String(user?.id || "").trim();
   const actorIsAdmin = String(user?.role || "").toLowerCase() === "admin";
-  const sources = ["website_apply", "hosted_apply", "google_sheet", "website", "hosted"];
+  const sources = ["website_apply", "hosted_apply", "website_general_profile", "google_sheet", "website", "hosted"];
 
   if (on && companyId) {
     const baseFilterParts = [
@@ -5048,7 +5067,7 @@ async function getApplicantStatsForUser(user, options = {}) {
   const companyId = String(user?.companyId || "").trim();
   const actorId = String(user?.id || "").trim();
   const actorIsAdmin = String(user?.role || "").toLowerCase() === "admin";
-  const sources = ["website_apply", "hosted_apply", "google_sheet", "website", "hosted"];
+  const sources = ["website_apply", "hosted_apply", "website_general_profile", "google_sheet", "website", "hosted"];
   const todayKey = new Date().toISOString().slice(0, 10);
 
   const buildBaseQueryParts = () => {
@@ -5386,7 +5405,7 @@ async function listCapturedForUser(user, options = {}) {
     const baseFilterParts = [
       "select=*",
       `company_id=eq.${encodeURIComponent(companyId)}`,
-      "or=(source.is.null,source.not.in.(website_apply,hosted_apply,google_sheet,website,hosted))"
+      "or=(source.is.null,source.not.in.(website_apply,hosted_apply,website_general_profile,google_sheet,website,hosted))"
     ];
     if (!actorIsAdmin) {
       if (actorId) {
@@ -7118,16 +7137,17 @@ async function moveAssessmentBackToCandidatePool({ actor, assessmentId }) {
   };
 }
 
-async function ingestApplicantSubmission(body, req) {
+async function ingestApplicantSubmission(body, req, options = {}) {
   const payload = normalizeApplicantBody(body);
   return withApplicantIntakeIdentityLock(
     applicantIntakeIdentityKey(payload),
-    () => ingestApplicantSubmissionUnlocked(body, req)
+    () => ingestApplicantSubmissionUnlocked(body, req, options)
   );
 }
 
-async function ingestApplicantSubmissionUnlocked(body, req) {
+async function ingestApplicantSubmissionUnlocked(body, req, options = {}) {
   const payload = normalizeApplicantBody(body);
+  const allowGeneralProfile = options?.allowGeneralProfile === true;
   if (!payload.companyId) {
     throw new Error("companyId is required.");
   }
@@ -7161,7 +7181,7 @@ async function ingestApplicantSubmissionUnlocked(body, req) {
   if (payload.jobId && !matchedJob) {
     throw new Error("The selected job opening is invalid, closed or unavailable.");
   }
-  if (!matchedJob && isInvalidApplicantJobTitle(payload.jdTitle)) {
+  if (!matchedJob && !allowGeneralProfile && isInvalidApplicantJobTitle(payload.jdTitle)) {
     throw new Error("A valid job opening is required. Untitled applications are not accepted.");
   }
   if (matchedJob) {
@@ -7187,7 +7207,7 @@ async function ingestApplicantSubmissionUnlocked(body, req) {
 
   const merged = mergeApplicantCandidateFields(parsed, normalized, payload);
   const metadata = {
-    type: "website_apply",
+    type: allowGeneralProfile ? "website_general_profile" : "website_apply",
     parseStatus,
     sourcePlatform: payload.sourcePlatform,
     sourceLabel: payload.sourceLabel,
@@ -7278,8 +7298,10 @@ async function ingestApplicantSubmissionUnlocked(body, req) {
     }
   }
 
-  const appliedSource = payload.sourcePlatform === "hosted_apply" ? "hosted_apply" : "website_apply";
-  const isApplyLinkSource = appliedSource === "website_apply" || appliedSource === "hosted_apply";
+  const appliedSource = allowGeneralProfile
+    ? "website_general_profile"
+    : (payload.sourcePlatform === "hosted_apply" ? "hosted_apply" : "website_apply");
+  const isApplyLinkSource = ["website_apply", "hosted_apply", "website_general_profile"].includes(appliedSource);
   if (isApplyLinkSource) {
     metadata.applyAssignedToUserId = String(defaultInboxOwner?.id || metadata.applyAssignedToUserId || "").trim();
     metadata.applyAssignedToName = String(defaultInboxOwner?.name || metadata.applyAssignedToName || "").trim();
@@ -7360,9 +7382,9 @@ async function ingestApplicantSubmissionUnlocked(body, req) {
 
     // Keep candidates in one place:
     // - If this person was already captured (extension/manual/etc), do NOT move them into Applied Candidates.
-    // - Only keep "website_apply/hosted_apply" source if the existing record was already an inbound applicant.
+    // - Only keep website intake sources if the existing record was already an inbound applicant.
     const existingSource = String(existing?.source || "").trim();
-    const existingIsInbound = existingSource === "website_apply" || existingSource === "hosted_apply";
+    const existingIsInbound = ["website_apply", "hosted_apply", "website_general_profile"].includes(existingSource);
     const existingConverted = Boolean(existing?.used_in_assessment) || Boolean(String(existing?.assessment_id || existing?.assessmentId || "").trim());
     const nextSource = existingIsInbound
       ? appliedSource
@@ -7744,7 +7766,7 @@ function getRecruiterLabel(candidate = {}, assessment = {}) {
 
 function getOwnerRecruiterLabel(candidate = {}, assessment = {}) {
   const source = String(candidate?.source || "").trim().toLowerCase();
-  const isApplicant = source === "website" || source === "website_apply" || source === "hosted_apply";
+  const isApplicant = source === "website" || source === "website_apply" || source === "hosted_apply" || source === "website_general_profile";
   const assessmentOwner = String(assessment?.recruiter_name || assessment?.recruiterName || "").trim();
   if (assessmentOwner) return assessmentOwner;
   const assigned = String(candidate.assigned_to_name || candidate.assignedToName || "").trim();
@@ -8220,7 +8242,7 @@ function addCandidateMetrics(target, candidate, linkedAssessment, dateRange = {}
   let changed = false;
   const createdAt = getCandidateCreatedAt(candidate);
   const source = String(candidate?.source || "").trim().toLowerCase();
-  const isApplicant = source === "website_apply" || source === "hosted_apply" || source === "google_sheet";
+  const isApplicant = source === "website_apply" || source === "hosted_apply" || source === "website_general_profile" || source === "google_sheet";
   if (isDateWithinRange(createdAt, dateRange.from, dateRange.to)) {
     incrementDashboardMetric(target, isApplicant ? "applied" : "sourced");
     changed = true;
@@ -8288,7 +8310,7 @@ function addRecruiterOwnershipMetrics(target, recruiterLabel, candidate, linkedA
   const createdAt = getCandidateCreatedAt(candidate);
   if (!isDateWithinRange(createdAt, dateRange.from, dateRange.to)) return;
   const source = String(candidate?.source || "").trim().toLowerCase();
-  const isApplicant = source === "website_apply" || source === "hosted_apply" || source === "google_sheet";
+  const isApplicant = source === "website_apply" || source === "hosted_apply" || source === "website_general_profile" || source === "google_sheet";
   const assignedLabel = getOwnerRecruiterLabel(candidate, linkedAssessment || {});
   const capturedByLabel = String(candidate?.recruiter_name || candidate?.recruiterName || "").trim();
   const capturedById = String(candidate?.recruiter_id || candidate?.recruiterId || "").trim();
@@ -8435,7 +8457,7 @@ function buildDashboardSummary({ candidates = [], assessments = [], jobs = [], d
     const linkedAssessment = getCanonicalLinkedAssessmentForCandidate(candidate, assessmentsById) || null;
     const resolvedJob = resolveJobForDashboardLoose(candidate, linkedAssessment || {}, jobById, jobByTitle);
     const source = String(candidate?.source || "").trim().toLowerCase();
-    const isApplicant = source === "website" || source === "website_apply" || source === "hosted_apply" || source === "google_sheet";
+    const isApplicant = source === "website" || source === "website_apply" || source === "hosted_apply" || source === "website_general_profile" || source === "google_sheet";
     const rawPosition = String(candidate?.assigned_jd_title || candidate?.assignedJdTitle || candidate?.jd_title || candidate?.jdTitle || "").trim();
     // Website/hosted applicants can refer to jobs that are no longer in the system.
     // Keep them visible, but group them under a clear "Unmapped candidates" bucket so
@@ -10031,7 +10053,7 @@ function createDashboardFunnelBucket() {
 
 function isDashboardAppliedOnlySource(source = "") {
   const value = String(source || "").trim().toLowerCase();
-  return ["hosted_apply", "website_apply", "hosted", "website", "google_sheet", "google sheet"].includes(value);
+  return ["hosted_apply", "website_apply", "website_general_profile", "hosted", "website", "google_sheet", "google sheet"].includes(value);
 }
 
 function finalizeDashboardFunnelBucket(bucket = {}) {
@@ -12749,7 +12771,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       JSON.stringify(cachedCvResult || {})
     ].filter(Boolean).join("\n");
     const rawSource = String(candidate?.source || "").trim().toLowerCase();
-    const isApplicantSource = rawSource === "website" || rawSource === "website_apply" || rawSource === "hosted_apply";
+    const isApplicantSource = rawSource === "website" || rawSource === "website_apply" || rawSource === "hosted_apply" || rawSource === "website_general_profile";
     const rawPosition = String(candidate?.assigned_jd_title || candidate?.assignedJdTitle || candidate?.jd_title || candidate?.jdTitle || "").trim();
     const isUnmappedApplicant = isApplicantSource && !resolvedJob && Boolean(rawPosition);
     universe.push({
@@ -12819,7 +12841,7 @@ function buildCandidateSearchUniverse(candidates = [], assessments = [], jobs = 
       sharedAt: isConverted ? normalizeDateOutput(getCandidateConvertedAt(candidate, linkedAssessment || {})) : "",
       sourceType: isConverted
         ? "captured_and_converted"
-        : (candidateSource === "website_apply" || candidateSource === "hosted_apply" || candidateSource === "google_sheet"
+        : (candidateSource === "website_apply" || candidateSource === "hosted_apply" || candidateSource === "website_general_profile" || candidateSource === "google_sheet"
           ? "applied"
           : "captured_note"),
       hiddenCvText: JSON.stringify(cachedCvResult || {}),
@@ -13215,7 +13237,7 @@ function itemMatchesDashboardMetric(item, metric, dateFrom = "", dateTo = "") {
   const hasLinkedAssessment = Boolean(item?.raw?.assessment || item?.assessment || item?.assessmentId || item?.sourceType === "assessment_only");
   const isSharedAssessment = hasLinkedAssessment && (item?.sourceType === "captured_and_converted" || item?.sourceType === "assessment_only");
   const rawSource = String(item?.raw?.candidate?.source || item?.source || "").trim().toLowerCase();
-  const isApplicantSource = rawSource === "website" || rawSource === "website_apply" || rawSource === "hosted_apply" || rawSource === "google_sheet";
+  const isApplicantSource = rawSource === "website" || rawSource === "website_apply" || rawSource === "hosted_apply" || rawSource === "website_general_profile" || rawSource === "google_sheet";
   const historicalRank = Math.max(1, Number(item?._dashboardHistoricalRank || 1));
   if (metric === "all") {
     if (!dateFrom && !dateTo) return true;
@@ -16558,6 +16580,41 @@ const server = http.createServer(async (req, res) => {
       });
     } catch (error) {
       sendJson(res, 404, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname.startsWith("/public/company-profile/")) {
+    try {
+      const companySlug = String(requestUrl.pathname.replace(/^\/public\/company-profile\//, "").replace(/\/+$/, "")).trim().toLowerCase();
+      if (!companySlug) throw new Error("Company slug is required.");
+      const result = await getPublicCompanyJobsBySlug(companySlug);
+      const companyId = String(result?.companyId || "").trim();
+      if (!companyId || !(await isPortalCompanyApproved(companyId))) {
+        throw new Error("This profile form is currently unavailable.");
+      }
+      const sharedSettings = await getCompanySharedExportPresets(companyId).catch(() => ({}));
+      const board = sharedSettings?.jobBoard && typeof sharedSettings.jobBoard === "object" ? sharedSettings.jobBoard : {};
+      const resume = sharedSettings?.resumeFormatting && typeof sharedSettings.resumeFormatting === "object" ? sharedSettings.resumeFormatting : {};
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          companyName: String(result?.companyName || "").trim(),
+          companySlug: String(result?.companySlug || companySlug).trim(),
+          jobBoard: {
+            primaryColor: String(board.primaryColor || "#2485a5").trim(),
+            buttonColor: String(board.buttonColor || board.primaryColor || "#2485a5").trim(),
+            backgroundColor: String(board.backgroundColor || "#ffffff").trim(),
+            cardBackgroundColor: String(board.cardBackgroundColor || "#fffef8").trim(),
+            textColor: String(board.textColor || "#112143").trim(),
+            mutedTextColor: String(board.mutedTextColor || "#7a8496").trim(),
+            faviconDataUrl: String(board.faviconDataUrl || board.logoDataUrl || resume.logoDataUrl || "").trim(),
+            logoDataUrl: String(board.logoDataUrl || resume.logoDataUrl || "").trim()
+          }
+        }
+      });
+    } catch (error) {
+      sendJson(res, 404, { ok: false, error: String(error?.message || error) });
     }
     return;
   }
@@ -21875,7 +21932,7 @@ const server = http.createServer(async (req, res) => {
       const availableRecruiters = Array.from(
         new Set((Array.isArray(candidates) ? candidates : []).map((candidate) => {
           const source = String(candidate?.source || "").trim().toLowerCase();
-          const isApplicant = source === "website" || source === "website_apply" || source === "hosted_apply";
+          const isApplicant = source === "website" || source === "website_apply" || source === "hosted_apply" || source === "website_general_profile";
           const owner = getOwnerRecruiterLabel(candidate, {});
           if (actorIsAdmin && actorName && isApplicant && owner === "Unassigned") return actorName;
           return owner;
@@ -22808,6 +22865,65 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, result: { removed: true } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && /^\/public\/company-profile\/[^/]+\/apply$/.test(requestUrl.pathname)) {
+    try {
+      const companySlug = String(requestUrl.pathname.replace(/^\/public\/company-profile\//, "").replace(/\/apply$/, "").replace(/\/+$/, "")).trim().toLowerCase();
+      const companyResult = await getPublicCompanyJobsBySlug(companySlug);
+      const companyId = String(companyResult?.companyId || "").trim();
+      if (!companyId || !(await isPortalCompanyApproved(companyId))) {
+        throw new Error("This profile form is currently unavailable.");
+      }
+      const body = await readJsonBody(req);
+      if (String(body?.website || "").trim()) throw new Error("Profile submission could not be accepted.");
+      const required = ["candidateName", "email", "phone", "location"];
+      if (required.some((field) => !String(body?.[field] || "").trim())) {
+        throw new Error("Please complete your name, email, phone and location.");
+      }
+      const pendingCv = body?.file?.filename && !body?.file?.fileData
+        ? { ...body.file, uploadId: crypto.randomUUID() }
+        : null;
+      if (!pendingCv) throw new Error("Please attach your CV.");
+      assertGeneralProfileSubmissionAllowed(req, companyId);
+      const payload = {
+        ...(body || {}),
+        file: pendingCv,
+        companyId,
+        jobId: "",
+        jdTitle: "",
+        clientName: "",
+        sourcePlatform: "website_general_profile",
+        sourceLabel: "Website Profile Submission",
+        jobPageUrl: `${getRequestBaseUrl(req)}/apply-public/profile/${encodeURIComponent(companySlug)}`,
+        parseWithAi: body?.parseWithAi !== false
+      };
+      const result = await ingestApplicantSubmission(payload, {
+        ...req,
+        headers: {
+          ...(req.headers || {}),
+          "x-applicant-intake-secret": String((await getCompanyApplicantIntakeSecret(companyId))?.applicantIntakeSecret || "")
+        }
+      }, { allowGeneralProfile: true });
+      const candidateId = String(result?.id || "").trim();
+      const cvUpload = candidateId ? {
+        candidateId,
+        token: createApplicantCvUploadToken({
+          companyId,
+          candidateId,
+          jobId: "",
+          uploadId: pendingCv.uploadId,
+          filename: String(pendingCv.filename || "resume").trim(),
+          mimeType: String(pendingCv.mimeType || "application/octet-stream").trim(),
+          sizeBytes: Number(pendingCv.sizeBytes || 0) || 0,
+          expiresAt: Date.now() + (15 * 60 * 1000)
+        })
+      } : null;
+      sendJson(res, 200, { ok: true, result, cvUpload });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
     return;
   }

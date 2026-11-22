@@ -37,6 +37,13 @@
     return parts[0] === "apply-public";
   }
 
+  function getGeneralProfileSlug() {
+    const parts = (window.location.pathname || "").split("/").filter(Boolean);
+    return parts[0] === "apply-public" && parts[1] === "profile" && parts[2]
+      ? decodeURIComponent(parts[2])
+      : "";
+  }
+
   function getApplyAssignment() {
     const params = new URLSearchParams(window.location.search);
     return {
@@ -71,6 +78,15 @@
     const data = await readJsonSafely(response);
     if (!response.ok || !data?.ok) {
       throw new Error(data?.error || "Could not load this job. This link may be stale or the JD is not published in backend.");
+    }
+    return data.result || {};
+  }
+
+  async function loadGeneralProfile(slug) {
+    const response = await fetch(`/public/company-profile/${encodeURIComponent(slug)}`);
+    const data = await readJsonSafely(response);
+    if (!response.ok || !data?.ok) {
+      throw new Error(data?.error || "This profile form is unavailable.");
     }
     return data.result || {};
   }
@@ -185,7 +201,7 @@
       const node = $("applyFavicon");
       if (node) node.setAttribute("href", favicon);
     }
-    document.title = `${job?.title || "Apply"} | RecruitDesk`;
+    document.title = `${job?.title || "Submit Your Profile"} | RecruitDesk`;
   }
 
   function buildStructuredSections(job) {
@@ -325,16 +341,36 @@
     meta.innerHTML = chips.map((item) => `<span class="chip">${escapeHtml(item)}</span>`).join("");
   }
 
+  function renderGeneralProfile(config) {
+    const companyName = String(config?.companyName || "Kompatible Minds").trim();
+    const profile = { title: "Submit Your Profile", jobBoard: config?.jobBoard || {} };
+    applyBranding(profile);
+    $("jobTitle").textContent = "Submit Your Profile";
+    $("jobDescription").textContent = `Share your profile with ${companyName} for relevant current and future opportunities.`;
+    $("jobMeta").innerHTML = "";
+    $("customFieldsWrap").innerHTML = "";
+    $("applySubmit").textContent = "Submit Profile";
+    $("cvFile").required = true;
+    $("cvFile").closest(".full")?.querySelector(".hint")?.replaceChildren(document.createTextNode("Please upload your latest CV (PDF preferred)."));
+  }
+
   async function init() {
-    const jobId = getJobId();
-    if (!jobId) {
+    const generalProfileSlug = getGeneralProfileSlug();
+    const jobId = generalProfileSlug ? "" : getJobId();
+    if (!jobId && !generalProfileSlug) {
       setStatus("Missing job link.", "error");
       return;
     }
     let job = null;
+    let generalProfile = null;
     try {
-      job = await loadJob(jobId);
-      renderJob(job);
+      if (generalProfileSlug) {
+        generalProfile = await loadGeneralProfile(generalProfileSlug);
+        renderGeneralProfile(generalProfile);
+      } else {
+        job = await loadJob(jobId);
+        renderJob(job);
+      }
     } catch (error) {
       setStatus(String(error?.message || error), "error");
       return;
@@ -350,12 +386,13 @@
 
         const cvFile = $("cvFile")?.files?.[0] || null;
         const assignment = getApplyAssignment();
+        const isGeneralProfile = Boolean(generalProfileSlug);
 
         const payload = {
-          jdTitle: job.title || "",
+          jdTitle: isGeneralProfile ? "" : (job.title || ""),
           // Do not rely on clientName coming from the browser; backend will set it from the job record.
-          sourcePlatform: "hosted_apply",
-          sourceLabel: "RecruitDesk Apply Link",
+          sourcePlatform: isGeneralProfile ? "website_general_profile" : "hosted_apply",
+          sourceLabel: isGeneralProfile ? "Website Profile Submission" : "RecruitDesk Apply Link",
           jobPageUrl: window.location.href,
           assignedToUserId: assignment.rid,
           assignedToSig: assignment.sig,
@@ -369,6 +406,7 @@
           noticePeriod: $("noticePeriod").value.trim(),
           screeningAnswers: $("screeningAnswers").value.trim(),
           customFields: readCustomFields(),
+          website: $("website")?.value.trim() || "",
           skills: $("skills").value.split(",").map((item) => item.trim()).filter(Boolean),
           file: cvFile ? {
             filename: cvFile.name,
@@ -377,7 +415,10 @@
           } : null
         };
 
-        const response = await fetch(`/public/jobs/${encodeURIComponent(jobId)}/apply`, {
+        const endpoint = isGeneralProfile
+          ? `/public/company-profile/${encodeURIComponent(generalProfileSlug)}/apply`
+          : `/public/jobs/${encodeURIComponent(jobId)}/apply`;
+        const response = await fetch(endpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json"
@@ -410,8 +451,8 @@
         }
         setStatus(
           cvFile
-            ? "Application submitted successfully. Your CV is being processed."
-            : "Application submitted successfully.",
+            ? (isGeneralProfile ? "Profile submitted successfully. Your CV is being processed." : "Application submitted successfully. Your CV is being processed.")
+            : (isGeneralProfile ? "Profile submitted successfully. Our team will review it for relevant opportunities." : "Application submitted successfully."),
           "ok"
         );
         $("applyForm").reset();
