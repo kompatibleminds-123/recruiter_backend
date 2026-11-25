@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Find Talent | Kompatible Minds</title>
+    <style>
+      *{box-sizing:border-box}body{margin:0;background:#f7fafc;color:#142a43;font-family:Arial,sans-serif}
+      main{width:min(900px,calc(100% - 32px));margin:48px auto}.kicker{color:#168bb5;font-size:12px;font-weight:700;letter-spacing:1.5px}
+      h1{font-size:34px;line-height:1.15;margin:10px 0}.intro{margin:0 0 28px;color:#607087;font-size:17px;line-height:1.55}
+      .tool{padding:28px;border:1px solid #d9e4ec;border-radius:18px;background:#fff;box-shadow:0 12px 30px rgba(16,38,74,.06)}
+      h2{font-size:22px;margin:0 0 8px}.sub{color:#65758a;margin:0 0 16px}.search{display:flex;gap:10px}
+      input{flex:1;min-width:0;height:52px;border:1px solid #d4e0ea;border-radius:10px;padding:0 15px;font-size:16px;color:#142a43}
+      button,.button{border:0;border-radius:10px;background:#168bb5;color:#fff;font-size:15px;font-weight:700;padding:0 20px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;min-height:52px}
+      button:hover,.button:hover{background:#116f93}.status{min-height:20px;color:#64748b;font-size:14px;margin:14px 0 0}.result{display:none;margin-top:22px;border-top:1px solid #e1e8ee;padding-top:22px}
+      .scenario{padding:17px 0}.scenario + .scenario{border-top:1px solid #e1e8ee}.scenario-title{font-size:18px;font-weight:700;margin:0 0 6px}.scenario p{margin:0 0 14px;color:#53657b;line-height:1.5}.success{color:#087d63}.secondary{background:#fff;color:#168bb5;border:1px solid #bcd3df}.secondary:hover{background:#f0f8fc}
+      @media(max-width:600px){main{margin:28px auto}.tool{padding:22px 18px}.search{flex-direction:column}.search button{width:100%}h1{font-size:29px}}
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="kicker">KOMPATIBLE MINDS · TALENT NETWORK</div>
+      <h1>Find matching talent faster.</h1>
+      <p class="intro">Search our talent network for a role or specialist skill. We will verify current availability and fit before sharing any profiles.</p>
+
+      <section class="tool" aria-labelledby="find-talent-title">
+        <h2 id="find-talent-title">Find Talent</h2>
+        <p class="sub">Searches only return an aggregate profile count—no candidate details are displayed.</p>
+        <form id="talent-match-form">
+          <div class="search">
+            <input id="talent-role" name="role" type="search" placeholder="e.g. SAP CPI Consultant" minlength="2" required>
+            <button type="submit">Search network</button>
+          </div>
+        </form>
+        <p id="talent-status" class="status" aria-live="polite"></p>
+
+        <div id="talent-result" class="result">
+          <div id="match-scenario" class="scenario">
+            <div id="match-title" class="scenario-title success"></div>
+            <p id="match-copy"></p>
+            <a id="match-request" class="button" href="https://kompatibleminds.com/contact-us/">Request Matching Profiles</a>
+          </div>
+          <div id="search-scenario" class="scenario">
+            <div class="scenario-title">Need a more specific search?</div>
+            <p>Share the requirement and our specialist recruiters will build a focused talent search for you.</p>
+            <a id="search-request" class="button secondary" href="https://kompatibleminds.com/contact-us/">Initiate Talent Search</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const form = document.getElementById('talent-match-form');
+      const roleInput = document.getElementById('talent-role');
+      const status = document.getElementById('talent-status');
+      const result = document.getElementById('talent-result');
+      const matchScenario = document.getElementById('match-scenario');
+      const matchTitle = document.getElementById('match-title');
+      const matchCopy = document.getElementById('match-copy');
+      const matchRequest = document.getElementById('match-request');
+      const searchRequest = document.getElementById('search-request');
+
+      function mandateUrl(role) {
+        return 'https://kompatibleminds.com/contact-us/?role=' + encodeURIComponent(role);
+      }
+
+      form.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        const role = roleInput.value.trim();
+        if (role.length < 2) return;
+        status.textContent = 'Searching our talent network…';
+        result.style.display = 'none';
+
+        try {
+          const response = await fetch('/public/talent-network/kompatible-minds/match', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role })
+          });
+          const payload = await response.json();
+          if (!response.ok || !payload.ok) throw new Error(payload.error || 'Search could not be completed.');
+
+          const count = Number(payload.result.matchCount || 0);
+          matchRequest.href = mandateUrl(role);
+          searchRequest.href = mandateUrl(role);
+          if (count > 0) {
+            matchScenario.style.display = 'block';
+            matchTitle.textContent = count === 1 ? '1 matching profile found in our talent network' : count + ' matching profiles found in our talent network';
+            matchCopy.textContent = 'Our team will verify current availability and fit before sharing profiles.';
+          } else {
+            matchScenario.style.display = 'none';
+          }
+          status.textContent = '';
+          result.style.display = 'block';
+        } catch (error) {
+          status.textContent = error.message || 'Search could not be completed. Please try again.';
+        }
+      });
+    </script>
+  </body>
+</html>

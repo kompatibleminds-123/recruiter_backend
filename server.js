@@ -2704,7 +2704,9 @@ function getAllowedOrigins() {
   const defaults = [
     "http://localhost:8787",
     "http://127.0.0.1:8787",
-    "https://recruiter-backend-yvex.onrender.com"
+    "https://recruiter-backend-yvex.onrender.com",
+    "https://kompatibleminds.com",
+    "https://www.kompatibleminds.com"
   ];
   const extra = String(process.env.ALLOWED_ORIGINS || "")
     .split(",")
@@ -4547,6 +4549,8 @@ function normalizeApplicantBody(body = {}) {
 
 const APPLICANT_INTAKE_IDENTITY_LOCKS = new Map();
 const GENERAL_PROFILE_SUBMISSION_WINDOWS = new Map();
+const PUBLIC_TALENT_MATCH_WINDOWS = new Map();
+const PUBLIC_TALENT_MATCH_CACHE = new Map();
 
 function getRequestIp(req = {}) {
   const forwarded = String(req?.headers?.["x-forwarded-for"] || "").split(",")[0].trim();
@@ -4611,6 +4615,103 @@ function collapseLatestApplicantCandidates(rows = []) {
     if (phone) seenPhones.add(phone);
     return true;
   });
+}
+
+function normalizePublicTalentMatchRole(value = "") {
+  return String(value || "")
+    .replace(/[<>]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 100);
+}
+
+function assertPublicTalentMatchAllowed(req, companyId) {
+  const now = Date.now();
+  const windowMs = 60 * 60 * 1000;
+  const limit = 12;
+  const key = `${String(companyId || "").trim()}|${getRequestIp(req)}`;
+  const recent = (PUBLIC_TALENT_MATCH_WINDOWS.get(key) || []).filter((at) => now - at < windowMs);
+  if (recent.length >= limit) {
+    const error = new Error("Too many searches. Please try again in an hour.");
+    error.code = "PUBLIC_TALENT_MATCH_RATE_LIMIT";
+    throw error;
+  }
+  recent.push(now);
+  PUBLIC_TALENT_MATCH_WINDOWS.set(key, recent);
+}
+
+function getPublicTalentMatchSearchTerms(role = "") {
+  const ignored = new Set(["and", "for", "the", "with", "role", "roles", "job", "jobs", "position", "positions"]);
+  return Array.from(new Set(
+    String(role || "")
+      .toLowerCase()
+      .split(/[^a-z0-9+#.]+/i)
+      .map((term) => term.trim())
+      .filter((term) => term.length >= 2 && !ignored.has(term))
+  ));
+}
+
+function buildPublicTalentMatchHaystack(candidate = {}) {
+  const draft = candidate?.draft_payload && typeof candidate.draft_payload === "object"
+    ? JSON.stringify(candidate.draft_payload)
+    : String(candidate?.draft_payload || "");
+  const screening = candidate?.screening_answers && typeof candidate.screening_answers === "object"
+    ? JSON.stringify(candidate.screening_answers)
+    : String(candidate?.screening_answers || "");
+  return [
+    candidate?.role,
+    candidate?.current_designation,
+    candidate?.designation,
+    candidate?.jd_title,
+    candidate?.skills,
+    candidate?.notes,
+    candidate?.raw_note,
+    candidate?.recruiter_context_notes,
+    candidate?.other_pointers,
+    draft,
+    screening
+  ]
+    .filter(Boolean)
+    .join(" | ")
+    .toLowerCase();
+}
+
+function candidateMatchesPublicTalentRole(candidate = {}, role = "") {
+  const normalizedRole = String(role || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const haystack = buildPublicTalentMatchHaystack(candidate);
+  if (!normalizedRole || !haystack) return false;
+  if (haystack.includes(normalizedRole)) return true;
+
+  const terms = getPublicTalentMatchSearchTerms(normalizedRole);
+  if (!terms.length) return false;
+  const matchedTerms = terms.filter((term) => haystack.includes(term));
+  const threshold = terms.length === 1 ? 1 : Math.min(2, terms.length);
+  return matchedTerms.length >= threshold;
+}
+
+async function getPublicTalentNetworkMatchCount({ companyId = "", role = "" } = {}) {
+  const safeCompanyId = String(companyId || "").trim();
+  const safeRole = normalizePublicTalentMatchRole(role);
+  if (!safeCompanyId || !safeRole) throw new Error("A role or skill is required.");
+
+  const cacheKey = `${safeCompanyId}|${safeRole.toLowerCase()}`;
+  const cached = PUBLIC_TALENT_MATCH_CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.createdAt < 10 * 60 * 1000) return cached.count;
+
+  const { on } = getSupabaseServiceConfig();
+  const rows = on
+    ? await supabaseTableFetchAll(
+      "candidates",
+      `?select=*&company_id=eq.${encodeURIComponent(safeCompanyId)}&order=created_at.desc`,
+      { method: "GET", pageSize: 1000, maxPages: 25 }
+    )
+    : await listCandidates({ companyId: safeCompanyId, limit: 25000 });
+
+  const count = collapseLatestApplicantCandidates(rows)
+    .filter((candidate) => candidateMatchesPublicTalentRole(candidate, safeRole))
+    .length;
+  PUBLIC_TALENT_MATCH_CACHE.set(cacheKey, { count, createdAt: Date.now() });
+  return count;
 }
 
 function signRecruiterApplyLink({ companyId, jobId, recruiterId, secret }) {
@@ -16518,6 +16619,41 @@ const server = http.createServer(async (req, res) => {
     const safeRelativePath = path.normalize(assetPath).replace(/^(\.\.(\/|\\|$))+/, "");
     const resolvedPath = path.join(QUICK_CAPTURE_PUBLIC_DIR, safeRelativePath);
     serveStaticFile(res, resolvedPath);
+    return;
+  }
+
+  if (req.method === "POST" && /^\/public\/talent-network\/[^/]+\/match$/.test(requestUrl.pathname)) {
+    try {
+      const companySlug = String(requestUrl.pathname
+        .replace(/^\/public\/talent-network\//, "")
+        .replace(/\/match$/, "")
+        .replace(/\/+$/, ""))
+        .trim()
+        .toLowerCase();
+      const company = await getPublicCompanyJobsBySlug(companySlug);
+      const companyId = String(company?.companyId || "").trim();
+      if (!companyId || !(await isPortalCompanyApproved(companyId))) {
+        throw new Error("This talent network is currently unavailable.");
+      }
+
+      assertPublicTalentMatchAllowed(req, companyId);
+      const body = await readJsonBody(req);
+      const role = normalizePublicTalentMatchRole(body?.role || body?.query || "");
+      if (role.length < 2) throw new Error("Please enter a role or skill to search.");
+
+      const count = await getPublicTalentNetworkMatchCount({ companyId, role });
+      sendJson(req, res, 200, {
+        ok: true,
+        result: {
+          role,
+          matchCount: count,
+          label: count === 1 ? "1 matching profile in our talent network" : `${count} matching profiles in our talent network`
+        }
+      });
+    } catch (error) {
+      const statusCode = error?.code === "PUBLIC_TALENT_MATCH_RATE_LIMIT" ? 429 : 400;
+      sendJson(req, res, statusCode, { ok: false, error: String(error?.message || error) });
+    }
     return;
   }
 
