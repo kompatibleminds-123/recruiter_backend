@@ -22077,7 +22077,10 @@ function PortalApp({ token, onLogout }) {
     const requestedGap = Number.parseInt(String(dbCampaignAttachModal?.sendGapMinutes || "2"), 10);
     const requestedDailyCap = Number.parseInt(String(dbCampaignAttachModal?.dailyCap || "50"), 10);
     const senderUserId = String(dbCampaignAttachModal?.senderUserId || marketingSenderOptions?.[0]?.id || state.user?.id || "").trim();
-    const campaignSource = String(sourceOverride || "recruiter_portal").trim() || "recruiter_portal";
+    const derivedCandidateSource = String(dbCampaignAttachModal?.audienceLabel || "").toLowerCase().includes("captured")
+      ? "captured_notes"
+      : "candidate_database";
+    const campaignSource = String(sourceOverride || derivedCandidateSource).trim() || "candidate_database";
     if (shouldCreateNew) {
       const createdCampaign = await api("/company/marketing/campaigns", token, "POST", {
         name: campaignName,
@@ -22736,18 +22739,9 @@ function PortalApp({ token, onLogout }) {
         prospectIds: attachProspectIds
       });
     }
-    const liveCampaign = selectedCampaign || (await api("/company/marketing/campaigns", token).then((rows) => (Array.isArray(rows?.items) ? rows.items.find((item) => String(item?.id || "") === selectedCampaignId) : null)).catch(() => null));
-    const campaignStatus = String(liveCampaign?.status || "").trim().toLowerCase();
-    if (campaignStatus !== "active") {
-      if (campaignStatus === "paused") {
-        await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/resume`, token, "POST", {});
-      } else {
-        await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/start`, token, "POST", {});
-      }
-    }
-    const tickResult = await api("/company/marketing/worker/tick", token, "POST", {});
-    const sent = Number(tickResult?.sent || 0);
-    setStatus("workspace", `${isJdMode ? "JD mail sent" : "Sent"} from "${selectedCampaign?.name || "campaign"}": linked ${linked}, created ${created}, reused ${reused}, sent now ${sent}.`, "ok");
+    const sentCampaign = await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/send-brevo`, token, "POST", {});
+    const recipientCount = Number(sentCampaign?.recipientCount || 0);
+    setStatus("workspace", `Brevo campaign created and sent to ${recipientCount} recipients. You can now track it in Brevo Marketing Campaigns.`, "ok");
     setDbCampaignAttachModal(createEmptyDbCampaignAttachModal());
   }
 
@@ -33764,43 +33758,6 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   />
                 </label>
               )}
-              <label>
-                <span>Send mode</span>
-                <select
-                  value={dbCampaignAttachModal.sendMode || "staggered"}
-                  onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, sendMode: e.target.value }))}
-                  disabled={dbCampaignAttachModal.busy}
-                >
-                  <option value="staggered">Safe staggered</option>
-                  <option value="instant">Send in one go</option>
-                </select>
-              </label>
-              <label>
-                <span>Gap between emails (minutes)</span>
-                <select
-                  value={String(dbCampaignAttachModal.sendGapMinutes || "2")}
-                  onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, sendGapMinutes: e.target.value }))}
-                  disabled={dbCampaignAttachModal.busy || String(dbCampaignAttachModal.sendMode || "staggered") === "instant"}
-                >
-                  <option value="1">1 min</option>
-                  <option value="2">2 min</option>
-                  <option value="5">5 min</option>
-                  <option value="10">10 min</option>
-                </select>
-              </label>
-              <label>
-                <span>Daily cap</span>
-                <select
-                  value={String(dbCampaignAttachModal.dailyCap || "50")}
-                  onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, dailyCap: e.target.value }))}
-                  disabled={dbCampaignAttachModal.busy}
-                >
-                  <option value="25">25</option>
-                  <option value="50">50</option>
-                  <option value="100">100</option>
-                  <option value="200">200</option>
-                </select>
-              </label>
               <label className="full-span">
                 <span>Send sample to internal team email</span>
                 <input
@@ -33820,7 +33777,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
               <p className="muted full-span">
                 {dbCampaignAttachModal.contentSource === "jd"
                   ? "JD mode auto-builds subject and body from the admin JD-share template, includes full JD text, and lets you choose normal or anonymous JD sharing."
-                  : "Saved templates here are backed by the marketing system directly. Campaign name is used as the saved template label."}
+                  : "This creates a real Brevo Marketing Campaign for only the selected candidates. Brevo manages sending, unsubscribe handling and campaign reporting."}
               </p>
               {(() => {
                 const preview = buildDbCampaignAttachPreview(dbCampaignAttachModal);
@@ -33893,7 +33850,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 })}
                 disabled={dbCampaignAttachModal.busy || !String(dbCampaignAttachModal.campaignName || "").trim() || !String(dbCampaignAttachModal.templateSubject || "").trim() || !String(dbCampaignAttachModal.templateBodyText || "").trim() || (dbCampaignAttachModal.contentSource === "jd" && !String(dbCampaignAttachModal.jdJobId || "").trim())}
               >
-                {dbCampaignAttachModal.busy && dbCampaignAttachModal.busyMode === "sending" ? "Sending..." : (dbCampaignAttachModal.contentSource === "jd" ? "Send JD" : "Send")}
+                {dbCampaignAttachModal.busy && dbCampaignAttachModal.busyMode === "sending" ? "Creating campaign..." : "Create Brevo campaign & send"}
               </button>
               ) : null}
             </div>

@@ -6110,15 +6110,83 @@ function getBrevoCandidateCampaignConfig() {
   return { enabled: Boolean(apiKey && senderEmail), apiKey, senderEmail, senderName, listId, dailyCap };
 }
 
-async function callBrevoCandidateCampaignApi(config, path, body) {
+async function callBrevoCandidateCampaignApi(config, path, body, { method = "POST" } = {}) {
   const response = await fetchWithTimeout(`https://api.brevo.com/v3${path}`, {
-    method: "POST",
+    method,
     headers: { "api-key": config.apiKey, "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(body)
+    ...(body === undefined ? {} : { body: JSON.stringify(body) })
   }, 30000);
   const raw = await response.text();
   if (!response.ok) throw new Error(`Brevo request failed (${response.status}): ${raw.slice(0, 500) || "Unknown error"}`);
   try { return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+}
+
+async function getBrevoCampaignAudienceFolderId(config) {
+  if (!config?.listId) throw new Error("BREVO_CANDIDATE_LIST_ID is required before sending a marketing campaign.");
+  const list = await callBrevoCandidateCampaignApi(config, `/contacts/lists/${encodeURIComponent(config.listId)}`, undefined, { method: "GET" });
+  const folderId = Number(list?.folderId || list?.folder_id || 0);
+  if (!folderId) throw new Error("Brevo could not determine the folder for the RecruitDesk Candidates list.");
+  return folderId;
+}
+
+async function createBrevoCampaignAudienceList(config, campaign = {}) {
+  const folderId = await getBrevoCampaignAudienceFolderId(config);
+  const safeName = String(campaign?.name || "RecruitDesk campaign").trim().replace(/\s+/g, " ").slice(0, 80);
+  const created = await callBrevoCandidateCampaignApi(config, "/contacts/lists", {
+    name: `RD · ${safeName} · ${String(campaign?.id || "").slice(0, 8)}`,
+    folderId
+  });
+  const listId = Number(created?.id || 0);
+  if (!listId) throw new Error("Brevo campaign audience list could not be created.");
+  return listId;
+}
+
+async function createAndSendBrevoMarketingCampaign(config, senderActor = {}, campaign = {}, template = {}, prospects = []) {
+  const audience = (Array.isArray(prospects) ? prospects : []).filter((item) => normalizeMarketingEmail(item?.email));
+  if (!audience.length) throw new Error("No valid email addresses were selected.");
+  if (audience.length > config.dailyCap) throw new Error(`This campaign has ${audience.length} recipients. Your RecruitDesk Brevo safety limit is ${config.dailyCap} per day.`);
+  const audienceListId = await createBrevoCampaignAudienceList(config, campaign);
+  for (let index = 0; index < audience.length; index += 10) {
+    const batch = audience.slice(index, index + 10);
+    await Promise.all(batch.map((prospect) => callBrevoCandidateCampaignApi(config, "/contacts", {
+      email: normalizeMarketingEmail(prospect.email),
+      listIds: Array.from(new Set([config.listId, audienceListId].filter(Boolean))),
+      updateEnabled: true
+    })));
+  }
+  const senderName = String(senderActor?.name || config.senderName).trim() || config.senderName;
+  const senderEmail = config.senderEmail;
+  const campaignBodyTemplate = String(template?.body_text || template?.bodyText || "")
+    .replace(/{{\s*(?:candidate_?name|name|first_?name)\s*}}/gi, "there");
+  const baseBody = renderMarketingTemplate(campaignBodyTemplate, {}, {
+    senderName,
+    senderEmail: normalizeMarketingEmail(senderActor?.email || "") || senderEmail,
+    senderPhone: String(senderActor?.phone || senderActor?.mobile || "").trim(),
+    senderCompany: "Kompatible Minds"
+  }).replace(/{{[^}]+}}/g, "");
+  const hasHtmlBody = /<[^>]+>/.test(baseBody);
+  const htmlContent = hasHtmlBody
+    ? baseBody
+    : `<pre style="font-family:Arial,sans-serif;white-space:pre-wrap;line-height:1.55;">${escapeHtml(baseBody)}</pre>`;
+  const baseSubject = renderMarketingTemplate(String(template?.subject || ""), {}, {
+    senderName,
+    senderEmail: normalizeMarketingEmail(senderActor?.email || "") || senderEmail,
+    senderPhone: String(senderActor?.phone || senderActor?.mobile || "").trim(),
+    senderCompany: "Kompatible Minds"
+  }).replace(/{{[^}]+}}/g, "").trim();
+  if (!baseSubject || !baseBody.trim()) throw new Error("Campaign subject and body are required.");
+  const created = await callBrevoCandidateCampaignApi(config, "/emailCampaigns", {
+    name: `RecruitDesk · ${String(campaign?.name || "Campaign").trim()}`.slice(0, 120),
+    subject: baseSubject,
+    sender: { name: senderName, email: senderEmail },
+    replyTo: { name: senderName, email: normalizeMarketingEmail(senderActor?.email || "") || senderEmail },
+    htmlContent,
+    recipients: { listIds: [audienceListId] }
+  });
+  const brevoCampaignId = Number(created?.id || 0);
+  if (!brevoCampaignId) throw new Error("Brevo campaign could not be created.");
+  await callBrevoCandidateCampaignApi(config, `/emailCampaigns/${encodeURIComponent(brevoCampaignId)}/sendNow`, {});
+  return { brevoCampaignId, audienceListId, recipientCount: audience.length, subject: baseSubject };
 }
 
 async function syncBrevoCandidateContact(config, prospect = {}) {
@@ -18685,6 +18753,94 @@ const server = http.createServer(async (req, res) => {
           attachProspectIds: uniqueAttachIds
         }
       });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && /^\/company\/marketing\/campaigns\/[^/]+\/send-brevo$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const campaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/send-brevo$/, "")).trim();
+      const campaignAccess = await getMarketingCampaignForActor(actor, campaignId);
+      if (!campaignAccess) throw new Error("Campaign not found or not accessible.");
+      const companyId = encodeURIComponent(String(actor.companyId || "").trim());
+      const campaignRows = await supabaseTableFetch(
+        "marketing_campaigns",
+        `?select=*&company_id=eq.${companyId}&id=eq.${encodeURIComponent(campaignId)}&limit=1`
+      );
+      const campaign = Array.isArray(campaignRows) && campaignRows.length ? campaignRows[0] : null;
+      if (!campaign) throw new Error("Campaign not found.");
+      if (Number(campaign?.brevo_campaign_id || 0)) throw new Error("This campaign has already been sent to Brevo. Create a new campaign to send again.");
+      const brevoConfig = getBrevoCandidateCampaignConfig();
+      if (!brevoConfig.enabled || !brevoConfig.listId) throw new Error("Brevo marketing is not configured. Check BREVO_API_KEY, BREVO_SENDER_EMAIL and BREVO_CANDIDATE_LIST_ID.");
+      // This query intentionally runs before Brevo creation: it verifies that the one-time
+      // campaign migration has been applied, avoiding an untracked external campaign.
+      await supabaseTableFetch(
+        "marketing_campaigns",
+        `?select=id,provider,audience_type,brevo_campaign_id,brevo_audience_list_id&company_id=eq.${companyId}&id=eq.${encodeURIComponent(campaignId)}&limit=1`
+      );
+      const templateRows = await supabaseTableFetch(
+        "marketing_templates",
+        `?select=subject,body_text&company_id=eq.${companyId}&campaign_id=eq.${encodeURIComponent(campaignId)}&limit=1`
+      );
+      const template = Array.isArray(templateRows) && templateRows.length ? templateRows[0] : null;
+      if (!template?.subject || !template?.body_text) throw new Error("Save the campaign subject and body before sending.");
+      const queueRows = await supabaseTableFetch(
+        "marketing_campaign_prospects",
+        `?select=id,prospect_id&company_id=eq.${companyId}&campaign_id=eq.${encodeURIComponent(campaignId)}&state=eq.ready&limit=1000`
+      );
+      const safeQueueRows = Array.isArray(queueRows) ? queueRows : [];
+      const prospectIds = Array.from(new Set(safeQueueRows.map((row) => String(row?.prospect_id || "").trim()).filter(Boolean)));
+      if (!prospectIds.length) throw new Error("No selected recipients are ready for this campaign.");
+      const inClause = prospectIds.map((id) => `"${id.replace(/"/g, "")}"`).join(",");
+      const prospectRows = await supabaseTableFetch(
+        "marketing_prospects",
+        `?select=id,name,email,status&company_id=eq.${companyId}&id=in.(${inClause})&limit=1000`
+      );
+      const prospects = (Array.isArray(prospectRows) ? prospectRows : []).filter((item) => String(item?.status || "").trim().toLowerCase() === "active" && normalizeMarketingEmail(item?.email));
+      if (!prospects.length) throw new Error("No active recipients with valid email addresses were found.");
+      const companyUsers = await listCompanyUsers(String(actor.companyId || "").trim()).catch(() => []);
+      const senderUserId = String(campaign?.sender_user_id || actor.id || "").trim();
+      const senderUser = (Array.isArray(companyUsers) ? companyUsers : []).find((item) => String(item?.id || "").trim() === senderUserId) || actor;
+      const sentCampaign = await createAndSendBrevoMarketingCampaign(brevoConfig, senderUser, campaign, {
+        subject: template.subject,
+        body_text: stripMarketingTemplateAttachment(String(template.body_text || "")).cleanBody
+      }, prospects);
+      const now = toIsoNow();
+      await supabaseTableFetch("marketing_campaigns", `?id=eq.${encodeURIComponent(campaignId)}&company_id=eq.${companyId}&select=*`, {
+        method: "PATCH",
+        body: {
+          status: "sent",
+          source: String(campaign?.source || "recruiter_portal"),
+          audience_type: "candidate",
+          provider: "brevo_marketing",
+          brevo_campaign_id: sentCampaign.brevoCampaignId,
+          brevo_audience_list_id: sentCampaign.audienceListId,
+          sent_at: now,
+          updated_at: now
+        },
+        prefer: "return=minimal"
+      });
+      const recipientIdSet = new Set(prospects.map((item) => String(item?.id || "").trim()));
+      await Promise.all(safeQueueRows.filter((row) => recipientIdSet.has(String(row?.prospect_id || "").trim())).map(async (row) => {
+        await supabaseTableFetch("marketing_campaign_prospects", `?id=eq.${encodeURIComponent(String(row.id || ""))}&select=*`, {
+          method: "PATCH",
+          body: { state: "sent", last_sent_at: now, updated_at: now },
+          prefer: "return=minimal"
+        });
+        await supabaseTableFetch("marketing_message_events", "?select=id", {
+          method: "POST",
+          body: {
+            id: crypto.randomUUID(), company_id: actor.companyId, campaign_id: campaignId,
+            prospect_id: row.prospect_id, event_type: "sent", event_at: now,
+            meta: { provider: "brevo_marketing", brevoCampaignId: sentCampaign.brevoCampaignId }
+          },
+          prefer: "return=minimal"
+        });
+      }));
+      sendJson(res, 200, { ok: true, result: sentCampaign });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
