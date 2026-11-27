@@ -6757,8 +6757,8 @@ function buildLegacyMarketingCampaignOwnerFilter(actor = null) {
 }
 
 async function fetchMarketingCampaignRows(actor = null, {
-  selectWithCreatedBy = "id,name,category,status,source,sender_user_id,send_gap_minutes,daily_cap,updated_at,created_at,created_by",
-  selectLegacy = "id,name,category,status,source,sender_user_id,send_gap_minutes,daily_cap,updated_at,created_at",
+  selectWithCreatedBy = "id,name,category,status,source,audience_type,provider,brevo_campaign_id,brevo_audience_list_id,sent_at,sender_user_id,send_gap_minutes,daily_cap,updated_at,created_at,created_by",
+  selectLegacy = "id,name,category,status,source,audience_type,provider,brevo_campaign_id,brevo_audience_list_id,sent_at,sender_user_id,send_gap_minutes,daily_cap,updated_at,created_at",
   extraQuery = "",
   limit = 100
 } = {}) {
@@ -18814,7 +18814,7 @@ const server = http.createServer(async (req, res) => {
         body: {
           status: "sent",
           source: String(campaign?.source || "recruiter_portal"),
-          audience_type: "candidate",
+          audience_type: /candidate|captured|recruiter_portal/i.test(String(campaign?.source || "")) ? "candidate" : "sales",
           provider: "brevo_marketing",
           brevo_campaign_id: sentCampaign.brevoCampaignId,
           brevo_audience_list_id: sentCampaign.audienceListId,

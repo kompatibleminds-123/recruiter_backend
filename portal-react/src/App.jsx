@@ -8494,10 +8494,10 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     "{{sender_email}}"
   ];
   const MARKETING_TABS = [
-    { key: "prospects", label: "Prospects" },
-    { key: "templates", label: "Email Templates" },
-    { key: "campaigns", label: "Campaigns" },
-    { key: "queue", label: "Queue" }
+    { key: "candidate-campaigns", label: "Candidate Campaigns" },
+    { key: "prospects", label: "Sales Outreach" },
+    { key: "templates", label: "Templates" },
+    { key: "campaigns", label: "Sales Campaigns" }
   ];
   const [activeTab, setActiveTab] = useState(initialTab || "prospects");
   const [loading, setLoading] = useState(true);
@@ -8725,7 +8725,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         await Promise.all([loadCampaigns(), loadTemplates()]);
         return;
       }
-      if (activeTab === "campaigns") {
+      if (activeTab === "candidate-campaigns" || activeTab === "campaigns") {
         await loadCampaigns();
         return;
       }
@@ -8748,7 +8748,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       await Promise.all([loadCampaigns(), loadTemplates()]);
       return;
     }
-    if (tab === "campaigns" || tab === "queue") {
+    if (tab === "candidate-campaigns" || tab === "campaigns" || tab === "queue") {
       await loadCampaigns();
     }
   }, [activeTab, loadCampaigns, loadOverview, loadProspects, loadTemplates]);
@@ -8833,6 +8833,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     const hay = `${item?.name || ""} ${item?.category || ""} ${item?.status || ""}`.toLowerCase();
     return hay.includes(q);
   });
+  const candidateCampaigns = campaigns.filter((item) => /candidate|captured|recruiter_portal/i.test(String(item?.source || "")) || String(item?.audience_type || "").toLowerCase() === "candidate");
+  const salesCampaigns = campaigns.filter((item) => !candidateCampaigns.some((candidateCampaign) => String(candidateCampaign?.id || "") === String(item?.id || "")));
   const categories = Array.from(new Set(
     prospects.flatMap((item) => {
       const primary = String(item?.category || "").trim();
@@ -9059,24 +9061,15 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     if (!selectedProspectIds.length) throw new Error("Select prospects first.");
     const selectedCount = selectedProspectIds.length;
     const campaignName = String(activeCampaign?.name || "selected campaign").trim();
-    const proceed = window.confirm(`Launch mass mail for ${selectedCount} selected prospect(s) in "${campaignName}" now?`);
+    const proceed = window.confirm(`Create and send a Brevo campaign to ${selectedCount} selected prospect(s) for "${campaignName}"?`);
     if (!proceed) return;
 
     await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", {
       prospectIds: selectedProspectIds
     });
 
-    const campaignStatus = String(activeCampaign?.status || "").trim().toLowerCase();
-    if (campaignStatus !== "active") {
-      if (campaignStatus === "paused") {
-        await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/resume`, token, "POST", {});
-      } else {
-        await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/start`, token, "POST", {});
-      }
-    }
-
-    const tickResult = await api("/company/marketing/worker/tick", token, "POST", {});
-    const sent = Number(tickResult?.sent || 0);
+    const sentCampaign = await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/send-brevo`, token, "POST", {});
+    const sent = Number(sentCampaign?.recipientCount || 0);
     appendRecentRequestLog({
       source: "launch_selected_now",
       campaignId: selectedCampaignId,
@@ -9084,7 +9077,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       recipients: selectedCount,
       sentNow: sent
     });
-    setOk(`Launch done: ${selectedCount} attached. Send tick processed (${sent} sent now).`);
+    setOk(`Brevo campaign created and sent to ${sent} recipient(s). Track delivery in Brevo Marketing Campaigns.`);
     await refreshLight("campaigns");
   }
 
@@ -9237,22 +9230,10 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
 
   return (
     <div className="page-grid">
-      <Section kicker="Marketing" title="Campaign Control">
-        <p className="muted">Standalone marketing module: prospects, templates, campaigns, queue and follow-ups.</p>
+      <Section kicker="Marketing" title="Campaign Hub">
+        <p className="muted">Create and track candidate or sales outreach campaigns in one place.</p>
         <div className="button-row tight">
           <button className="ghost-btn" onClick={() => void refresh().catch(setErr)} disabled={loading}>Refresh</button>
-          <button onClick={() => void api("/company/marketing/worker/tick", token, "POST", { batchPerCampaign: Math.max(1, Math.min(50, Number(sendBatchSize || 1))) }).then((result) => { setOk(`Send tick executed. Sent: ${Number(result?.sent || 0)} (batch ${Number(result?.batchPerCampaign || sendBatchSize)}).`); return refreshLight(activeTab); }).catch(setErr)} disabled={loading}>Run send tick</button>
-          <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <span className="muted">Batch size</span>
-            <input
-              type="number"
-              min="1"
-              max="50"
-              value={sendBatchSize}
-              onChange={(e) => setSendBatchSize(Math.max(1, Math.min(50, Number(e.target.value || 1))))}
-              style={{ width: 84 }}
-            />
-          </label>
         </div>
         <div className="form-grid two-col" style={{ marginTop: 10 }}>
           <label>
@@ -9269,10 +9250,10 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       </Section>
 
       <div className="metric-grid compact">
-        <div className="metric-card"><div className="metric-label">Prospects</div><div className="metric-value">{overview?.prospects?.total || 0}</div></div>
-        <div className="metric-card"><div className="metric-label">Campaigns</div><div className="metric-value">{overview?.campaigns?.total || 0}</div></div>
-        <div className="metric-card"><div className="metric-label">Queue</div><div className="metric-value">{overview?.queue?.total || 0}</div></div>
-        <div className="metric-card"><div className="metric-label">Events</div><div className="metric-value">{overview?.events?.total || 0}</div></div>
+        <div className="metric-card"><div className="metric-label">Candidate campaigns</div><div className="metric-value">{candidateCampaigns.length}</div></div>
+        <div className="metric-card"><div className="metric-label">Sales prospects</div><div className="metric-value">{overview?.prospects?.total || 0}</div></div>
+        <div className="metric-card"><div className="metric-label">Sales campaigns</div><div className="metric-value">{salesCampaigns.length}</div></div>
+        <div className="metric-card"><div className="metric-label">Emails sent</div><div className="metric-value">{overview?.events?.byType?.sent || 0}</div></div>
       </div>
 
       <div className={showInternalTabs ? "two-pane-grid" : ""}>
@@ -9287,10 +9268,34 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         ) : null}
 
         <div className="page-grid">
+      {activeTab === "candidate-campaigns" ? (
+        <Section kicker="Candidate campaigns" title="Recruiter outreach sent through Brevo">
+          <p className="muted">Create candidate campaigns from Database Search or Captured Notes. This page keeps the history, source and delivery record in one place.</p>
+          <div className="table-wrap">
+            <table className="dashboard-table">
+              <thead><tr><th>Campaign</th><th>Source</th><th>Status</th><th>Recipients</th><th>Sent</th><th>Brevo campaign</th><th>Updated</th></tr></thead>
+              <tbody>
+                {candidateCampaigns.map((item) => (
+                  <tr key={String(item?.id || "")}>
+                    <td>{item?.name || "-"}</td>
+                    <td>{String(item?.source || "candidate_database").replace(/_/g, " ")}</td>
+                    <td>{item?.status || "draft"}</td>
+                    <td>{Number(item?.stats?.total || 0)}</td>
+                    <td>{Number(item?.stats?.sent || 0)}</td>
+                    <td>{item?.brevo_campaign_id ? `#${item.brevo_campaign_id}` : "Not sent yet"}</td>
+                    <td>{item?.updated_at ? new Date(item.updated_at).toLocaleString() : "-"}</td>
+                  </tr>
+                ))}
+                {!candidateCampaigns.length ? <tr><td colSpan="7"><div className="empty-state compact-empty">No candidate campaigns yet. Select candidates from Database Search or Captured Notes, then choose Email selected.</div></td></tr> : null}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+      ) : null}
       {activeTab === "prospects" ? (
         <>
-      <Section kicker="Prospects" title="Add Prospect" sectionRef={prospectFormSectionRef}>
-        <p className="muted">Prospect segments are for audience grouping.</p>
+      <Section kicker="Sales outreach" title="Add a prospect" sectionRef={prospectFormSectionRef}>
+        <p className="muted">Use this only for company-side sales contacts, not recruitment candidates.</p>
         <div className="form-grid two-col">
           <label><span>Name</span><input ref={prospectNameInputRef} value={prospectDraft.name} onChange={(e) => setProspectDraft((c) => ({ ...c, name: e.target.value }))} /></label>
           <label><span>Email</span><input value={prospectDraft.email} onChange={(e) => setProspectDraft((c) => ({ ...c, email: e.target.value }))} /></label>
@@ -9707,19 +9712,17 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       ) : null}
 
       {activeTab === "campaigns" ? (
-      <Section kicker="Campaigns" title="Build Campaign">
-        <p className="muted">Campaign tag is for reporting/filtering only and does not overwrite prospect segments.</p>
+      <Section kicker="Sales campaigns" title="Create a sales campaign">
+        <p className="muted">Create the campaign, choose prospects in Sales Outreach, then send it through Brevo.</p>
         <div className="form-grid two-col">
           <label><span>Campaign name</span><input value={campaignDraft.name} onChange={(e) => setCampaignDraft((c) => ({ ...c, name: e.target.value }))} /></label>
-          <label><span>Campaign tag (optional)</span><input value={campaignDraft.category} onChange={(e) => setCampaignDraft((c) => ({ ...c, category: e.target.value }))} /></label>
+          <label><span>Campaign label (optional)</span><input value={campaignDraft.category} onChange={(e) => setCampaignDraft((c) => ({ ...c, category: e.target.value }))} placeholder="e.g. GCC HR outreach" /></label>
           <label>
             <span>Send from</span>
             <select value={campaignDraft.senderUserId || String(marketingSenderOptions?.[0]?.id || "")} onChange={(e) => setCampaignDraft((c) => ({ ...c, senderUserId: e.target.value }))}>
               {marketingSenderOptions.map((option) => <option key={`campaign-sender-${option.id}`} value={option.id}>{option.label}</option>)}
             </select>
           </label>
-          <label><span>Send gap (mins)</span><input type="number" min="1" value={campaignDraft.sendGapMinutes} onChange={(e) => setCampaignDraft((c) => ({ ...c, sendGapMinutes: e.target.value }))} /></label>
-          <label><span>Daily cap</span><input type="number" min="10" value={campaignDraft.dailyCap} onChange={(e) => setCampaignDraft((c) => ({ ...c, dailyCap: e.target.value }))} /></label>
         </div>
         <div className="button-row">
           <button disabled={saving} onClick={() => void (async () => {
@@ -9754,23 +9757,18 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           <option value="">Select</option>
           {filteredCampaigns.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.status})</option>)}
         </select></label>
-        {!activeCampaign ? <p className="muted">Step 1: Select campaign. Step 2: Attach prospects. Step 3: Launch selected now.</p> : null}
+        {!activeCampaign ? <p className="muted">Create or select a sales campaign, then add prospects from the Sales Outreach tab.</p> : null}
         {activeCampaign ? (
           <div className="item-card compact-card">
-            <div className="item-subtitle">{`Label: ${activeCampaign.category || "-"} | Gap: ${activeCampaign.send_gap_minutes || 0} mins | Daily cap: ${activeCampaign.daily_cap || 0}`}</div>
+            <div className="item-subtitle">{`Label: ${activeCampaign.category || "-"} | Sender: ${marketingSenderOptions.find((item) => String(item?.id || "") === String(activeCampaign?.sender_user_id || ""))?.label || "Default sender"}`}</div>
             <div className="muted" style={{ marginTop: 6 }}>
-              Ready to send to {selectedProspectsCount} selected prospect(s), out of which {selectedProspectsWithEmailCount} have email.
+              Select prospects in Sales Outreach, then create the Brevo campaign from here.
             </div>
           </div>
         ) : null}
         {activeCampaign ? (
           <div className="button-row tight">
-            <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/start`, token, "POST", {}).then(() => { setOk("Campaign started."); return refreshLight("campaigns"); }).catch(setErr)}>Start</button>
-            <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/pause`, token, "POST", {}).then(() => { setOk("Campaign paused."); return refreshLight("campaigns"); }).catch(setErr)}>Pause</button>
-            <button className="ghost-btn" onClick={() => void api(`/company/marketing/campaigns/${activeCampaign.id}/resume`, token, "POST", {}).then(() => { setOk("Campaign resumed."); return refreshLight("campaigns"); }).catch(setErr)}>Resume</button>
             <button className="ghost-btn" disabled={!selectedProspectIds.length} onClick={() => void attachSelectedProspects().then(() => { setOk("Selected prospects attached to campaign."); return refreshLight("campaigns"); }).catch(setErr)}>Attach selected prospects</button>
-            <button className="ghost-btn" onClick={() => void clearSelectedCampaignQueue("ready_only").catch(setErr)}>Clear queue (ready only)</button>
-            <button className="ghost-btn" onClick={() => void clearSelectedCampaignQueue("all").catch(setErr)}>Clear queue (all states)</button>
             <button className="ghost-btn" type="button" onClick={() => campaignCsvFileInputRef.current?.click()} disabled={saving}>Upload prospects for this campaign</button>
             <button disabled={!selectedProspectIds.length || saving} onClick={() => void (async () => {
               setSaving(true);
@@ -9781,7 +9779,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
               } finally {
                 setSaving(false);
               }
-            })()}>{saving ? "Launching..." : "Launch selected now"}</button>
+            })()}>{saving ? "Creating campaign..." : "Create Brevo campaign & send"}</button>
             <input
               ref={campaignCsvFileInputRef}
               type="file"
@@ -21841,10 +21839,11 @@ function PortalApp({ token, onLogout }) {
   async function loadMarketingBulkMailTemplates() {
     const currentUserId = String(state.user?.id || "").trim();
     const [campaignResult, templateResult] = await Promise.all([
-      api("/company/marketing/campaigns?source=recruiter_portal", token).catch(() => ({ items: [] })),
+      api("/company/marketing/campaigns", token).catch(() => ({ items: [] })),
       api("/company/marketing/templates", token).catch(() => ({ items: [] }))
     ]);
     const campaigns = (Array.isArray(campaignResult?.items) ? campaignResult.items : []).filter((item) => {
+      if (!/candidate|captured|recruiter_portal/i.test(String(item?.source || "")) && String(item?.audience_type || "").toLowerCase() !== "candidate") return false;
       const senderUserId = String(item?.sender_user_id || item?.senderUserId || "").trim();
       if (!currentUserId) return true;
       return senderUserId === currentUserId;
