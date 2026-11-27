@@ -32858,10 +32858,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
           } />
 
           <Route path="/marketing" element={<MarketingModulePage token={token} currentUser={state.user} users={state.users} />} />
+          <Route path="/marketing/candidate-campaigns" element={<MarketingModulePage token={token} initialTab="candidate-campaigns" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
           <Route path="/marketing/prospects" element={<MarketingModulePage token={token} initialTab="prospects" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
           <Route path="/marketing/templates" element={<MarketingModulePage token={token} initialTab="templates" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
           <Route path="/marketing/campaigns" element={<MarketingModulePage token={token} initialTab="campaigns" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
-          <Route path="/marketing/queue" element={<MarketingModulePage token={token} initialTab="queue" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
+          <Route path="/marketing/queue" element={<Navigate to="/marketing/candidate-campaigns" replace />} />
           <Route path="/marketing-module" element={<Navigate to="/marketing" replace />} />
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
@@ -35802,10 +35803,10 @@ function formatWorkspaceUserRoleLabel(roleValue = "") {
 }
 
 const MARKETING_NAV_ITEMS = [
-  { to: "/marketing/prospects", label: "Prospects", tab: "prospects" },
-  { to: "/marketing/templates", label: "Email Templates", tab: "templates" },
-  { to: "/marketing/campaigns", label: "Campaigns", tab: "campaigns" },
-  { to: "/marketing/queue", label: "Queue", tab: "queue" }
+  { to: "/marketing/candidate-campaigns", label: "Candidate Campaigns", tab: "candidate-campaigns" },
+  { to: "/marketing/prospects", label: "Sales Outreach", tab: "prospects" },
+  { to: "/marketing/templates", label: "Templates", tab: "templates" },
+  { to: "/marketing/campaigns", label: "Sales Campaigns", tab: "campaigns" }
 ];
 
 function MarketingPortalApp({ token, onLogout }) {
@@ -35818,7 +35819,7 @@ function MarketingPortalApp({ token, onLogout }) {
   useEffect(() => {
     const path = String(location?.pathname || "");
     if (path === "/marketing" || path === "/marketing/" || path === "/marketing-module" || path === "/marketing-module/") {
-      navigate("/marketing/prospects", { replace: true });
+      navigate("/marketing/candidate-campaigns", { replace: true });
     }
   }, [location?.pathname, navigate]);
 
@@ -35867,12 +35868,13 @@ function MarketingPortalApp({ token, onLogout }) {
       </aside>
       <main className="main-panel">
         <Routes>
+          <Route path="/marketing/candidate-campaigns" element={<MarketingModulePage token={token} initialTab="candidate-campaigns" showInternalTabs={false} currentUser={currentUser} users={workspaceUsers} />} />
           <Route path="/marketing/prospects" element={<MarketingModulePage token={token} initialTab="prospects" showInternalTabs={false} currentUser={currentUser} users={workspaceUsers} />} />
           <Route path="/marketing/templates" element={<MarketingModulePage token={token} initialTab="templates" showInternalTabs={false} currentUser={currentUser} users={workspaceUsers} />} />
           <Route path="/marketing/campaigns" element={<MarketingModulePage token={token} initialTab="campaigns" showInternalTabs={false} currentUser={currentUser} users={workspaceUsers} />} />
-          <Route path="/marketing/queue" element={<MarketingModulePage token={token} initialTab="queue" showInternalTabs={false} currentUser={currentUser} users={workspaceUsers} />} />
-          <Route path="/marketing-module" element={<Navigate to="/marketing/prospects" replace />} />
-          <Route path="*" element={<Navigate to="/marketing/prospects" replace />} />
+          <Route path="/marketing/queue" element={<Navigate to="/marketing/candidate-campaigns" replace />} />
+          <Route path="/marketing-module" element={<Navigate to="/marketing/candidate-campaigns" replace />} />
+          <Route path="*" element={<Navigate to="/marketing/candidate-campaigns" replace />} />
         </Routes>
       </main>
     </div>
