@@ -9980,6 +9980,8 @@ function PortalApp({ token, onLogout }) {
     busy: false,
     busyMode: "",
     totalCandidates: 0,
+    candidateIds: [],
+    audienceLabel: "Candidates",
     campaignName: "",
     templateName: "",
     templateTag: "",
@@ -21981,11 +21983,10 @@ function PortalApp({ token, onLogout }) {
       && String(selectedTemplate?.dailyCap || "50").trim() === String(draft?.dailyCap || "50").trim();
   }
 
-  async function attachCurrentDatabasePageToCampaign() {
-    const candidates = Array.isArray(databaseRenderedItems) ? databaseRenderedItems : [];
-    const candidateIds = Array.from(new Set(candidates.map((item) => String(item?.id || "").trim()).filter(Boolean)));
-    if (!candidateIds.length) {
-      setStatus("workspace", "No candidates on current page to attach.", "error");
+  async function openDatabaseCampaignComposer(candidateIds = [], audienceLabel = "Candidates") {
+    const safeCandidateIds = Array.from(new Set((Array.isArray(candidateIds) ? candidateIds : []).map((item) => String(item || "").trim()).filter(Boolean)));
+    if (!safeCandidateIds.length) {
+      setStatus("captured", "Select at least one candidate first.", "error");
       return;
     }
     const cachedTemplates = Array.isArray(dbCampaignTemplatesCacheRef.current) ? dbCampaignTemplatesCacheRef.current : [];
@@ -21996,7 +21997,9 @@ function PortalApp({ token, onLogout }) {
       busy: !cachedTemplates.length,
       busyMode: cachedTemplates.length ? "" : "loading",
       templates: cachedTemplates,
-      totalCandidates: candidateIds.length,
+      totalCandidates: safeCandidateIds.length,
+      candidateIds: safeCandidateIds,
+      audienceLabel,
       senderUserId: String(marketingSenderOptions?.[0]?.id || state.user?.id || "").trim()
     });
     void preloadMarketingBulkMailTemplates({ force: !cachedTemplates.length })
@@ -22012,6 +22015,18 @@ function PortalApp({ token, onLogout }) {
         setDbCampaignAttachModal((current) => ({ ...current, busy: false, busyMode: "" }));
         setStatus("workspace", String(error?.message || error || "Failed to load templates."), "error");
       });
+  }
+
+  async function attachCurrentDatabasePageToCampaign() {
+    const candidates = Array.isArray(databaseRenderedItems) ? databaseRenderedItems : [];
+    return openDatabaseCampaignComposer(
+      candidates.map((item) => String(item?.id || "").trim()).filter(Boolean),
+      "Candidates on current database page"
+    );
+  }
+
+  async function attachSelectedCapturedCandidatesToCampaign() {
+    return openDatabaseCampaignComposer(bulkAssignCandidateIds, "Selected Captured Notes candidates");
   }
 
   async function upsertCurrentDatabaseMarketingTemplate({ forceNew = false, sourceOverride = "" } = {}) {
@@ -22664,7 +22679,10 @@ function PortalApp({ token, onLogout }) {
     const selectedCampaignId = String(liveTemplate?.campaignId || selectedCampaign?.id || dbCampaignAttachModal?.campaignId || "").trim();
     if (!selectedCampaignId) throw new Error("Campaign not found. Please save template again.");
     const candidates = Array.isArray(databaseRenderedItems) ? databaseRenderedItems : [];
-    const candidateIds = Array.from(new Set(candidates.map((item) => String(item?.id || "").trim()).filter(Boolean)));
+    const selectedCandidateIds = Array.isArray(dbCampaignAttachModal?.candidateIds) && dbCampaignAttachModal.candidateIds.length
+      ? dbCampaignAttachModal.candidateIds
+      : candidates.map((item) => String(item?.id || "").trim());
+    const candidateIds = Array.from(new Set(selectedCandidateIds.map((item) => String(item || "").trim()).filter(Boolean)));
     if (!candidateIds.length) {
       setStatus("workspace", "No candidates on current page to attach.", "error");
       setDbCampaignAttachModal((current) => ({ ...current, busy: false, busyMode: "" }));
@@ -29329,8 +29347,22 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   </button>
                 {String(state.user?.role || "").toLowerCase() === "admin" ? (
                   <>
+                      {capturedCandidates.length ? (
+                        <button
+                          className="ghost-btn"
+                          onClick={() => setBulkAssignCandidateIds((current) => Array.from(new Set([
+                            ...current,
+                            ...capturedCandidates.map((item) => String(item?.id || "").trim()).filter(Boolean)
+                          ])))}
+                        >
+                          {`Select page (${capturedCandidates.length})`}
+                        </button>
+                      ) : null}
                       {bulkAssignCandidateIds.length ? (
                         <>
+                          <button onClick={() => void attachSelectedCapturedCandidatesToCampaign()}>
+                            {`Email selected (${bulkAssignCandidateIds.length})`}
+                          </button>
                           <button
                             onClick={() => {
                               if (!bulkAssignCandidateIds.length) return;
@@ -33427,7 +33459,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
         >
           <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
             <h3>Send Bulk Mails</h3>
-            <p className="muted">Candidates on current page: {Number(dbCampaignAttachModal.totalCandidates || 0)}</p>
+            <p className="muted">{String(dbCampaignAttachModal.audienceLabel || "Candidates")}: {Number(dbCampaignAttachModal.totalCandidates || 0)}</p>
             {(() => {
               const modalActionLocked = ["saving", "sending", "deleting"].includes(String(dbCampaignAttachModal.busyMode || "").trim().toLowerCase());
               return (

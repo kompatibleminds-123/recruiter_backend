@@ -6101,6 +6101,54 @@ function normalizeMarketingEmail(value = "") {
   return String(value || "").trim().toLowerCase();
 }
 
+function getBrevoCandidateCampaignConfig() {
+  const apiKey = String(process.env.BREVO_API_KEY || "").trim();
+  const senderEmail = normalizeMarketingEmail(process.env.BREVO_SENDER_EMAIL || "");
+  const senderName = String(process.env.BREVO_SENDER_NAME || "Kompatible Minds").trim() || "Kompatible Minds";
+  const listId = Math.max(0, Number(process.env.BREVO_CANDIDATE_LIST_ID || 0) || 0);
+  const dailyCap = Math.max(1, Math.min(300, Number(process.env.MARKETING_DAILY_CAP || 250) || 250));
+  return { enabled: Boolean(apiKey && senderEmail), apiKey, senderEmail, senderName, listId, dailyCap };
+}
+
+async function callBrevoCandidateCampaignApi(config, path, body) {
+  const response = await fetchWithTimeout(`https://api.brevo.com/v3${path}`, {
+    method: "POST",
+    headers: { "api-key": config.apiKey, "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body)
+  }, 30000);
+  const raw = await response.text();
+  if (!response.ok) throw new Error(`Brevo request failed (${response.status}): ${raw.slice(0, 500) || "Unknown error"}`);
+  try { return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+}
+
+async function syncBrevoCandidateContact(config, prospect = {}) {
+  const email = normalizeMarketingEmail(prospect?.email || "");
+  if (!email || !config?.listId) return;
+  await callBrevoCandidateCampaignApi(config, "/contacts", { email, listIds: [config.listId], updateEnabled: true });
+}
+
+async function sendBrevoCandidateCampaignEmail(config, senderActor = {}, { to, subject, html, text, attachments = [] } = {}) {
+  const recipientEmail = normalizeMarketingEmail(to || "");
+  if (!recipientEmail) throw new Error("A valid recipient email is required.");
+  const attachmentPayload = (Array.isArray(attachments) ? attachments : []).map((item) => {
+    if (!item?.content) return null;
+    const content = Buffer.isBuffer(item.content) ? item.content.toString("base64") : Buffer.from(item.content).toString("base64");
+    return { name: String(item?.filename || "attachment").trim() || "attachment", content };
+  }).filter(Boolean);
+  return callBrevoCandidateCampaignApi(config, "/smtp/email", {
+    sender: { email: config.senderEmail, name: config.senderName },
+    replyTo: {
+      email: normalizeMarketingEmail(senderActor?.email || "") || config.senderEmail,
+      name: String(senderActor?.name || config.senderName).trim() || config.senderName
+    },
+    to: [{ email: recipientEmail }],
+    subject: String(subject || "").trim(),
+    htmlContent: String(html || "").trim(),
+    textContent: String(text || "").trim(),
+    ...(attachmentPayload.length ? { attachment: attachmentPayload } : {})
+  });
+}
+
 function normalizeMarketingCategories(value) {
   if (Array.isArray(value)) {
     return Array.from(new Set(value.map((item) => String(item || "").trim().replace(/^"+|"+$/g, "")).filter(Boolean)));
@@ -6744,6 +6792,7 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
   const companyId = encodeURIComponent(String(actor?.companyId || "").trim());
   if (!companyId) return { sent: 0 };
   const batchPerCampaign = Math.max(1, Math.min(50, Number(options?.batchPerCampaign || 1)));
+  const brevoConfig = getBrevoCandidateCampaignConfig();
   const companyUsers = await listCompanyUsers(String(actor?.companyId || "").trim()).catch(() => []);
   const userById = new Map((Array.isArray(companyUsers) ? companyUsers : []).map((item) => [String(item?.id || "").trim(), item]));
   const sharedCopySettings = await getCompanySharedExportPresets(String(actor?.companyId || "").trim()).catch(() => ({}));
@@ -6763,15 +6812,15 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
     if (!isAdminActor(actor) && senderUserId !== String(actor?.id || "").trim()) continue;
     const senderUser = userById.get(senderUserId) || null;
     if (!senderUser?.id) continue;
-    if (!smtpByUserId.has(senderUserId)) {
+    if (!brevoConfig.enabled && !smtpByUserId.has(senderUserId)) {
       const smtp = await getUserSmtpSettings({
         companyId: String(actor?.companyId || "").trim(),
         userId: senderUserId
       }).catch(() => null);
       smtpByUserId.set(senderUserId, smtp || null);
     }
-    const senderSmtp = smtpByUserId.get(senderUserId);
-    if (!senderSmtp) continue;
+    const senderSmtp = brevoConfig.enabled ? {} : smtpByUserId.get(senderUserId);
+    if (!brevoConfig.enabled && !senderSmtp) continue;
     const senderActor = {
       ...actor,
       id: String(senderUser.id || "").trim(),
@@ -6878,7 +6927,19 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
         }
       }
       try {
-        await sendJdEmailAsActor(senderActor, { to, subject, text, html, cc: "", attachments });
+        let provider = "recruiter_mailbox";
+        if (brevoConfig.enabled) {
+          const sentTodayRows = await supabaseTableFetch(
+            "marketing_message_events",
+            `?select=id&company_id=eq.${companyId}&event_type=eq.sent&event_at=gte.${encodeURIComponent(new Date(Date.now() - (24 * 60 * 60 * 1000)).toISOString())}&limit=${brevoConfig.dailyCap}`
+          ).catch(() => []);
+          if ((Array.isArray(sentTodayRows) ? sentTodayRows.length : 0) >= brevoConfig.dailyCap) continue;
+          await syncBrevoCandidateContact(brevoConfig, prospect);
+          await sendBrevoCandidateCampaignEmail(brevoConfig, senderActor, { to, subject, html, text, attachments });
+          provider = "brevo";
+        } else {
+          await sendJdEmailAsActor(senderActor, { to, subject, text, html, cc: "", attachments });
+        }
         await supabaseTableFetch("marketing_campaign_prospects", `?id=eq.${encodeURIComponent(String(row.id || ""))}&select=*`, {
           method: "PATCH",
           body: { state: "sent", updated_at: toIsoNow(), last_sent_at: toIsoNow() },
@@ -6893,7 +6954,7 @@ async function processMarketingWorkerTickForActor(actor, options = {}) {
             prospect_id: prospect.id,
             event_type: "sent",
             event_at: toIsoNow(),
-            meta: { subject, auto: true }
+            meta: { subject, auto: true, provider }
           },
           prefer: "return=minimal"
         });
