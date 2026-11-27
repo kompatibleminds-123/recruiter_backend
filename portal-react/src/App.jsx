@@ -8517,6 +8517,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [sendBatchSize, setSendBatchSize] = useState(3);
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [templateDraft, setTemplateDraft] = useState({ subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam", targetCategoriesText: "" });
+  const [templateEditorMode, setTemplateEditorMode] = useState("design");
   const [editingTemplateId, setEditingTemplateId] = useState("");
   const [templateAttachment, setTemplateAttachment] = useState(null);
   const [templateAttachmentDirty, setTemplateAttachmentDirty] = useState(false);
@@ -9555,14 +9556,30 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         <div className="form-grid">
           <label><span>Subject</span><input ref={templateSubjectInputRef} value={templateDraft.subject} onChange={(e) => setTemplateDraft((c) => ({ ...c, subject: e.target.value }))} /></label>
           <label>
-            <span>Body</span>
-            <RichTextEditor
-              editorRef={templateBodyInputRef}
-              value={templateDraft.bodyText}
-              onChange={(html) => setTemplateDraft((c) => ({ ...c, bodyText: html }))}
-              placeholder="Write email body..."
-              minHeight={220}
-            />
+            <span>Email body</span>
+            <div className="button-row tight" style={{ margin: "6px 0 8px" }}>
+              <button type="button" className={templateEditorMode === "design" ? "" : "ghost-btn"} onClick={() => setTemplateEditorMode("design")}>Design editor</button>
+              <button type="button" className={templateEditorMode === "html" ? "" : "ghost-btn"} onClick={() => setTemplateEditorMode("html")}>HTML code</button>
+            </div>
+            {templateEditorMode === "html" ? (
+              <textarea
+                ref={templateBodyInputRef}
+                value={templateDraft.bodyText}
+                onChange={(e) => setTemplateDraft((c) => ({ ...c, bodyText: e.target.value }))}
+                placeholder="Paste complete email HTML here..."
+                rows={16}
+                style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" }}
+              />
+            ) : (
+              <RichTextEditor
+                editorRef={templateBodyInputRef}
+                value={templateDraft.bodyText}
+                onChange={(html) => setTemplateDraft((c) => ({ ...c, bodyText: html }))}
+                placeholder="Write email body..."
+                minHeight={220}
+              />
+            )}
+            <span className="field-help">Use Design editor for normal writing, or HTML code to paste a complete Brevo-ready email design. Preview before sending.</span>
           </label>
         </div>
         <div className="button-row tight" style={{ marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
