@@ -6198,7 +6198,7 @@ async function createAndSendBrevoMarketingCampaign(config, senderActor = {}, cam
     name: `RecruitDesk · ${String(campaign?.name || "Campaign").trim()}`.slice(0, 120),
     subject: baseSubject,
     sender: { name: senderName, email: senderEmail },
-    replyTo: { name: senderName, email: replyToEmail },
+    replyTo: replyToEmail,
     htmlContent,
     recipients: { listIds: [audienceListId] }
   });
