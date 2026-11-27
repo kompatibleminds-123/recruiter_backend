@@ -8534,6 +8534,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [editingCampaignId, setEditingCampaignId] = useState("");
   const [csvText, setCsvText] = useState("");
   const [csvFileName, setCsvFileName] = useState("");
+  const [campaignContactsPaste, setCampaignContactsPaste] = useState("");
   const [prospectSearch, setProspectSearch] = useState("");
   const [prospectCategoryFilter, setProspectCategoryFilter] = useState("");
   const [selectedProspectIds, setSelectedProspectIds] = useState([]);
@@ -9062,6 +9063,33 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     const inserted = Number(result?.inserted || 0);
     const linked = Number(result?.campaignLinked || 0);
     setOk(`Campaign import done. New inserted: ${inserted}. Campaign linked: ${linked}.`);
+    await refreshLight("campaigns");
+  }
+
+  async function importPastedCampaignContacts() {
+    if (!selectedCampaignId) throw new Error("Create or select a campaign first.");
+    const csv = String(campaignContactsPaste || "").trim();
+    if (!csv) throw new Error("Paste contact rows first.");
+    const preview = await api("/company/marketing/prospects/import", token, "POST", { csv, mode: "preview" });
+    const total = Number(preview?.totalRows || 0);
+    const valid = Number(preview?.validRows || 0);
+    const invalid = Number(preview?.invalidRows || 0);
+    const fresh = Number(preview?.newCount || 0);
+    const existing = Number(preview?.existingCount || 0);
+    const proceed = window.confirm(`Contact check:\nTotal: ${total}\nValid: ${valid}\nInvalid: ${invalid}\nNew: ${fresh}\nExisting: ${existing}\n\nAdd these contacts only to the selected campaign?`);
+    if (!proceed) return;
+    const includeExistingForCampaign = existing > 0
+      ? window.confirm(`${existing} contacts already exist. Also add them to this campaign?`)
+      : false;
+    const result = await api("/company/marketing/prospects/import", token, "POST", {
+      csv,
+      mode: "commit",
+      importAction: includeExistingForCampaign ? "new_and_use_existing" : "new_only",
+      includeExistingForCampaign,
+      campaignId: selectedCampaignId
+    });
+    setCampaignContactsPaste("");
+    setOk(`Contacts added to this campaign: ${Number(result?.campaignLinked || 0)} linked.`);
     await refreshLight("campaigns");
   }
 
@@ -9796,16 +9824,17 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           <option value="">Select</option>
           {filteredCampaigns.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.status})</option>)}
         </select></label>
-        {!activeCampaign ? <p className="muted">Create or select a sales campaign, then add prospects from the Sales Outreach tab.</p> : null}
+        {!activeCampaign ? <p className="muted">Create or select a campaign, then upload or paste its contacts below.</p> : null}
         {activeCampaign ? (
           <div className="item-card compact-card">
             <div className="item-subtitle">{`Label: ${activeCampaign.category || "-"} | Sender: ${marketingSenderOptions.find((item) => String(item?.id || "") === String(activeCampaign?.sender_user_id || ""))?.label || "Default sender"}`}</div>
             <div className="muted" style={{ marginTop: 6 }}>
-              Select prospects in Sales Outreach, then create the Brevo campaign from here.
+              Upload or paste contacts for this campaign, add the email template, then send through Brevo.
             </div>
           </div>
         ) : null}
         {activeCampaign ? (
+          <>
           <div className="button-row tight">
             <button type="button" onClick={() => campaignCsvFileInputRef.current?.click()} disabled={saving}>Upload contacts (CSV / Excel)</button>
             <button className="ghost-btn" type="button" onClick={() => navigate(`/marketing/templates?campaignId=${encodeURIComponent(String(activeCampaign?.id || ""))}`)}>Add or edit template</button>
@@ -9841,6 +9870,25 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
               }}
             />
           </div>
+          <div className="item-card compact-card" style={{ marginTop: 12 }}>
+            <div className="item-subtitle">Or paste contacts</div>
+            <p className="muted" style={{ marginTop: 6 }}>Paste CSV rows with a header. Minimum required columns: <code>name,email</code>. Optional: <code>phone,company,designation,category</code>.</p>
+            <textarea
+              value={campaignContactsPaste}
+              onChange={(e) => setCampaignContactsPaste(e.target.value)}
+              rows={7}
+              placeholder={"name,email,company,designation\nPriya Shah,priya@acme.com,Acme Pvt Ltd,HR Director\nRahul Mehta,rahul@globex.com,Globex,Founder"}
+              disabled={saving}
+              style={{ marginTop: 8, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" }}
+            />
+            <div className="button-row tight" style={{ marginTop: 8 }}>
+              <button type="button" disabled={saving || !String(campaignContactsPaste || "").trim()} onClick={() => void (async () => {
+                setSaving(true);
+                try { await importPastedCampaignContacts(); } catch (error) { setErr(error); } finally { setSaving(false); }
+              })()}>{saving ? "Adding contacts..." : "Add pasted contacts"}</button>
+            </div>
+          </div>
+          </>
         ) : null}
         <div className="table-wrap">
           <table className="dashboard-table">
