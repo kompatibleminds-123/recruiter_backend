@@ -6028,6 +6028,9 @@ function RichTextEditor({ value, onChange, placeholder = "Write here...", minHei
   useEffect(() => {
     const node = editorRef.current;
     if (!node) return;
+    // While the user is typing, React state mirrors the contenteditable value.
+    // Replacing innerHTML at that point destroys the browser selection/caret.
+    if (document.activeElement === node) return;
     const raw = String(value || "");
     const next = /<\/?[a-z][\s\S]*>/i.test(raw) ? raw : escapeHtml(raw).replace(/\n/g, "<br/>");
     if (node.innerHTML !== next) node.innerHTML = next;
