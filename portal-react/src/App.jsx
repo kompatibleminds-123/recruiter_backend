@@ -8835,6 +8835,14 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   });
   const candidateCampaigns = campaigns.filter((item) => /candidate|captured|recruiter_portal/i.test(String(item?.source || "")) || String(item?.audience_type || "").toLowerCase() === "candidate");
   const salesCampaigns = campaigns.filter((item) => !candidateCampaigns.some((candidateCampaign) => String(candidateCampaign?.id || "") === String(item?.id || "")));
+  const candidateRecipientCount = candidateCampaigns.reduce((total, item) => total + Math.max(0, Number(item?.stats?.total || 0)), 0);
+  const candidateEmailSentCount = candidateCampaigns.reduce((total, item) => total + Math.max(0, Number(item?.stats?.sent || 0)), 0);
+  const salesEmailSentCount = salesCampaigns.reduce((total, item) => total + Math.max(0, Number(item?.stats?.sent || 0)), 0);
+  const isCandidateCampaignView = activeTab === "candidate-campaigns";
+  const marketingPageTitle = isCandidateCampaignView ? "Candidate Campaigns" : "Campaign Hub";
+  const marketingPageDescription = isCandidateCampaignView
+    ? "Candidate outreach created from Database Search and Captured Notes."
+    : "Create and track candidate or sales outreach campaigns in one place.";
   const categories = Array.from(new Set(
     prospects.flatMap((item) => {
       const primary = String(item?.category || "").trim();
@@ -9230,8 +9238,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
 
   return (
     <div className="page-grid">
-      <Section kicker="Marketing" title="Campaign Hub">
-        <p className="muted">Create and track candidate or sales outreach campaigns in one place.</p>
+      <Section kicker="Marketing" title={marketingPageTitle}>
+        <p className="muted">{marketingPageDescription}</p>
         <div className="button-row tight">
           <button className="ghost-btn" onClick={() => void refresh().catch(setErr)} disabled={loading}>Refresh</button>
         </div>
@@ -9250,10 +9258,19 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       </Section>
 
       <div className="metric-grid compact">
-        <div className="metric-card"><div className="metric-label">Candidate campaigns</div><div className="metric-value">{candidateCampaigns.length}</div></div>
-        <div className="metric-card"><div className="metric-label">Sales prospects</div><div className="metric-value">{overview?.prospects?.total || 0}</div></div>
-        <div className="metric-card"><div className="metric-label">Sales campaigns</div><div className="metric-value">{salesCampaigns.length}</div></div>
-        <div className="metric-card"><div className="metric-label">Emails sent</div><div className="metric-value">{overview?.events?.byType?.sent || 0}</div></div>
+        {isCandidateCampaignView ? (
+          <>
+            <div className="metric-card"><div className="metric-label">Candidate campaigns</div><div className="metric-value">{candidateCampaigns.length}</div></div>
+            <div className="metric-card"><div className="metric-label">Campaign recipients</div><div className="metric-value">{candidateRecipientCount}</div></div>
+            <div className="metric-card"><div className="metric-label">Emails sent</div><div className="metric-value">{candidateEmailSentCount}</div></div>
+          </>
+        ) : (
+          <>
+            <div className="metric-card"><div className="metric-label">Sales prospects</div><div className="metric-value">{overview?.prospects?.total || 0}</div></div>
+            <div className="metric-card"><div className="metric-label">Sales campaigns</div><div className="metric-value">{salesCampaigns.length}</div></div>
+            <div className="metric-card"><div className="metric-label">Sales emails sent</div><div className="metric-value">{salesEmailSentCount}</div></div>
+          </>
+        )}
       </div>
 
       <div className={showInternalTabs ? "two-pane-grid" : ""}>
