@@ -6141,22 +6141,39 @@ async function createBrevoCampaignAudienceList(config, campaign = {}) {
   return listId;
 }
 
+async function ensureBrevoRecruitDeskContactAttributes(config) {
+  try {
+    await callBrevoCandidateCampaignApi(config, "/contacts/attributes/normal/RD_COMPANY", { type: "text" });
+  } catch (error) {
+    const message = String(error?.message || error || "").toLowerCase();
+    if (!message.includes("already") && !message.includes("exists") && !message.includes("duplicate")) throw error;
+  }
+}
+
+function convertRecruitDeskPlaceholdersForBrevo(template = "") {
+  return String(template || "")
+    .replace(/{{\s*(?:company|company_name)\s*}}/gi, "{{ contact.RD_COMPANY }}")
+    .replace(/{Company}/g, "{{ contact.RD_COMPANY }}");
+}
+
 async function createAndSendBrevoMarketingCampaign(config, senderActor = {}, campaign = {}, template = {}, prospects = []) {
   const audience = (Array.isArray(prospects) ? prospects : []).filter((item) => normalizeMarketingEmail(item?.email));
   if (!audience.length) throw new Error("No valid email addresses were selected.");
   if (audience.length > config.dailyCap) throw new Error(`This campaign has ${audience.length} recipients. Your RecruitDesk Brevo safety limit is ${config.dailyCap} per day.`);
   const audienceListId = await createBrevoCampaignAudienceList(config, campaign);
+  await ensureBrevoRecruitDeskContactAttributes(config);
   for (let index = 0; index < audience.length; index += 10) {
     const batch = audience.slice(index, index + 10);
     await Promise.all(batch.map((prospect) => callBrevoCandidateCampaignApi(config, "/contacts", {
       email: normalizeMarketingEmail(prospect.email),
       listIds: Array.from(new Set([config.listId, audienceListId].filter(Boolean))),
+      attributes: { RD_COMPANY: String(prospect?.company_name || prospect?.companyName || "").trim() },
       updateEnabled: true
     })));
   }
   const senderName = String(senderActor?.name || config.senderName).trim() || config.senderName;
   const senderEmail = config.senderEmail;
-  const campaignBodyTemplate = String(template?.body_text || template?.bodyText || "")
+  const campaignBodyTemplate = convertRecruitDeskPlaceholdersForBrevo(String(template?.body_text || template?.bodyText || ""))
     .replace(/{{\s*(?:candidate_?name|name|first_?name)\s*}}/gi, "there");
   const baseBody = renderMarketingTemplate(campaignBodyTemplate, {}, {
     senderName,
@@ -6168,7 +6185,7 @@ async function createAndSendBrevoMarketingCampaign(config, senderActor = {}, cam
   const htmlContent = hasHtmlBody
     ? baseBody
     : `<pre style="font-family:Arial,sans-serif;white-space:pre-wrap;line-height:1.55;">${escapeHtml(baseBody)}</pre>`;
-  const baseSubject = renderMarketingTemplate(String(template?.subject || ""), {}, {
+  const baseSubject = renderMarketingTemplate(convertRecruitDeskPlaceholdersForBrevo(String(template?.subject || "")), {}, {
     senderName,
     senderEmail: normalizeMarketingEmail(senderActor?.email || "") || senderEmail,
     senderPhone: String(senderActor?.phone || senderActor?.mobile || "").trim(),
@@ -6192,7 +6209,13 @@ async function createAndSendBrevoMarketingCampaign(config, senderActor = {}, cam
 async function syncBrevoCandidateContact(config, prospect = {}) {
   const email = normalizeMarketingEmail(prospect?.email || "");
   if (!email || !config?.listId) return;
-  await callBrevoCandidateCampaignApi(config, "/contacts", { email, listIds: [config.listId], updateEnabled: true });
+  await ensureBrevoRecruitDeskContactAttributes(config);
+  await callBrevoCandidateCampaignApi(config, "/contacts", {
+    email,
+    listIds: [config.listId],
+    attributes: { RD_COMPANY: String(prospect?.company_name || prospect?.companyName || "").trim() },
+    updateEnabled: true
+  });
 }
 
 async function sendBrevoCandidateCampaignEmail(config, senderActor = {}, { to, subject, html, text, attachments = [] } = {}) {
@@ -6304,7 +6327,7 @@ function renderMarketingTemplate(template = "", prospect = {}, context = {}) {
   const senderPhone = String(context?.senderPhone || "").trim();
   const senderCompany = String(context?.senderCompany || context?.companyName || "").trim();
   const resolvedRole = String(prospect?.jd_title || prospect?.jdTitle || prospect?.role || prospect?.designation || "").trim();
-  const resolvedCompany = String(senderCompany || prospect?.company_name || prospect?.companyName || "").trim();
+  const resolvedCompany = String(prospect?.company_name || prospect?.companyName || senderCompany || "").trim();
   const replacementMap = {
     name: String(prospect?.name || "").trim(),
     first_name: firstName,
@@ -6322,6 +6345,7 @@ function renderMarketingTemplate(template = "", prospect = {}, context = {}) {
     sender_first_name: senderFirstName,
     sender_email: senderEmail,
     sender_phone: senderPhone,
+    sender_company: senderCompany,
     logged_in_recruiter_name: senderName,
     logged_in_recruiter_email: senderEmail,
     logged_in_recruiter_phone: senderPhone
