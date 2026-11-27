@@ -879,6 +879,12 @@ function formatCandidateSearchDebugCounts(debugPayload = null) {
   const localCount = Number(debugPayload?.debug?.localCount ?? NaN);
   const deepCount = Number(debugPayload?.debug?.deepCount ?? NaN);
   const adoptedSource = String(debugPayload?.debug?.adoptedSource || "").trim();
+  if (adoptedSource === "backend_canonical_candidate_search") {
+    const mergedCount = Number(debugPayload?.debug?.mergedCount ?? NaN);
+    return Number.isFinite(mergedCount)
+      ? `Using: database search | Matched: ${mergedCount}`
+      : "Using: database search";
+  }
   const parts = [];
   if (Number.isFinite(universeCount)) parts.push(`Universe: ${universeCount}`);
   if (Number.isFinite(matchedCount)) parts.push(`Matched: ${matchedCount}`);
@@ -21066,7 +21072,20 @@ function PortalApp({ token, onLogout }) {
       const backendItems = Array.isArray(backendResult?.items)
         ? backendResult.items
         : (Array.isArray(backendResult?.result?.items) ? backendResult.result.items : null);
-      const adoptedItems = Array.isArray(backendItems) ? backendItems : localResultItems;
+      const mergedItemsById = new Map();
+      const itemKey = (item = {}) => String(
+        item?.id
+        || item?.raw?.candidate?.id
+        || item?.raw?.assessment?.id
+        || `${item?.email || ""}:${item?.candidateName || item?.name || ""}`
+      ).trim();
+      [...(Array.isArray(backendItems) ? backendItems : []), ...localResultItems].forEach((item) => {
+        const key = itemKey(item);
+        if (key && !mergedItemsById.has(key)) mergedItemsById.set(key, item);
+      });
+      const adoptedItems = Array.isArray(backendItems)
+        ? Array.from(mergedItemsById.values())
+        : localResultItems;
       const debugPayload = {
         mode: Array.isArray(backendItems) ? "backend_natural" : "local_boolean_fallback",
         semantic: Array.isArray(backendItems),
@@ -21079,6 +21098,7 @@ function PortalApp({ token, onLogout }) {
           source: Array.isArray(backendItems) ? "backend_canonical_candidate_search" : "portal_local_database_universe",
           localCount: localResultItems.length,
           backendCount: Array.isArray(backendItems) ? backendItems.length : null,
+          mergedCount: adoptedItems.length,
           backendError,
           adoptedSource: Array.isArray(backendItems) ? "backend_canonical_candidate_search" : "portal_local_database_universe"
         }
