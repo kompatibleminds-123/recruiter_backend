@@ -9983,6 +9983,8 @@ function PortalApp({ token, onLogout }) {
     candidateIds: [],
     audienceLabel: "Candidates",
     testRecipientEmail: "",
+    testStatus: "",
+    testStatusKind: "",
     campaignName: "",
     templateName: "",
     templateTag: "",
@@ -22658,7 +22660,7 @@ function PortalApp({ token, onLogout }) {
     const subject = String(dbCampaignAttachModal?.templateSubject || "").trim();
     const bodyText = String(dbCampaignAttachModal?.templateBodyText || "").trim();
     if (!recipientEmail || !subject || !bodyText) {
-      setStatus("workspace", "Enter an internal team email, subject and template body before sending a sample.", "error");
+      setDbCampaignAttachModal((current) => ({ ...current, testStatus: "Enter an internal team email, subject and template body before sending a sample.", testStatusKind: "error" }));
       return;
     }
     setDbCampaignAttachModal((current) => ({ ...current, busy: true, busyMode: "sending_sample" }));
@@ -22669,9 +22671,17 @@ function PortalApp({ token, onLogout }) {
         subject,
         bodyText
       });
-      setStatus("workspace", `Sample sent only to ${String(result?.recipientEmail || recipientEmail)}. No candidate was selected or queued.`, "ok");
+      setDbCampaignAttachModal((current) => ({
+        ...current,
+        testStatus: `Sample sent only to ${String(result?.recipientEmail || recipientEmail)}. No candidate was selected or queued.`,
+        testStatusKind: "ok"
+      }));
     } catch (error) {
-      setStatus("workspace", String(error?.message || error || "Sample email failed."), "error");
+      setDbCampaignAttachModal((current) => ({
+        ...current,
+        testStatus: String(error?.message || error || "Sample email failed."),
+        testStatusKind: "error"
+      }));
     } finally {
       setDbCampaignAttachModal((current) => ({ ...current, busy: false, busyMode: "" }));
     }
@@ -33802,6 +33812,11 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 />
                 <span className="field-help">This sends only to a RecruitDesk team email. It does not select, sync or queue any candidate.</span>
               </label>
+              {dbCampaignAttachModal.testStatus ? (
+                <div className={`status ${dbCampaignAttachModal.testStatusKind || ""} full-span`}>
+                  {dbCampaignAttachModal.testStatus}
+                </div>
+              ) : null}
               <p className="muted full-span">
                 {dbCampaignAttachModal.contentSource === "jd"
                   ? "JD mode auto-builds subject and body from the admin JD-share template, includes full JD text, and lets you choose normal or anonymous JD sharing."
