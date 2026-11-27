@@ -8465,6 +8465,7 @@ function patchDashboardAgendaSnapshotForAssessment(snapshot, assessment) {
 
 function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs = true, currentUser = null, users = [] }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const forcedCampaignIdFromUrl = useMemo(() => {
     const params = new URLSearchParams(String(location?.search || ""));
     return String(params.get("campaignId") || "").trim();
@@ -8495,9 +8496,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   ];
   const MARKETING_TABS = [
     { key: "candidate-campaigns", label: "Candidate Campaigns" },
-    { key: "prospects", label: "Sales Outreach" },
-    { key: "templates", label: "Templates" },
-    { key: "campaigns", label: "Sales Campaigns" }
+    { key: "campaigns", label: "Sales Campaigns" },
+    { key: "templates", label: "Templates" }
   ];
   const [activeTab, setActiveTab] = useState(initialTab || "prospects");
   const [loading, setLoading] = useState(true);
@@ -9066,15 +9066,17 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
 
   async function launchSelectedProspectsNow() {
     if (!selectedCampaignId) throw new Error("Select campaign first.");
-    if (!selectedProspectIds.length) throw new Error("Select prospects first.");
     const selectedCount = selectedProspectIds.length;
     const campaignName = String(activeCampaign?.name || "selected campaign").trim();
-    const proceed = window.confirm(`Create and send a Brevo campaign to ${selectedCount} selected prospect(s) for "${campaignName}"?`);
+    const audienceLabel = selectedCount ? `${selectedCount} selected prospect(s)` : "all contacts already uploaded to this campaign";
+    const proceed = window.confirm(`Create and send a Brevo campaign to ${audienceLabel} for "${campaignName}"?`);
     if (!proceed) return;
 
-    await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", {
-      prospectIds: selectedProspectIds
-    });
+    if (selectedCount) {
+      await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", {
+        prospectIds: selectedProspectIds
+      });
+    }
 
     const sentCampaign = await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/send-brevo`, token, "POST", {});
     const sent = Number(sentCampaign?.recipientCount || 0);
@@ -9730,7 +9732,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
 
       {activeTab === "campaigns" ? (
       <Section kicker="Sales campaigns" title="Create a sales campaign">
-        <p className="muted">Create the campaign, choose prospects in Sales Outreach, then send it through Brevo.</p>
+        <p className="muted">Simple flow: 1. Create campaign  2. Upload contacts  3. Add template  4. Send with Brevo.</p>
         <div className="form-grid two-col">
           <label><span>Campaign name</span><input value={campaignDraft.name} onChange={(e) => setCampaignDraft((c) => ({ ...c, name: e.target.value }))} /></label>
           <label><span>Campaign label (optional)</span><input value={campaignDraft.category} onChange={(e) => setCampaignDraft((c) => ({ ...c, category: e.target.value }))} placeholder="e.g. GCC HR outreach" /></label>
@@ -9745,14 +9747,17 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           <button disabled={saving} onClick={() => void (async () => {
             setSaving(true);
             try {
+              let savedCampaign = null;
               if (editingCampaignId) {
-                await api(`/company/marketing/campaigns/${encodeURIComponent(editingCampaignId)}`, token, "PATCH", campaignDraft);
+                savedCampaign = await api(`/company/marketing/campaigns/${encodeURIComponent(editingCampaignId)}`, token, "PATCH", campaignDraft);
               } else {
-                await api("/company/marketing/campaigns", token, "POST", campaignDraft);
+                savedCampaign = await api("/company/marketing/campaigns", token, "POST", campaignDraft);
               }
+              const savedCampaignId = String(savedCampaign?.id || editingCampaignId || "").trim();
+              if (savedCampaignId) setSelectedCampaignId(savedCampaignId);
               cancelCampaignEdit();
               await refreshLight("campaigns");
-              setOk(editingCampaignId ? "Campaign updated." : "Campaign created.");
+              setOk(editingCampaignId ? "Campaign updated. Upload contacts or update the template when ready." : "Campaign created. Next, upload the contacts for this campaign.");
             } catch (error) {
               setErr(error);
             } finally {
@@ -9785,9 +9790,9 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         ) : null}
         {activeCampaign ? (
           <div className="button-row tight">
-            <button className="ghost-btn" disabled={!selectedProspectIds.length} onClick={() => void attachSelectedProspects().then(() => { setOk("Selected prospects attached to campaign."); return refreshLight("campaigns"); }).catch(setErr)}>Attach selected prospects</button>
-            <button className="ghost-btn" type="button" onClick={() => campaignCsvFileInputRef.current?.click()} disabled={saving}>Upload prospects for this campaign</button>
-            <button disabled={!selectedProspectIds.length || saving} onClick={() => void (async () => {
+            <button type="button" onClick={() => campaignCsvFileInputRef.current?.click()} disabled={saving}>Upload contacts (CSV / Excel)</button>
+            <button className="ghost-btn" type="button" onClick={() => navigate(`/marketing/templates?campaignId=${encodeURIComponent(String(activeCampaign?.id || ""))}`)}>Add or edit template</button>
+            <button disabled={saving} onClick={() => void (async () => {
               setSaving(true);
               try {
                 await launchSelectedProspectsNow();
@@ -32876,7 +32881,7 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
 
           <Route path="/marketing" element={<MarketingModulePage token={token} currentUser={state.user} users={state.users} />} />
           <Route path="/marketing/candidate-campaigns" element={<MarketingModulePage token={token} initialTab="candidate-campaigns" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
-          <Route path="/marketing/prospects" element={<MarketingModulePage token={token} initialTab="prospects" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
+          <Route path="/marketing/prospects" element={<Navigate to="/marketing/campaigns" replace />} />
           <Route path="/marketing/templates" element={<MarketingModulePage token={token} initialTab="templates" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
           <Route path="/marketing/campaigns" element={<MarketingModulePage token={token} initialTab="campaigns" showInternalTabs={false} currentUser={state.user} users={state.users} />} />
           <Route path="/marketing/queue" element={<Navigate to="/marketing/candidate-campaigns" replace />} />
@@ -35821,9 +35826,8 @@ function formatWorkspaceUserRoleLabel(roleValue = "") {
 
 const MARKETING_NAV_ITEMS = [
   { to: "/marketing/candidate-campaigns", label: "Candidate Campaigns", tab: "candidate-campaigns" },
-  { to: "/marketing/prospects", label: "Sales Outreach", tab: "prospects" },
-  { to: "/marketing/templates", label: "Templates", tab: "templates" },
-  { to: "/marketing/campaigns", label: "Sales Campaigns", tab: "campaigns" }
+  { to: "/marketing/campaigns", label: "Sales Campaigns", tab: "campaigns" },
+  { to: "/marketing/templates", label: "Templates", tab: "templates" }
 ];
 
 function MarketingPortalApp({ token, onLogout }) {
@@ -35886,7 +35890,7 @@ function MarketingPortalApp({ token, onLogout }) {
       <main className="main-panel">
         <Routes>
           <Route path="/marketing/candidate-campaigns" element={<MarketingModulePage token={token} initialTab="candidate-campaigns" showInternalTabs={false} currentUser={currentUser} users={workspaceUsers} />} />
-          <Route path="/marketing/prospects" element={<MarketingModulePage token={token} initialTab="prospects" showInternalTabs={false} currentUser={currentUser} users={workspaceUsers} />} />
+          <Route path="/marketing/prospects" element={<Navigate to="/marketing/campaigns" replace />} />
           <Route path="/marketing/templates" element={<MarketingModulePage token={token} initialTab="templates" showInternalTabs={false} currentUser={currentUser} users={workspaceUsers} />} />
           <Route path="/marketing/campaigns" element={<MarketingModulePage token={token} initialTab="campaigns" showInternalTabs={false} currentUser={currentUser} users={workspaceUsers} />} />
           <Route path="/marketing/queue" element={<Navigate to="/marketing/candidate-campaigns" replace />} />
