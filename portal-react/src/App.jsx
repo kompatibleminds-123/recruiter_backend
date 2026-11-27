@@ -9982,6 +9982,7 @@ function PortalApp({ token, onLogout }) {
     totalCandidates: 0,
     candidateIds: [],
     audienceLabel: "Candidates",
+    testRecipientEmail: "",
     campaignName: "",
     templateName: "",
     templateTag: "",
@@ -22000,6 +22001,7 @@ function PortalApp({ token, onLogout }) {
       totalCandidates: safeCandidateIds.length,
       candidateIds: safeCandidateIds,
       audienceLabel,
+      testRecipientEmail: String(state.user?.email || "").trim(),
       senderUserId: String(marketingSenderOptions?.[0]?.id || state.user?.id || "").trim()
     });
     void preloadMarketingBulkMailTemplates({ force: !cachedTemplates.length })
@@ -22648,6 +22650,30 @@ function PortalApp({ token, onLogout }) {
     } catch (error) {
       setDbCampaignAttachModal((current) => ({ ...current, busy: false, busyMode: "" }));
       setStatus("workspace", String(error?.message || error || "Failed to delete template."), "error");
+    }
+  }
+
+  async function sendDatabaseCampaignSample() {
+    const recipientEmail = String(dbCampaignAttachModal?.testRecipientEmail || "").trim();
+    const subject = String(dbCampaignAttachModal?.templateSubject || "").trim();
+    const bodyText = String(dbCampaignAttachModal?.templateBodyText || "").trim();
+    if (!recipientEmail || !subject || !bodyText) {
+      setStatus("workspace", "Enter an internal team email, subject and template body before sending a sample.", "error");
+      return;
+    }
+    setDbCampaignAttachModal((current) => ({ ...current, busy: true, busyMode: "sending_sample" }));
+    try {
+      const result = await api("/company/marketing/test-email", token, "POST", {
+        recipientEmail,
+        senderUserId: String(dbCampaignAttachModal?.senderUserId || "").trim(),
+        subject,
+        bodyText
+      });
+      setStatus("workspace", `Sample sent only to ${String(result?.recipientEmail || recipientEmail)}. No candidate was selected or queued.`, "ok");
+    } catch (error) {
+      setStatus("workspace", String(error?.message || error || "Sample email failed."), "error");
+    } finally {
+      setDbCampaignAttachModal((current) => ({ ...current, busy: false, busyMode: "" }));
     }
   }
 
@@ -33765,6 +33791,17 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                   <option value="200">200</option>
                 </select>
               </label>
+              <label className="full-span">
+                <span>Send sample to internal team email</span>
+                <input
+                  type="email"
+                  value={dbCampaignAttachModal.testRecipientEmail || ""}
+                  onChange={(e) => setDbCampaignAttachModal((current) => ({ ...current, testRecipientEmail: e.target.value }))}
+                  placeholder="ankit.garg@kompatibleminds.com"
+                  disabled={dbCampaignAttachModal.busy}
+                />
+                <span className="field-help">This sends only to a RecruitDesk team email. It does not select, sync or queue any candidate.</span>
+              </label>
               <p className="muted full-span">
                 {dbCampaignAttachModal.contentSource === "jd"
                   ? "JD mode auto-builds subject and body from the admin JD-share template, includes full JD text, and lets you choose normal or anonymous JD sharing."
@@ -33794,6 +33831,13 @@ function buildJourneyText(assessment, contactAttempts = [], candidate = null) {
                 disabled={dbCampaignAttachModal.busy}
               >
                 Cancel
+              </button>
+              <button
+                className="ghost-btn"
+                onClick={() => void sendDatabaseCampaignSample()}
+                disabled={dbCampaignAttachModal.busy || !String(dbCampaignAttachModal.testRecipientEmail || "").trim() || !String(dbCampaignAttachModal.templateSubject || "").trim() || !String(dbCampaignAttachModal.templateBodyText || "").trim()}
+              >
+                {dbCampaignAttachModal.busy && dbCampaignAttachModal.busyMode === "sending_sample" ? "Sending sample..." : "Send sample"}
               </button>
               {dbCampaignAttachModal.contentSource !== "jd" ? (
                 <button

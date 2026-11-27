@@ -18148,6 +18148,63 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && requestUrl.pathname === "/company/marketing/test-email") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const recipientEmail = normalizeMarketingEmail(body.recipientEmail || "");
+      const senderUserId = await resolveAllowedMarketingSenderUserId(actor, body.senderUserId);
+      const users = await listCompanyUsers(String(actor.companyId || "").trim());
+      const internalEmails = new Set((Array.isArray(users) ? users : []).map((item) => normalizeMarketingEmail(item?.email || "")).filter(Boolean));
+      internalEmails.add(normalizeMarketingEmail(actor.email || ""));
+      if (!recipientEmail || !internalEmails.has(recipientEmail)) {
+        throw new Error("Sample email can only be sent to an internal RecruitDesk team email.");
+      }
+      const senderUser = (Array.isArray(users) ? users : []).find((item) => String(item?.id || "").trim() === senderUserId) || actor;
+      const senderActor = {
+        ...actor,
+        id: String(senderUser?.id || actor.id || "").trim(),
+        name: String(senderUser?.name || actor.name || "Kompatible Minds").trim(),
+        email: normalizeMarketingEmail(senderUser?.email || actor.email || ""),
+        companyId: String(actor.companyId || "").trim()
+      };
+      const subject = String(body.subject || "").trim();
+      const bodyText = stripMarketingTemplateAttachment(String(body.bodyText || "")).cleanBody.trim();
+      if (!subject || !bodyText) throw new Error("Sample subject and body are required.");
+      const sampleProspect = {
+        name: "Sample Candidate",
+        email: recipientEmail,
+        phone: "9999999999",
+        company_name: "Sample Company",
+        designation: "Sample Role",
+        category: "Sample Segment",
+        categories: ["Sample Segment"]
+      };
+      const renderedSubject = renderMarketingTemplate(subject, sampleProspect, {
+        senderName: senderActor.name,
+        senderEmail: senderActor.email,
+        senderPhone: "",
+        senderCompany: "Kompatible Minds"
+      });
+      const renderedBody = renderMarketingTemplate(bodyText, sampleProspect, {
+        senderName: senderActor.name,
+        senderEmail: senderActor.email,
+        senderPhone: "",
+        senderCompany: "Kompatible Minds"
+      });
+      const hasHtmlBody = /<[^>]+>/.test(renderedBody);
+      const text = hasHtmlBody ? stripHtmlForText(renderedBody) : renderedBody;
+      const html = hasHtmlBody ? renderedBody : `<pre style="font-family:Arial,sans-serif;white-space:pre-wrap;">${escapeHtml(text)}</pre>`;
+      const brevoConfig = getBrevoCandidateCampaignConfig();
+      if (!brevoConfig.enabled) throw new Error("Brevo campaign sender is not configured on the server.");
+      await sendBrevoCandidateCampaignEmail(brevoConfig, senderActor, { to: recipientEmail, subject: renderedSubject, html, text });
+      sendJson(res, 200, { ok: true, result: { sent: true, recipientEmail } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
   if (req.method === "GET" && requestUrl.pathname === "/company/marketing/campaigns") {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
