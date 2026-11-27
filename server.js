@@ -6146,7 +6146,7 @@ async function ensureBrevoRecruitDeskContactAttributes(config) {
     await callBrevoCandidateCampaignApi(config, "/contacts/attributes/normal/RD_COMPANY", { type: "text" });
   } catch (error) {
     const message = String(error?.message || error || "").toLowerCase();
-    if (!message.includes("already") && !message.includes("exists") && !message.includes("duplicate")) throw error;
+    if (!message.includes("already") && !message.includes("exists") && !message.includes("duplicate") && !message.includes("must be unique")) throw error;
   }
 }
 
