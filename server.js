@@ -6173,11 +6173,13 @@ async function createAndSendBrevoMarketingCampaign(config, senderActor = {}, cam
   }
   const senderName = String(senderActor?.name || config.senderName).trim() || config.senderName;
   const senderEmail = config.senderEmail;
+  const requestedReplyTo = normalizeMarketingEmail(senderActor?.email || "");
+  const replyToEmail = isValidEmail(requestedReplyTo) ? requestedReplyTo : senderEmail;
   const campaignBodyTemplate = convertRecruitDeskPlaceholdersForBrevo(String(template?.body_text || template?.bodyText || ""))
     .replace(/{{\s*(?:candidate_?name|name|first_?name)\s*}}/gi, "there");
   const baseBody = renderMarketingTemplate(campaignBodyTemplate, {}, {
     senderName,
-    senderEmail: normalizeMarketingEmail(senderActor?.email || "") || senderEmail,
+    senderEmail: replyToEmail,
     senderPhone: String(senderActor?.phone || senderActor?.mobile || "").trim(),
     senderCompany: "Kompatible Minds"
   }).replace(/{{[^}]+}}/g, "");
@@ -6187,7 +6189,7 @@ async function createAndSendBrevoMarketingCampaign(config, senderActor = {}, cam
     : `<pre style="font-family:Arial,sans-serif;white-space:pre-wrap;line-height:1.55;">${escapeHtml(baseBody)}</pre>`;
   const baseSubject = renderMarketingTemplate(convertRecruitDeskPlaceholdersForBrevo(String(template?.subject || "")), {}, {
     senderName,
-    senderEmail: normalizeMarketingEmail(senderActor?.email || "") || senderEmail,
+    senderEmail: replyToEmail,
     senderPhone: String(senderActor?.phone || senderActor?.mobile || "").trim(),
     senderCompany: "Kompatible Minds"
   }).replace(/{{[^}]+}}/g, "").trim();
@@ -6196,7 +6198,7 @@ async function createAndSendBrevoMarketingCampaign(config, senderActor = {}, cam
     name: `RecruitDesk · ${String(campaign?.name || "Campaign").trim()}`.slice(0, 120),
     subject: baseSubject,
     sender: { name: senderName, email: senderEmail },
-    replyTo: { name: senderName, email: normalizeMarketingEmail(senderActor?.email || "") || senderEmail },
+    replyTo: { name: senderName, email: replyToEmail },
     htmlContent,
     recipients: { listIds: [audienceListId] }
   });
@@ -6226,10 +6228,12 @@ async function sendBrevoCandidateCampaignEmail(config, senderActor = {}, { to, s
     const content = Buffer.isBuffer(item.content) ? item.content.toString("base64") : Buffer.from(item.content).toString("base64");
     return { name: String(item?.filename || "attachment").trim() || "attachment", content };
   }).filter(Boolean);
+  const requestedReplyTo = normalizeMarketingEmail(senderActor?.email || "");
+  const replyToEmail = isValidEmail(requestedReplyTo) ? requestedReplyTo : config.senderEmail;
   return callBrevoCandidateCampaignApi(config, "/smtp/email", {
     sender: { email: config.senderEmail, name: config.senderName },
     replyTo: {
-      email: normalizeMarketingEmail(senderActor?.email || "") || config.senderEmail,
+      email: replyToEmail,
       name: String(senderActor?.name || config.senderName).trim() || config.senderName
     },
     to: [{ email: recipientEmail }],
