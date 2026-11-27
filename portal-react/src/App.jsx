@@ -21053,33 +21053,44 @@ function PortalApp({ token, onLogout }) {
       const localResultItems = localUniverse.filter((item) =>
         candidateMatchesBooleanQueryLocal(item, localBooleanQuery)
       );
-      const deepResult = await api("/company/candidates/search-deep", token, "POST", {
-        query: localBooleanQuery
-      }).catch(() => ({ result: { items: [], debug: { source: "backend_candidate_search_docs" } } }));
-      const deepItems = Array.isArray(deepResult?.result?.items) ? deepResult.result.items : [];
+      let backendResult = null;
+      let backendError = "";
+      try {
+        backendResult = await api(
+          `/company/candidates/search-natural?q=${encodeURIComponent(effectiveSearchText)}&mode=natural&semantic=1&debug=1`,
+          token
+        );
+      } catch (error) {
+        backendError = String(error?.message || error || "Backend search unavailable");
+      }
+      const backendItems = Array.isArray(backendResult?.items)
+        ? backendResult.items
+        : (Array.isArray(backendResult?.result?.items) ? backendResult.result.items : null);
+      const adoptedItems = Array.isArray(backendItems) ? backendItems : localResultItems;
       const debugPayload = {
-        mode: "local_boolean",
-        semantic: false,
+        mode: Array.isArray(backendItems) ? "backend_natural" : "local_boolean_fallback",
+        semantic: Array.isArray(backendItems),
         query: effectiveSearchText,
         searchingAsBoolean: localBooleanQuery,
-        filters: null,
-        interpretation: null,
+        filters: backendResult?.filters || backendResult?.result?.filters || null,
+        interpretation: backendResult?.interpretation || backendResult?.result?.interpretation || null,
         debug: {
-          ...(deepResult?.result?.debug || { source: "portal_local_database_universe" }),
-          source: "portal_local_database_universe",
+          ...(backendResult?.debug || backendResult?.result?.debug || {}),
+          source: Array.isArray(backendItems) ? "backend_canonical_candidate_search" : "portal_local_database_universe",
           localCount: localResultItems.length,
-          deepCount: deepItems.length,
-          adoptedSource: "portal_local_database_universe"
+          backendCount: Array.isArray(backendItems) ? backendItems.length : null,
+          backendError,
+          adoptedSource: Array.isArray(backendItems) ? "backend_canonical_candidate_search" : "portal_local_database_universe"
         }
       };
       setCandidateSearchDebug(debugPayload);
       setCandidateSearchQueryUsed(effectiveSearchText);
       setCandidateSearchingAs(localBooleanQuery);
-      setCandidateSearchResults(localResultItems);
+      setCandidateSearchResults(adoptedItems);
       setCandidateSearchMode("search");
       setCandidatePage(1);
       setCandidateStructuredFiltersDraft(EMPTY_CANDIDATE_STRUCTURED_FILTERS);
-      setStatus("workspace", `${candidateAiQueryMode === "boolean" ? "Boolean" : "Smart"} search returned ${localResultItems.length || 0} candidates.`, "ok");
+      setStatus("workspace", `${Array.isArray(backendItems) ? "Database" : "Local fallback"} search returned ${adoptedItems.length || 0} candidates.`, "ok");
     } catch (error) {
       setCandidateSearchDebug({ error: String(error?.message || error), query: effectiveSearchText, mode: "local_boolean" });
       setCandidateSearchingAs("");
