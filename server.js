@@ -18410,6 +18410,8 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const sourceCampaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/duplicate$/, "")).trim();
+      const requestBody = await readJsonBody(req).catch(() => ({}));
+      const copyContacts = Boolean(requestBody?.copyContacts);
       const campaignAccess = await getMarketingCampaignForActor(actor, sourceCampaignId);
       if (!campaignAccess) throw new Error("Campaign not found or not accessible.");
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
@@ -18466,10 +18468,10 @@ const server = http.createServer(async (req, res) => {
           prefer: "return=minimal"
         });
       }
-      const linkRows = await supabaseTableFetch(
+      const linkRows = copyContacts ? await supabaseTableFetch(
         "marketing_campaign_prospects",
         `?select=prospect_id&company_id=eq.${companyId}&campaign_id=eq.${encodeURIComponent(sourceCampaignId)}&limit=1000`
-      );
+      ) : [];
       const links = (Array.isArray(linkRows) ? linkRows : []).map((row) => String(row?.prospect_id || "").trim()).filter(Boolean)
         .map((prospectId) => ({
           id: crypto.randomUUID(), company_id: actor.companyId, campaign_id: duplicateId, prospect_id: prospectId,

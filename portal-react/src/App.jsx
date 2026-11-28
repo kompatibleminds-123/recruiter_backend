@@ -9234,16 +9234,16 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   async function duplicateSalesCampaign(item) {
     if (!item?.id) return;
     const campaignName = String(item?.name || "this campaign").trim();
-    const proceed = window.confirm(`Create a fresh draft copy of "${campaignName}" with the same contacts and email template? It will not send until you choose Create Brevo campaign & send.`);
+    const proceed = window.confirm(`Create a fresh draft of "${campaignName}" with the same email template but no contacts? Upload or paste only the new contacts you want to email.`);
     if (!proceed) return;
     setSaving(true);
     try {
-      const result = await api(`/company/marketing/campaigns/${encodeURIComponent(String(item.id))}/duplicate`, token, "POST", {});
+      const result = await api(`/company/marketing/campaigns/${encodeURIComponent(String(item.id))}/duplicate`, token, "POST", { copyContacts: false });
       const campaign = result?.campaign || result;
       const campaignId = String(campaign?.id || "").trim();
       if (campaignId) setSelectedCampaignId(campaignId);
       await refreshLight("campaigns");
-      setOk(`Draft copy created with ${Number(result?.copiedRecipients || 0)} contact(s). Review it, then send when ready.`);
+      setOk("Template copy created with no contacts. Add the new contact list, then send when ready.");
     } catch (error) {
       setErr(error);
     } finally {
@@ -9881,7 +9881,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
               <div className="campaign-summary-title">{activeCampaign.name || "Untitled campaign"}</div>
               <div className="muted">{`Tag: ${activeCampaign.category || "No tag"}  ·  Sender: ${marketingSenderOptions.find((item) => String(item?.id || "") === String(activeCampaign?.sender_user_id || ""))?.label || "Default sender"}`}</div>
             </div>
-            <button className="ghost-btn" type="button" disabled={saving} onClick={() => void duplicateSalesCampaign(activeCampaign)}>Duplicate campaign</button>
+            <button className="ghost-btn" type="button" disabled={saving} onClick={() => void duplicateSalesCampaign(activeCampaign)}>Reuse template for new contacts</button>
           </div>
         ) : null}
         {activeCampaign ? (
@@ -9974,7 +9974,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                   <td>
                     <div className="button-row tight">
                       <button className="ghost-btn" type="button" onClick={() => startCampaignEdit(item)}>Edit</button>
-                      <button className="ghost-btn" type="button" disabled={saving} onClick={() => void duplicateSalesCampaign(item)}>Duplicate</button>
+                      <button className="ghost-btn" type="button" disabled={saving} onClick={() => void duplicateSalesCampaign(item)}>Reuse template</button>
                       <button className="ghost-btn" type="button" onClick={() => void (async () => {
                         if (!window.confirm(`Delete campaign ${item?.name || ""}?`)) return;
                         try {
