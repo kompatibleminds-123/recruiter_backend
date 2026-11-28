@@ -34,6 +34,7 @@ const SIDEBAR_PREF_KEY = "recruitdesk_sidebar_collapsed_v1";
 const EXTENSION_PROMPT_STORAGE_KEY_PREFIX = "recruitdesk_extension_prompt_v1";
 const RECRUITDESK_EXTENSION_URL = "https://chromewebstore.google.com/detail/recruitdesk-ai/ihkjpmlpnobojigfdencaafegjidbnah";
 const APP_VERSION_RELOAD_GUARD_PREFIX = "recruitdesk_portal_version_reload_once_v1:";
+const CAMPAIGN_CONTACT_CSV_HEADER = "name,email,company,designation,phone,category";
 const APP_VERSION_PROMPT_GUARD_PREFIX = "recruitdesk_portal_version_prompt_v1:";
 const APP_VERSION_POLL_INTERVAL_MS = 15 * 60 * 1000;
 
@@ -9100,8 +9101,14 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
 
   async function importPastedCampaignContacts() {
     if (!selectedCampaignId) throw new Error("Create or select a campaign first.");
-    const csv = String(campaignContactsPaste || "").trim();
-    if (!csv) throw new Error("Paste contact rows first.");
+    const pastedRows = String(campaignContactsPaste || "").trim();
+    if (!pastedRows) throw new Error("Paste contact rows first.");
+    const pastedLines = pastedRows.split(/\r?\n/);
+    const firstLine = String(pastedLines[0] || "").trim().toLowerCase().replace(/\s+/g, "");
+    const expectedHeader = CAMPAIGN_CONTACT_CSV_HEADER.toLowerCase().replace(/\s+/g, "");
+    const contactRows = firstLine === expectedHeader ? pastedLines.slice(1).join("\n").trim() : pastedRows;
+    if (!contactRows) throw new Error("Paste at least one contact row below the fixed header.");
+    const csv = `${CAMPAIGN_CONTACT_CSV_HEADER}\n${contactRows}`;
     const preview = await api("/company/marketing/prospects/import", token, "POST", { csv, mode: "preview", defaultCategory: campaignContactsDefaultCategory });
     const total = Number(preview?.totalRows || 0);
     const valid = Number(preview?.validRows || 0);
@@ -9985,13 +9992,14 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           </div>
           <div className="campaign-paste-card">
             <div className="campaign-paste-heading">
-              <div><div className="campaign-summary-title">Or paste contacts</div><p className="muted">Paste CSV rows with a header. Required: <code>name,email</code>. Optional: <code>phone,company,designation,category</code>.</p></div>
+              <div><div className="campaign-summary-title">Or paste contacts</div><p className="muted">Header is fixed below. Paste only contact rows—one contact per line.</p></div>
             </div>
+            <div className="campaign-fixed-header" aria-label="Fixed contact column headers">{CAMPAIGN_CONTACT_CSV_HEADER}</div>
             <textarea
               value={campaignContactsPaste}
               onChange={(e) => setCampaignContactsPaste(e.target.value)}
               rows={7}
-              placeholder={"name,email,company,designation,phone,category\nPriya Shah,priya@acme.com,Acme Pvt Ltd,HR Director,9876543210,GCC HR\nRahul Mehta,rahul@globex.com,Globex,Founder,9898989898,GCC HR"}
+              placeholder={"Priya Shah,priya@acme.com,Acme Pvt Ltd,HR Director,9876543210,GCC HR\nRahul Mehta,rahul@globex.com,Globex,Founder,9898989898,GCC HR"}
               disabled={saving}
               style={{ marginTop: 8, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" }}
             />

@@ -2418,6 +2418,19 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .campaign-paste-heading p { margin: 0.35rem 0 0; }
 .campaign-paste-card textarea { background: #fbfdff; border-color: #cbdcf5; }
+.campaign-fixed-header {
+  margin-top: 0.8rem;
+  padding: 0.62rem 0.78rem;
+  border: 1px solid #cbdcf5;
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+  background: #eaf2ff;
+  color: #315382;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.campaign-fixed-header + textarea { margin-top: 0 !important; border-radius: 0 0 10px 10px; }
 .campaign-saved-segment {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 0.9fr);
