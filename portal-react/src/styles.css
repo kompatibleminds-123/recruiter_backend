@@ -2363,6 +2363,20 @@ textarea { min-height: 92px; resize: vertical; }
   margin-bottom: 0.28rem;
 }
 .campaign-summary-title { color: #10264a; font-size: 1rem; font-weight: 750; }
+.campaign-contact-category {
+  display: grid;
+  grid-template-columns: minmax(200px, 0.5fr) minmax(260px, 1fr);
+  align-items: center;
+  column-gap: 1rem;
+  row-gap: 0.28rem;
+  padding: 0.85rem 1rem;
+  border: 1px dashed #bcd2f0;
+  border-radius: var(--radius-md);
+  background: rgba(255,255,255,0.72);
+}
+.campaign-contact-category > span { font-weight: 700; color: #1b365d; }
+.campaign-contact-category em { color: var(--muted); font-size: 0.78rem; font-style: normal; font-weight: 500; }
+.campaign-contact-category small { grid-column: 2; color: var(--muted); }
 .campaign-action-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2382,6 +2396,20 @@ textarea { min-height: 92px; resize: vertical; }
 .campaign-action-card span { font-size: 0.77rem; opacity: 0.84; font-weight: 500; }
 .campaign-action-card.ghost-btn { background: #fff; border-color: #cbdcf5; color: #1c3b68; }
 .campaign-send-action { background: linear-gradient(135deg, #168bb5, #2563eb); }
+.campaign-format-guide {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #d7e4f6;
+  border-radius: var(--radius-md);
+  background: rgba(255,255,255,0.78);
+}
+.campaign-format-guide strong { display: block; color: #1b365d; font-size: 0.9rem; }
+.campaign-format-guide span { display: block; margin-top: 0.2rem; color: var(--muted); font-size: 0.78rem; }
+.campaign-header-chips { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.38rem; }
+.campaign-header-chips code { padding: 0.26rem 0.42rem; border-radius: 6px; background: #eaf2ff; color: #315382; font-size: 0.72rem; }
 .campaign-paste-card {
   padding: 1rem 1.1rem;
   border: 1px solid #d7e4f6;
@@ -2390,10 +2418,25 @@ textarea { min-height: 92px; resize: vertical; }
 }
 .campaign-paste-heading p { margin: 0.35rem 0 0; }
 .campaign-paste-card textarea { background: #fbfdff; border-color: #cbdcf5; }
+.campaign-saved-segment {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.9fr);
+  gap: 1rem;
+  align-items: end;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #dbe7f5;
+}
+.campaign-saved-segment-action { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.55rem; }
 
 @media (max-width: 760px) {
   .campaign-summary-card { align-items: flex-start; flex-direction: column; }
   .campaign-action-grid { grid-template-columns: 1fr; }
+  .campaign-format-guide { align-items: flex-start; flex-direction: column; }
+  .campaign-header-chips { justify-content: flex-start; }
+  .campaign-saved-segment { grid-template-columns: 1fr; }
+  .campaign-contact-category { grid-template-columns: 1fr; }
+  .campaign-contact-category small { grid-column: auto; }
 }
 .form-label {
   display: inline-block;

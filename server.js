@@ -18044,6 +18044,7 @@ const server = http.createServer(async (req, res) => {
       const mode = String(body.mode || "commit").trim().toLowerCase();
       const importAction = String(body.importAction || "new_only").trim().toLowerCase();
       const campaignId = String(body.campaignId || "").trim();
+      const defaultCategory = String(body.defaultCategory || "").trim();
       const includeExistingForCampaign = Boolean(body.includeExistingForCampaign) || importAction === "new_and_use_existing";
       const rows = fileData
         ? parseMarketingSpreadsheetBase64(fileData, filename)
@@ -18109,8 +18110,8 @@ const server = http.createServer(async (req, res) => {
             phone: String(phoneValue || "").trim(),
             company_name: String(companyValue || "").trim(),
             designation: String(designationValue || "").trim(),
-            category: String(categoryValue || "").trim(),
-            categories: normalizeMarketingCategories(categoriesValue || categoryValue || ""),
+            category: String(categoryValue || defaultCategory || "").trim(),
+            categories: normalizeMarketingCategories(categoriesValue || categoryValue || defaultCategory || ""),
             source: "csv_import",
             status: "active",
             tags: [],
@@ -18699,6 +18700,44 @@ const server = http.createServer(async (req, res) => {
       const rows = await supabaseTableFetch("marketing_templates", `?select=id,campaign_id,subject,body_text,target_categories,updated_at,created_at,updated_by&company_id=eq.${companyId}${buildMarketingOwnerFilter(actor, "updated_by")}&order=updated_at.desc&limit=100`);
       const items = (Array.isArray(rows) ? rows : []).map((row) => normalizeMarketingTemplateRow(row));
       sendJson(res, 200, { ok: true, result: { items } });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && /^\/company\/marketing\/campaigns\/[^/]+\/attach-category$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const campaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/attach-category$/, "")).trim();
+      const campaignAccess = await getMarketingCampaignForActor(actor, campaignId);
+      if (!campaignAccess) throw new Error("Campaign not found or not accessible.");
+      const body = await readJsonBody(req);
+      const category = String(body?.category || "").trim();
+      if (!category) throw new Error("Category is required.");
+      const companyId = encodeURIComponent(String(actor.companyId || "").trim());
+      const desiredCategory = category.toLowerCase();
+      const prospectRows = await supabaseTableFetch(
+        "marketing_prospects",
+        `?select=id,email,category,categories,status&company_id=eq.${companyId}${buildMarketingOwnerFilter(actor, "created_by")}&source=neq.db_campaign_only&limit=5000`
+      );
+      const matches = (Array.isArray(prospectRows) ? prospectRows : []).filter((prospect) => {
+        if (String(prospect?.status || "").trim().toLowerCase() !== "active") return false;
+        if (!normalizeMarketingEmail(prospect?.email || "")) return false;
+        const categories = Array.isArray(prospect?.categories) && prospect.categories.length
+          ? prospect.categories
+          : [prospect?.category];
+        return categories.some((item) => String(item || "").trim().toLowerCase() === desiredCategory);
+      });
+      const now = toIsoNow();
+      const links = matches.map((prospect) => ({
+        id: crypto.randomUUID(), company_id: actor.companyId, campaign_id: campaignId,
+        prospect_id: String(prospect.id || "").trim(), state: "ready", created_at: now, updated_at: now
+      })).filter((item) => item.prospect_id);
+      const saved = links.length ? await supabaseTableFetch("marketing_campaign_prospects", "?on_conflict=campaign_id,prospect_id&select=id", {
+        method: "POST", body: links, prefer: "resolution=merge-duplicates,return=representation"
+      }) : [];
+      sendJson(res, 200, { ok: true, result: { category, matched: matches.length, linked: Array.isArray(saved) ? saved.length : 0 } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }

@@ -1,6 +1,7 @@
 ﻿import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { FaWhatsapp } from "react-icons/fa";
+import * as XLSX from "xlsx";
 import BrandLogo from "./components/branding/BrandLogo";
 import {
   CLIENT_BROWSER_TITLE,
@@ -8561,6 +8562,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [csvText, setCsvText] = useState("");
   const [csvFileName, setCsvFileName] = useState("");
   const [campaignContactsPaste, setCampaignContactsPaste] = useState("");
+  const [campaignContactsDefaultCategory, setCampaignContactsDefaultCategory] = useState("");
+  const [savedContactsCategory, setSavedContactsCategory] = useState("");
   const [prospectSearch, setProspectSearch] = useState("");
   const [prospectCategoryFilter, setProspectCategoryFilter] = useState("");
   const [selectedProspectIds, setSelectedProspectIds] = useState([]);
@@ -8981,7 +8984,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
 
     const preview = await api("/company/marketing/prospects/import", token, "POST", {
       ...payload,
-      mode: "preview"
+      mode: "preview",
+      defaultCategory: campaignContactsDefaultCategory
     });
     const total = Number(preview?.totalRows || 0);
     const valid = Number(preview?.validRows || 0);
@@ -9085,7 +9089,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       mode: "commit",
       importAction: includeExistingForCampaign ? "new_and_use_existing" : "new_only",
       includeExistingForCampaign,
-      campaignId: selectedCampaignId
+      campaignId: selectedCampaignId,
+      defaultCategory: campaignContactsDefaultCategory
     });
     const inserted = Number(result?.inserted || 0);
     const linked = Number(result?.campaignLinked || 0);
@@ -9097,7 +9102,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     if (!selectedCampaignId) throw new Error("Create or select a campaign first.");
     const csv = String(campaignContactsPaste || "").trim();
     if (!csv) throw new Error("Paste contact rows first.");
-    const preview = await api("/company/marketing/prospects/import", token, "POST", { csv, mode: "preview" });
+    const preview = await api("/company/marketing/prospects/import", token, "POST", { csv, mode: "preview", defaultCategory: campaignContactsDefaultCategory });
     const total = Number(preview?.totalRows || 0);
     const valid = Number(preview?.validRows || 0);
     const invalid = Number(preview?.invalidRows || 0);
@@ -9113,7 +9118,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       mode: "commit",
       importAction: includeExistingForCampaign ? "new_and_use_existing" : "new_only",
       includeExistingForCampaign,
-      campaignId: selectedCampaignId
+      campaignId: selectedCampaignId,
+      defaultCategory: campaignContactsDefaultCategory
     });
     setCampaignContactsPaste("");
     setOk(`Contacts added to this campaign: ${Number(result?.campaignLinked || 0)} linked.`);
@@ -9249,6 +9255,38 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     } finally {
       setSaving(false);
     }
+  }
+
+  async function attachSavedContactsByCategory() {
+    if (!selectedCampaignId) throw new Error("Select a campaign first.");
+    const category = String(savedContactsCategory || "").trim();
+    if (!category) throw new Error("Enter the saved contact category first.");
+    const proceed = window.confirm(`Add all active saved contacts in the "${category}" category to this campaign?`);
+    if (!proceed) return;
+    setSaving(true);
+    try {
+      const result = await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/attach-category`, token, "POST", { category });
+      setOk(`${Number(result?.matched || 0)} active contact(s) found; ${Number(result?.linked || 0)} attached to this campaign.`);
+      await refreshLight("campaigns");
+    } catch (error) {
+      setErr(error);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function downloadCampaignContactExcelTemplate() {
+    const columns = ["name", "email", "company", "designation", "phone", "category"];
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      columns,
+      ["Priya Shah", "priya@company.com", "Acme Pvt Ltd", "HR Director", "9876543210", "GCC HR"]
+    ]);
+    worksheet["!cols"] = [
+      { wch: 22 }, { wch: 32 }, { wch: 26 }, { wch: 24 }, { wch: 16 }, { wch: 18 }
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Contacts");
+    XLSX.writeFile(workbook, "recruitdesk-sales-contact-template.xlsx");
   }
 
   function cancelCampaignEdit() {
@@ -9875,6 +9913,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         </select></label>
         {!activeCampaign ? <p className="muted campaign-empty">Create a campaign above, or select one to add contacts, prepare the email and send.</p> : null}
         {activeCampaign ? (
+          <>
           <div className="campaign-summary-card">
             <div>
               <div className="campaign-summary-eyebrow">Selected sales campaign</div>
@@ -9883,6 +9922,15 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             </div>
             <button className="ghost-btn" type="button" disabled={saving} onClick={() => void duplicateSalesCampaign(activeCampaign)}>Reuse template for new contacts</button>
           </div>
+          <label className="campaign-contact-category">
+            <span>Category for contacts you add <em>(optional)</em></span>
+            <input list="marketing-import-categories" value={campaignContactsDefaultCategory} onChange={(e) => setCampaignContactsDefaultCategory(e.target.value)} placeholder="e.g. GCC HR" disabled={saving} />
+            <small>Applies to upload and paste imports only when the file does not already include a category column.</small>
+            <datalist id="marketing-import-categories">
+              {suggestedProspectCategories.map((category) => <option key={`import-category-${category}`} value={category} />)}
+            </datalist>
+          </label>
+          </>
         ) : null}
         {activeCampaign ? (
           <>
@@ -9925,6 +9973,16 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
               }}
             />
           </div>
+          <div className="campaign-format-guide">
+            <div>
+              <strong>Excel upload format</strong>
+              <span>Download the template, replace the example row with your contacts, then upload it.</span>
+            </div>
+            <div className="campaign-header-chips">
+              {['name', 'email', 'company', 'designation', 'phone', 'category'].map((field) => <code key={`campaign-column-${field}`}>{field}</code>)}
+              <button className="ghost-btn" type="button" onClick={downloadCampaignContactExcelTemplate}>Download Excel template</button>
+            </div>
+          </div>
           <div className="campaign-paste-card">
             <div className="campaign-paste-heading">
               <div><div className="campaign-summary-title">Or paste contacts</div><p className="muted">Paste CSV rows with a header. Required: <code>name,email</code>. Optional: <code>phone,company,designation,category</code>.</p></div>
@@ -9933,7 +9991,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
               value={campaignContactsPaste}
               onChange={(e) => setCampaignContactsPaste(e.target.value)}
               rows={7}
-              placeholder={"name,email,company,designation\nPriya Shah,priya@acme.com,Acme Pvt Ltd,HR Director\nRahul Mehta,rahul@globex.com,Globex,Founder"}
+              placeholder={"name,email,company,designation,phone,category\nPriya Shah,priya@acme.com,Acme Pvt Ltd,HR Director,9876543210,GCC HR\nRahul Mehta,rahul@globex.com,Globex,Founder,9898989898,GCC HR"}
               disabled={saving}
               style={{ marginTop: 8, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" }}
             />
@@ -9942,6 +10000,19 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                 setSaving(true);
                 try { await importPastedCampaignContacts(); } catch (error) { setErr(error); } finally { setSaving(false); }
               })()}>{saving ? "Adding contacts..." : "Add pasted contacts"}</button>
+            </div>
+            <div className="campaign-saved-segment">
+              <div>
+                <div className="campaign-summary-title">Use saved contacts by category</div>
+                <p className="muted">For a new campaign, attach every active saved contact with one exact category, such as <code>GCC HR</code>.</p>
+              </div>
+              <div className="campaign-saved-segment-action">
+                <input list="marketing-saved-categories" value={savedContactsCategory} onChange={(e) => setSavedContactsCategory(e.target.value)} placeholder="e.g. GCC HR" disabled={saving} />
+                <datalist id="marketing-saved-categories">
+                  {suggestedProspectCategories.map((category) => <option key={`saved-category-${category}`} value={category} />)}
+                </datalist>
+                <button type="button" className="ghost-btn" disabled={saving || !String(savedContactsCategory || "").trim()} onClick={() => void attachSavedContactsByCategory()}>Add saved contacts</button>
+              </div>
             </div>
           </div>
           </>
