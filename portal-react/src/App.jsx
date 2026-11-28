@@ -9580,84 +9580,61 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           })()}>{editingProspectId ? "Update prospect" : "Add prospect"}</button>
           {editingProspectId ? <button className="ghost-btn" type="button" onClick={cancelProspectEdit}>Cancel edit</button> : null}
         </div>
-        <label><span>CSV import (name,email,phone,company,designation)</span><textarea rows={4} value={csvText} onChange={(e) => setCsvText(e.target.value)} /></label>
-        <div className="button-row tight">
-          <button className="ghost-btn" type="button" onClick={() => csvFileInputRef.current?.click()} disabled={saving}>Upload CSV/Excel</button>
-          <button className="ghost-btn" type="button" onClick={downloadProspectCsvSample}>Download CSV sample</button>
-          <input
-            ref={csvFileInputRef}
-            type="file"
-            accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            style={{ display: "none" }}
-            onChange={(e) => {
-              const file = e.target.files && e.target.files[0] ? e.target.files[0] : null;
-              setCsvFileName(file ? String(file.name || "") : "");
-              if (!file) return;
-              void (async () => {
-                setSaving(true);
-                try {
-                  await handleCsvFileImport(file);
-                  setProspectsPage(1);
-                  setProspectSearch("");
-                  setProspectCategoryFilter("");
-                  await loadProspects(1);
-                  await loadOverview();
-                  setOk("Prospects imported and linked to selected campaign.");
-                } catch (error) {
-                  setErr(error);
-                } finally {
-                  setSaving(false);
-                  e.target.value = "";
-                }
-              })();
-            }}
+        <div className="campaign-format-guide" style={{ marginTop: 16 }}>
+          <div>
+            <strong>Excel upload format</strong>
+            <span>Download the template, replace the example row with your contacts, then upload it to the Contact Library.</span>
+          </div>
+          <div className="campaign-header-chips">
+            {['name', 'email', 'company', 'designation', 'phone', 'category'].map((field) => <code key={`library-column-${field}`}>{field}</code>)}
+            <button className="ghost-btn" type="button" onClick={downloadCampaignContactExcelTemplate}>Download Excel template</button>
+            <button type="button" onClick={() => csvFileInputRef.current?.click()} disabled={saving}>Upload CSV / Excel</button>
+          </div>
+        </div>
+        <label className="campaign-contact-category" style={{ marginTop: 12 }}>
+          <span>Category for imported contacts <em>(optional)</em></span>
+          <input list="library-import-categories" value={campaignContactsDefaultCategory} onChange={(e) => setCampaignContactsDefaultCategory(e.target.value)} placeholder="e.g. GCC HR" disabled={saving} />
+          <small>Used only when your Excel or pasted rows do not already contain a category.</small>
+          <datalist id="library-import-categories">
+            {suggestedProspectCategories.map((category) => <option key={`library-import-category-${category}`} value={category} />)}
+          </datalist>
+        </label>
+        <div className="campaign-paste-card" style={{ marginTop: 12 }}>
+          <div className="campaign-paste-heading">
+            <div><div className="campaign-summary-title">Or paste contacts into the library</div><p className="muted">Header is fixed below. Paste only contact rows—one contact per line.</p></div>
+          </div>
+          <div className="campaign-fixed-header" aria-label="Fixed contact column headers">{CAMPAIGN_CONTACT_CSV_HEADER}</div>
+          <textarea
+            value={campaignContactsPaste}
+            onChange={(e) => setCampaignContactsPaste(e.target.value)}
+            rows={7}
+            placeholder={"Priya Shah,priya@acme.com,Acme Pvt Ltd,HR Director,9876543210,GCC HR\nRahul Mehta,rahul@globex.com,Globex,Founder,9898989898,GCC HR"}
+            disabled={saving}
+            style={{ marginTop: 8, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" }}
           />
-          {!selectedCampaignId ? <span className="muted">No campaign selected: import will add prospects only (no campaign attach).</span> : null}
-          {csvFileName ? <span className="muted">{csvFileName}</span> : null}
+          <div className="button-row tight" style={{ marginTop: 8 }}>
+            <button type="button" disabled={saving || !String(campaignContactsPaste || "").trim()} onClick={() => void (async () => {
+              setSaving(true);
+              try { await importPastedCampaignContacts({ attachToCampaign: false }); } catch (error) { setErr(error); } finally { setSaving(false); }
+            })()}>{saving ? "Saving contacts..." : "Save contacts to library"}</button>
+          </div>
         </div>
-        <div className="button-row tight">
-          <button className="ghost-btn" disabled={saving || !csvText.trim()} onClick={() => void (async () => {
-            setSaving(true);
-            try {
-              const preview = await api("/company/marketing/prospects/import", token, "POST", { csv: csvText, mode: "preview" });
-              const total = Number(preview?.totalRows || 0);
-              const valid = Number(preview?.validRows || 0);
-              const invalid = Number(preview?.invalidRows || 0);
-              const fresh = Number(preview?.newCount || 0);
-              const existing = Number(preview?.existingCount || 0);
-              const proceed = window.confirm(
-                `Import summary:\nTotal rows: ${total}\nValid: ${valid}\nInvalid: ${invalid}\nNew prospects: ${fresh}\nAlready existing: ${existing}\n\nProceed with import?`
-              );
-              if (!proceed) return;
-              const attachToCampaign = selectedCampaignId
-                ? window.confirm("Do you want to attach imported prospects to currently selected campaign?")
-                : false;
-              const includeExistingForCampaign = attachToCampaign && existing > 0
-                ? window.confirm(`${existing} prospects already exist in system.\nDo you want to attach existing ones also to selected campaign?`)
-                : false;
-              const result = await api("/company/marketing/prospects/import", token, "POST", {
-                csv: csvText,
-                mode: "commit",
-                importAction: includeExistingForCampaign ? "new_and_use_existing" : "new_only",
-                includeExistingForCampaign,
-                campaignId: attachToCampaign ? selectedCampaignId : ""
-              });
-              setCsvText("");
-              setProspectsPage(1);
-              setProspectSearch("");
-              setProspectCategoryFilter("");
-              await loadProspects(1);
-              await loadOverview();
-              const inserted = Number(result?.inserted || 0);
-              const linked = Number(result?.campaignLinked || 0);
-              setOk(attachToCampaign ? `CSV imported. New inserted: ${inserted}. Campaign linked: ${linked}.` : `CSV imported. New inserted: ${inserted}.`);
-            } catch (error) {
-              setErr(error);
-            } finally {
-              setSaving(false);
-            }
-          })()}>Import CSV text</button>
-        </div>
+        <input
+          ref={csvFileInputRef}
+          type="file"
+          accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const file = e.target.files && e.target.files[0] ? e.target.files[0] : null;
+            if (!file) return;
+            void (async () => {
+              setSaving(true);
+              try { await handleCampaignCsvFileImport(file, { attachToCampaign: false }); }
+              catch (error) { setErr(error); }
+              finally { setSaving(false); e.target.value = ""; }
+            })();
+          }}
+        />
       </Section>
 
       <Section kicker="Saved contacts" title="Contacts in this library">
