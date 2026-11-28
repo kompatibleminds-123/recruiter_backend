@@ -8838,8 +8838,9 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     const hay = `${item?.name || ""} ${item?.category || ""} ${item?.status || ""}`.toLowerCase();
     return hay.includes(q);
   });
-  const candidateCampaigns = campaigns.filter((item) => /candidate|captured|recruiter_portal/i.test(String(item?.source || "")) || String(item?.audience_type || "").toLowerCase() === "candidate");
+  const candidateCampaigns = campaigns.filter((item) => /candidate|captured|recruiter[\s_-]*portal/i.test(String(item?.source || "")) || String(item?.audience_type || "").toLowerCase() === "candidate");
   const salesCampaigns = campaigns.filter((item) => !candidateCampaigns.some((candidateCampaign) => String(candidateCampaign?.id || "") === String(item?.id || "")));
+  const filteredSalesCampaigns = filteredCampaigns.filter((item) => salesCampaigns.some((salesCampaign) => String(salesCampaign?.id || "") === String(item?.id || "")));
   const candidateRecipientCount = candidateCampaigns.reduce((total, item) => total + Math.max(0, Number(item?.stats?.total || 0)), 0);
   const candidateEmailSentCount = candidateCampaigns.reduce((total, item) => total + Math.max(0, Number(item?.stats?.sent || 0)), 0);
   const salesEmailSentCount = salesCampaigns.reduce((total, item) => total + Math.max(0, Number(item?.stats?.sent || 0)), 0);
@@ -9825,7 +9826,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         </div>
         <label><span>Select campaign</span><select value={selectedCampaignId} onChange={(e) => setSelectedCampaignId(e.target.value)}>
           <option value="">Select</option>
-          {filteredCampaigns.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.status})</option>)}
+          {filteredSalesCampaigns.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.status})</option>)}
         </select></label>
         {!activeCampaign ? <p className="muted">Create or select a campaign, then upload or paste its contacts below.</p> : null}
         {activeCampaign ? (
@@ -9908,7 +9909,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
               </tr>
             </thead>
             <tbody>
-          {filteredCampaigns.map((item) => (
+          {filteredSalesCampaigns.map((item) => (
                 <tr key={String(item?.id || "")}>
                   <td>{item?.name || "-"}</td>
                   <td>{item?.category || "-"}</td>
@@ -9935,7 +9936,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                   </td>
                 </tr>
               ))}
-              {!filteredCampaigns.length ? <tr><td colSpan="8"><div className="empty-state compact-empty">{campaigns.length ? "No campaigns match this filter." : "No campaigns yet."}</div></td></tr> : null}
+              {!filteredSalesCampaigns.length ? <tr><td colSpan="8"><div className="empty-state compact-empty">{salesCampaigns.length ? "No sales campaigns match this filter." : "No sales campaigns yet."}</div></td></tr> : null}
             </tbody>
           </table>
         </div>
