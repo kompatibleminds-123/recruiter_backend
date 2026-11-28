@@ -17882,7 +17882,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
-      const limit = Math.max(1, Math.min(100, Number(requestUrl.searchParams.get("limit") || 100)));
+      const limit = Math.max(1, Math.min(200, Number(requestUrl.searchParams.get("limit") || 100)));
       const page = Math.max(1, Number(requestUrl.searchParams.get("page") || 1));
       const offset = (page - 1) * limit;
       const q = String(requestUrl.searchParams.get("q") || "").trim().toLowerCase();
@@ -17893,10 +17893,12 @@ const server = http.createServer(async (req, res) => {
       );
       const filtered = (Array.isArray(rows) ? rows : []).filter((item) => {
         if (categoryFilter) {
-          const contactCategories = Array.isArray(item?.categories) && item.categories.length
-            ? item.categories
-            : [item?.category || ""];
-          const matchesCategory = contactCategories.some((category) => String(category || "").trim().toLowerCase() === categoryFilter);
+          const contactCategories = normalizeMarketingCategories(item?.categories).length
+            ? normalizeMarketingCategories(item?.categories)
+            : normalizeMarketingCategories(item?.category);
+          const matchesCategory = categoryFilter === "uncategorised"
+            ? !contactCategories.length
+            : contactCategories.some((category) => String(category || "").trim().toLowerCase() === categoryFilter);
           if (!matchesCategory) return false;
         }
         if (!q) return true;
@@ -17935,9 +17937,10 @@ const server = http.createServer(async (req, res) => {
       (Array.isArray(rows) ? rows : []).forEach((prospect) => {
         const status = String(prospect?.status || "unknown").trim().toLowerCase() || "unknown";
         statusCounts[status] = Number(statusCounts[status] || 0) + 1;
-        const categories = Array.isArray(prospect?.categories) && prospect.categories.length
-          ? prospect.categories
-          : [prospect?.category || "Uncategorised"];
+        const savedCategories = normalizeMarketingCategories(prospect?.categories).length
+          ? normalizeMarketingCategories(prospect?.categories)
+          : normalizeMarketingCategories(prospect?.category);
+        const categories = savedCategories.length ? savedCategories : ["Uncategorised"];
         Array.from(new Set(categories.map((item) => String(item || "").trim() || "Uncategorised"))).forEach((category) => {
           const current = categoryCounts.get(category) || { category, total: 0, active: 0 };
           current.total += 1;
@@ -18042,6 +18045,40 @@ const server = http.createServer(async (req, res) => {
         { method: "PATCH", body: patch, prefer: "return=representation" }
       );
       sendJson(res, 200, { ok: true, result: Array.isArray(updated) && updated.length ? updated[0] : null });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && requestUrl.pathname === "/company/marketing/prospects/assign-category") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const body = await readJsonBody(req);
+      const category = String(body.category || "").trim();
+      const ids = Array.from(new Set((Array.isArray(body.ids) ? body.ids : [])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean))).slice(0, 200);
+      if (!category) throw new Error("Category is required.");
+      if (!ids.length) throw new Error("Select at least one contact.");
+      const idList = ids.map((id) => `"${id.replace(/"/g, "")}"`).join(",");
+      const rows = await supabaseTableFetch(
+        "marketing_prospects",
+        `?select=id,category,categories&company_id=eq.${encodeURIComponent(actor.companyId)}${buildMarketingOwnerFilter(actor, "created_by")}&id=in.(${idList})&limit=200`
+      );
+      const updates = (Array.isArray(rows) ? rows : []).map(async (prospect) => {
+        const existing = normalizeMarketingCategories(prospect?.categories).length
+          ? normalizeMarketingCategories(prospect?.categories)
+          : normalizeMarketingCategories(prospect?.category);
+        const categories = normalizeMarketingCategories([...existing, category]);
+        await supabaseTableFetch(
+          "marketing_prospects",
+          `?id=eq.${encodeURIComponent(String(prospect.id || ""))}&company_id=eq.${encodeURIComponent(actor.companyId)}${buildMarketingOwnerFilter(actor, "created_by")}&select=id`,
+          { method: "PATCH", body: { category: String(prospect?.category || category).trim() || category, categories, updated_at: toIsoNow() }, prefer: "return=minimal" }
+        );
+      });
+      await Promise.all(updates);
+      sendJson(res, 200, { ok: true, result: { updated: updates.length, category } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }

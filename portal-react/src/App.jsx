@@ -8597,6 +8597,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [savedContactsCategory, setSavedContactsCategory] = useState("");
   const [prospectSearch, setProspectSearch] = useState("");
   const [prospectCategoryFilter, setProspectCategoryFilter] = useState("");
+  const [bulkProspectCategory, setBulkProspectCategory] = useState("");
   const [selectedProspectIds, setSelectedProspectIds] = useState([]);
   const [status, setStatus] = useState({ message: "", kind: "" });
   const [recentRequestLogs, setRecentRequestLogs] = useState([]);
@@ -8943,15 +8944,19 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     setSelectedProspectIds((current) => current.includes(safeId) ? current.filter((item) => item !== safeId) : [...current, safeId]);
   }
 
-  function selectFilteredProspects() {
-    setSelectedProspectIds((current) => {
-      const next = new Set(current);
-      filteredProspects.forEach((item) => {
-        const id = String(item?.id || "").trim();
-        if (id) next.add(id);
-      });
-      return Array.from(next);
-    });
+  async function selectFilteredProspects() {
+    const params = new URLSearchParams({ limit: "200", page: "1" });
+    if (prospectSearch) params.set("q", String(prospectSearch || "").trim());
+    if (prospectCategoryFilter) params.set("category", String(prospectCategoryFilter || "").trim());
+    const result = await api(`/company/marketing/prospects?${params.toString()}`, token);
+    const matches = Array.isArray(result?.items) ? result.items : [];
+    setSelectedProspectIds((current) => Array.from(new Set([
+      ...current,
+      ...matches.map((item) => String(item?.id || "").trim()).filter(Boolean)
+    ])));
+    if (Number(result?.total || 0) > matches.length) {
+      setOk(`Selected the first ${matches.length} matching contacts. Narrow the filter to categorise the rest.`);
+    }
   }
 
   function clearProspectSelection() {
@@ -9132,7 +9137,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     setOk(attachToCampaign
       ? `Campaign import done. New inserted: ${inserted}. Campaign linked: ${linked}.`
       : `Contacts saved to the library. New inserted: ${inserted}.`);
-    await refreshLight("campaigns");
+    await refreshLight(attachToCampaign ? "campaigns" : "prospects");
   }
 
   async function importPastedCampaignContacts({ attachToCampaign = true } = {}) {
@@ -9169,7 +9174,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     setOk(attachToCampaign
       ? `Contacts added to this campaign: ${Number(result?.campaignLinked || 0)} linked.`
       : `Contacts saved to the library: ${Number(result?.inserted || 0)} new contact(s).`);
-    await refreshLight("campaigns");
+    await refreshLight(attachToCampaign ? "campaigns" : "prospects");
   }
 
   async function launchSelectedProspectsNow() {
@@ -9268,6 +9273,24 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     setProspectsPage(1);
     await refreshLight("prospects");
     setOk("Selected prospects deleted.");
+  }
+
+  async function assignCategoryToSelectedProspects() {
+    const category = String(bulkProspectCategory || "").trim();
+    if (!selectedProspectIds.length) throw new Error("Select contacts first.");
+    if (!category) throw new Error("Enter a category first.");
+    const confirmed = window.confirm(`Add the category "${category}" to ${selectedProspectIds.length} selected contact(s)?`);
+    if (!confirmed) return;
+    setSaving(true);
+    try {
+      const result = await api("/company/marketing/prospects/assign-category", token, "POST", { ids: selectedProspectIds, category });
+      setBulkProspectCategory("");
+      setSelectedProspectIds([]);
+      await refreshLight("prospects");
+      setOk(`Category added to ${Number(result?.updated || 0)} contact(s).`);
+    } finally {
+      setSaving(false);
+    }
   }
 
   function startCampaignEdit(item) {
@@ -9489,14 +9512,14 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           {(Array.isArray(contactSummary?.categories) ? contactSummary.categories : []).map((item) => {
             const category = String(item?.category || "Uncategorised");
             return (
-              <button key={`contact-category-${category}`} type="button" disabled={category === "Uncategorised"} className={`${String(prospectCategoryFilter || "").toLowerCase() === category.toLowerCase() ? "contact-category-card is-selected" : "contact-category-card"}${category === "Uncategorised" ? " is-muted" : ""}`} onClick={() => {
-                setProspectCategoryFilter(category === "Uncategorised" ? "" : category);
+              <button key={`contact-category-${category}`} type="button" className={String(prospectCategoryFilter || "").toLowerCase() === category.toLowerCase() ? "contact-category-card is-selected" : "contact-category-card"} onClick={() => {
+                setProspectCategoryFilter(category);
                 setProspectSearch("");
                 setProspectsPage(1);
               }}>
                 <span>{category}</span>
-                <strong>{Number(item?.active || 0)}</strong>
-                <small>active contacts</small>
+                <strong>{Number(item?.total || 0)}</strong>
+                <small>{Number(item?.active || 0)} active contact(s)</small>
               </button>
             );
           })}
@@ -9649,8 +9672,12 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           <label><span>Selected</span><input readOnly value={`${selectedProspectsCount}`} /></label>
         </div>
         <div className="button-row tight" style={{ gap: 12, flexWrap: "wrap", marginTop: 6 }}>
-          <button className="ghost-btn" onClick={selectFilteredProspects}>Select filtered</button>
+          <button className="ghost-btn" onClick={() => void selectFilteredProspects().catch(setErr)}>Select filtered</button>
           <button className="ghost-btn" onClick={clearProspectSelection}>Clear selection</button>
+          <input value={bulkProspectCategory} onChange={(e) => setBulkProspectCategory(e.target.value)} placeholder="Add category, e.g. GCC HR" style={{ minWidth: 220 }} />
+          <button className="ghost-btn" disabled={!selectedProspectIds.length || saving || !bulkProspectCategory.trim()} onClick={() => void assignCategoryToSelectedProspects().catch(setErr)}>
+            Assign category ({selectedProspectIds.length})
+          </button>
           <button className="ghost-btn" disabled={!selectedProspectIds.length || saving} onClick={() => void bulkDeleteSelectedProspects().catch(setErr)}>
             Delete selected
           </button>
