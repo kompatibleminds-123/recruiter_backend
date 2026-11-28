@@ -6021,6 +6021,22 @@ function getIndicatorLabelByKey(fieldKey = "") {
   return String(hit?.label || key || "").trim();
 }
 
+function getSafeRichEditorMarkup(value = "") {
+  const raw = String(value || "");
+  if (!/<\/?[a-z][\s\S]*>/i.test(raw)) return escapeHtml(raw).replace(/\n/g, "<br/>");
+  if (typeof DOMParser === "undefined") return raw;
+  const documentNode = new DOMParser().parseFromString(raw, "text/html");
+  documentNode.querySelectorAll("script,style,link,meta,title,base,iframe,object,embed,form,input,select,textarea,button").forEach((node) => node.remove());
+  documentNode.body.querySelectorAll("*").forEach((node) => {
+    Array.from(node.attributes || []).forEach((attribute) => {
+      const name = String(attribute?.name || "").toLowerCase();
+      const value = String(attribute?.value || "").trim().toLowerCase();
+      if (name.startsWith("on") || ((name === "href" || name === "src") && value.startsWith("javascript:"))) node.removeAttribute(attribute.name);
+    });
+  });
+  return documentNode.body.innerHTML || escapeHtml(documentNode.body.textContent || "").replace(/\n/g, "<br/>");
+}
+
 function RichTextEditor({ value, onChange, placeholder = "Write here...", minHeight = 160, editorRef: externalRef = null, disabled = false }) {
   const localRef = useRef(null);
   const editorRef = externalRef || localRef;
@@ -6031,8 +6047,7 @@ function RichTextEditor({ value, onChange, placeholder = "Write here...", minHei
     // While the user is typing, React state mirrors the contenteditable value.
     // Replacing innerHTML at that point destroys the browser selection/caret.
     if (document.activeElement === node) return;
-    const raw = String(value || "");
-    const next = /<\/?[a-z][\s\S]*>/i.test(raw) ? raw : escapeHtml(raw).replace(/\n/g, "<br/>");
+    const next = getSafeRichEditorMarkup(value);
     if (node.innerHTML !== next) node.innerHTML = next;
   }, [value]);
 
@@ -6122,6 +6137,14 @@ function RichTextEditor({ value, onChange, placeholder = "Write here...", minHei
         }}
         onInput={() => {
           if (disabled) return;
+          onChange(String(editorRef.current?.innerHTML || ""));
+        }}
+        onPaste={(event) => {
+          if (disabled) return;
+          const text = event.clipboardData?.getData("text/plain");
+          if (!text) return;
+          event.preventDefault();
+          document.execCommand("insertText", false, text);
           onChange(String(editorRef.current?.innerHTML || ""));
         }}
       />
@@ -9208,6 +9231,26 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     setSelectedCampaignId(String(item.id || ""));
   }
 
+  async function duplicateSalesCampaign(item) {
+    if (!item?.id) return;
+    const campaignName = String(item?.name || "this campaign").trim();
+    const proceed = window.confirm(`Create a fresh draft copy of "${campaignName}" with the same contacts and email template? It will not send until you choose Create Brevo campaign & send.`);
+    if (!proceed) return;
+    setSaving(true);
+    try {
+      const result = await api(`/company/marketing/campaigns/${encodeURIComponent(String(item.id))}/duplicate`, token, "POST", {});
+      const campaign = result?.campaign || result;
+      const campaignId = String(campaign?.id || "").trim();
+      if (campaignId) setSelectedCampaignId(campaignId);
+      await refreshLight("campaigns");
+      setOk(`Draft copy created with ${Number(result?.copiedRecipients || 0)} contact(s). Review it, then send when ready.`);
+    } catch (error) {
+      setErr(error);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function cancelCampaignEdit() {
     setEditingCampaignId("");
     setCampaignDraft({ name: "", category: "", sendGapMinutes: 5, dailyCap: 50, senderUserId: String(marketingSenderOptions?.[0]?.id || currentUser?.id || "").trim() });
@@ -9611,7 +9654,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                 minHeight={220}
               />
             )}
-            <span className="field-help">Use Design editor for normal writing, or HTML code to paste a complete Brevo-ready email design. Preview before sending.</span>
+            <span className="field-help">Design editor keeps pasted content clean and easy to edit. HTML code accepts complete email HTML. Scripts, popups and calculator code are removed automatically because email clients do not support them.</span>
           </label>
         </div>
         <div className="button-row tight" style={{ marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -9675,13 +9718,14 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                 fileData: templateAttachment.fileData || ""
               } : null;
             }
+            let savedTemplate = null;
             if (editingTemplateId) {
-              await api(`/company/marketing/templates/${encodeURIComponent(editingTemplateId)}`, token, "PATCH", payload);
+              savedTemplate = await api(`/company/marketing/templates/${encodeURIComponent(editingTemplateId)}`, token, "PATCH", payload);
             } else {
-              await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/template`, token, "POST", payload);
+              savedTemplate = await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/template`, token, "POST", payload);
             }
             cancelTemplateEdit();
-            setOk(editingTemplateId ? "Template updated." : "Template saved.");
+            setOk(savedTemplate?.emailSafeNotice || (editingTemplateId ? "Template updated." : "Template saved."));
             await refreshLight("templates");
           })().catch(setErr)}>{editingTemplateId ? "Update template" : "Create template"}</button>
           {editingTemplateId ? <button className="ghost-btn" type="button" onClick={cancelTemplateEdit}>Cancel edit</button> : null}
@@ -9921,6 +9965,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                   <td>
                     <div className="button-row tight">
                       <button className="ghost-btn" type="button" onClick={() => startCampaignEdit(item)}>Edit</button>
+                      <button className="ghost-btn" type="button" disabled={saving} onClick={() => void duplicateSalesCampaign(item)}>Duplicate</button>
                       <button className="ghost-btn" type="button" onClick={() => void (async () => {
                         if (!window.confirm(`Delete campaign ${item?.name || ""}?`)) return;
                         try {

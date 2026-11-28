@@ -6175,7 +6175,7 @@ async function createAndSendBrevoMarketingCampaign(config, senderActor = {}, cam
   const senderEmail = config.senderEmail;
   const requestedReplyTo = normalizeMarketingEmail(senderActor?.email || "");
   const replyToEmail = isValidEmail(requestedReplyTo) ? requestedReplyTo : senderEmail;
-  const campaignBodyTemplate = convertRecruitDeskPlaceholdersForBrevo(String(template?.body_text || template?.bodyText || ""))
+  const campaignBodyTemplate = sanitizeBrevoEmailHtml(convertRecruitDeskPlaceholdersForBrevo(String(template?.body_text || template?.bodyText || ""))).cleanBody
     .replace(/{{\s*(?:candidate_?name|name|first_?name)\s*}}/gi, "there");
   const baseBody = renderMarketingTemplate(campaignBodyTemplate, {}, {
     senderName,
@@ -6677,6 +6677,29 @@ function applyMarketingTemplateAttachment(rawBody = "", attachment = null) {
   const mimeType = String(attachment.mimeType || "application/octet-stream").trim() || "application/octet-stream";
   const payload = { filename, mimeType, fileData };
   return `${cleaned}\n<!--${MARKETING_TEMPLATE_ATTACHMENT_MARKER}:${JSON.stringify(payload)}-->`;
+}
+
+function sanitizeBrevoEmailHtml(rawBody = "") {
+  const source = String(rawBody || "");
+  let removedExecutableCode = false;
+  const cleanBody = source
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, () => {
+      removedExecutableCode = true;
+      return "";
+    })
+    .replace(/<\/?(?:iframe|object|embed|form|input|select|textarea|button)\b[^>]*>/gi, () => {
+      removedExecutableCode = true;
+      return "";
+    })
+    .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, () => {
+      removedExecutableCode = true;
+      return "";
+    })
+    .replace(/\s+(href|src)\s*=\s*(["'])\s*javascript:[\s\S]*?\2/gi, (_match, attributeName) => {
+      removedExecutableCode = true;
+      return ` ${String(attributeName || "href").toLowerCase()}="#"`;
+    });
+  return { cleanBody, removedExecutableCode };
 }
 
 function stripBulkJdRuntimeMetadata(rawBody = "") {
@@ -18265,7 +18288,7 @@ const server = http.createServer(async (req, res) => {
         companyId: String(actor.companyId || "").trim()
       };
       const subject = String(body.subject || "").trim();
-      const bodyText = stripMarketingTemplateAttachment(String(body.bodyText || "")).cleanBody.trim();
+      const bodyText = sanitizeBrevoEmailHtml(stripMarketingTemplateAttachment(String(body.bodyText || "")).cleanBody).cleanBody.trim();
       if (!subject || !bodyText) throw new Error("Sample subject and body are required.");
       const sampleProspect = {
         name: "Sample Candidate",
@@ -18377,6 +18400,87 @@ const server = http.createServer(async (req, res) => {
         saved = await supabaseTableFetch("marketing_campaigns", "?select=*", { method: "POST", body: legacyItem, prefer: "return=representation" });
       }
       sendJson(res, 200, { ok: true, result: (Array.isArray(saved) ? saved[0] : saved) || item });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && /^\/company\/marketing\/campaigns\/[^/]+\/duplicate$/.test(requestUrl.pathname)) {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const sourceCampaignId = String(requestUrl.pathname.replace(/^\/company\/marketing\/campaigns\//, "").replace(/\/duplicate$/, "")).trim();
+      const campaignAccess = await getMarketingCampaignForActor(actor, sourceCampaignId);
+      if (!campaignAccess) throw new Error("Campaign not found or not accessible.");
+      const companyId = encodeURIComponent(String(actor.companyId || "").trim());
+      const sourceRows = await supabaseTableFetch(
+        "marketing_campaigns",
+        `?select=*&company_id=eq.${companyId}&id=eq.${encodeURIComponent(sourceCampaignId)}&limit=1`
+      );
+      const source = Array.isArray(sourceRows) && sourceRows.length ? sourceRows[0] : null;
+      if (!source) throw new Error("Campaign not found.");
+      const sourceType = `${source?.source || ""} ${source?.audience_type || ""}`.toLowerCase();
+      if (/candidate|captured|recruiter[\s_-]*portal/.test(sourceType)) {
+        throw new Error("Candidate campaigns must be duplicated from RecruitDesk, not Sales Campaigns.");
+      }
+      const now = toIsoNow();
+      const draft = {
+        id: crypto.randomUUID(),
+        company_id: actor.companyId,
+        name: `Copy of ${String(source.name || "Sales campaign").trim()}`.slice(0, 180),
+        category: String(source.category || "").trim(),
+        source: String(source.source || "marketing_portal").trim() || "marketing_portal",
+        status: "draft",
+        sender_user_id: String(source.sender_user_id || actor.id || "").trim() || actor.id,
+        created_by: actor.id,
+        send_gap_minutes: Math.max(1, Number(source.send_gap_minutes || 5)),
+        daily_cap: Math.max(10, Number(source.daily_cap || 50)),
+        created_at: now,
+        updated_at: now
+      };
+      let savedRows;
+      try {
+        savedRows = await supabaseTableFetch("marketing_campaigns", "?select=*", { method: "POST", body: draft, prefer: "return=representation" });
+      } catch (error) {
+        if (!isMissingMarketingCreatedByColumnError(error)) throw error;
+        const legacyDraft = { ...draft };
+        delete legacyDraft.created_by;
+        savedRows = await supabaseTableFetch("marketing_campaigns", "?select=*", { method: "POST", body: legacyDraft, prefer: "return=representation" });
+      }
+      const duplicate = (Array.isArray(savedRows) ? savedRows[0] : savedRows) || draft;
+      const duplicateId = String(duplicate.id || draft.id).trim();
+      const templateRows = await supabaseTableFetch(
+        "marketing_templates",
+        `?select=subject,body_text,target_categories&company_id=eq.${companyId}&campaign_id=eq.${encodeURIComponent(sourceCampaignId)}&limit=1`
+      );
+      const template = Array.isArray(templateRows) && templateRows.length ? templateRows[0] : null;
+      if (template) {
+        await supabaseTableFetch("marketing_templates", "?select=id", {
+          method: "POST",
+          body: {
+            id: crypto.randomUUID(), company_id: actor.companyId, campaign_id: duplicateId,
+            subject: String(template.subject || "").trim(), body_text: String(template.body_text || "").trim(),
+            target_categories: template.target_categories || [], updated_by: actor.id,
+            created_at: now, updated_at: now
+          },
+          prefer: "return=minimal"
+        });
+      }
+      const linkRows = await supabaseTableFetch(
+        "marketing_campaign_prospects",
+        `?select=prospect_id&company_id=eq.${companyId}&campaign_id=eq.${encodeURIComponent(sourceCampaignId)}&limit=1000`
+      );
+      const links = (Array.isArray(linkRows) ? linkRows : []).map((row) => String(row?.prospect_id || "").trim()).filter(Boolean)
+        .map((prospectId) => ({
+          id: crypto.randomUUID(), company_id: actor.companyId, campaign_id: duplicateId, prospect_id: prospectId,
+          state: "ready", created_at: now, updated_at: now
+        }));
+      if (links.length) {
+        await supabaseTableFetch("marketing_campaign_prospects", "?on_conflict=campaign_id,prospect_id&select=id", {
+          method: "POST", body: links, prefer: "resolution=merge-duplicates,return=minimal"
+        });
+      }
+      sendJson(res, 200, { ok: true, result: { campaign: duplicate, copiedRecipients: links.length, copiedTemplate: Boolean(template) } });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
     }
@@ -18553,7 +18657,9 @@ const server = http.createServer(async (req, res) => {
       if (!campaignAccess) throw new Error("Campaign not found or not accessible.");
       const body = await readJsonBody(req);
       const now = toIsoNow();
-      const bodyTextClean = String(body.bodyText || body.body_text || "").trim();
+      const incomingBody = String(body.bodyText || body.body_text || "").trim();
+      const emailSafeBody = sanitizeBrevoEmailHtml(incomingBody);
+      const bodyTextClean = emailSafeBody.cleanBody.trim();
       const attachment = sanitizeMarketingTemplateAttachment(body.attachment || null);
       const bodyWithAttachment = applyMarketingTemplateAttachment(bodyTextClean, attachment);
       const item = {
@@ -18574,6 +18680,9 @@ const server = http.createServer(async (req, res) => {
         prefer: "resolution=merge-duplicates,return=representation"
       });
       const result = normalizeMarketingTemplateRow((Array.isArray(saved) ? saved[0] : saved) || item);
+      result.emailSafeNotice = emailSafeBody.removedExecutableCode
+        ? "Interactive code was removed. Brevo emails support HTML/CSS only; use a normal web-page link for calculators or popups."
+        : "";
       sendJson(res, 200, { ok: true, result });
     } catch (error) {
       sendJson(res, 400, { ok: false, error: String(error?.message || error) });
@@ -18881,7 +18990,7 @@ const server = http.createServer(async (req, res) => {
       const body = await readJsonBody(req);
       const subject = String(body.subject || "").trim();
       const bodyTextRaw = String(body.bodyText || body.body_text || "").trim();
-      const bodyText = stripMarketingTemplateAttachment(bodyTextRaw).cleanBody;
+      const bodyText = sanitizeBrevoEmailHtml(stripMarketingTemplateAttachment(bodyTextRaw).cleanBody).cleanBody;
       const prospectId = String(body.prospectId || "").trim();
       if (!subject && !bodyText) throw new Error("Template subject/body is required for preview.");
 
