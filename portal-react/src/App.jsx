@@ -8630,7 +8630,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     const currentUserEmail = String(currentUser?.email || "").trim();
     const currentUserName = String(currentUser?.name || "").trim() || currentUserEmail || "Logged in user";
     const isAdmin = String(currentUser?.role || "").trim().toLowerCase() === "admin";
-    const ownOption = currentUserId ? [{ id: currentUserId, label: `My email — ${currentUserName}${currentUserEmail ? ` (${currentUserEmail})` : ""}`, kind: "self" }] : [];
+    const isCompanyEmail = /@kompatibleminds\.com$/i.test(currentUserEmail);
+    const ownOption = currentUserId && isCompanyEmail ? [{ id: currentUserId, label: `My email — ${currentUserName}${currentUserEmail ? ` (${currentUserEmail})` : ""}`, kind: "self" }] : [];
     if (!isAdmin) return ownOption;
     const teamOptions = (Array.isArray(users) ? users : [])
       .map((user) => ({
@@ -8639,7 +8640,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         name: String(user?.name || "").trim() || String(user?.email || "").trim(),
         role: String(user?.role || "").trim()
       }))
-      .filter((user) => user.id && user.email)
+      .filter((user) => user.id && /@kompatibleminds\.com$/i.test(user.email))
       .sort((left, right) => left.name.localeCompare(right.name))
       .map((user) => ({ id: user.id, label: `${user.id === currentUserId ? "My email — " : ""}${user.name} (${user.email})${user.role ? ` · ${user.role}` : ""}`, kind: user.id === currentUserId ? "self" : "team" }));
     return teamOptions.length ? teamOptions : ownOption;
@@ -9497,12 +9498,13 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           <p className="muted">Create candidate campaigns from Database Search or Captured Notes. This page keeps the history, source and delivery record in one place.</p>
           <div className="table-wrap">
             <table className="dashboard-table">
-              <thead><tr><th>Campaign</th><th>Source</th><th>Status</th><th>Recipients</th><th>Sent</th><th>Brevo campaign</th><th>Updated</th></tr></thead>
+              <thead><tr><th>Campaign</th><th>Source</th><th>Sender / replies to</th><th>Status</th><th>Recipients</th><th>Sent</th><th>Brevo campaign</th><th>Updated</th></tr></thead>
               <tbody>
                 {candidateCampaigns.map((item) => (
                   <tr key={String(item?.id || "")}>
                     <td>{item?.name || "-"}</td>
                     <td>{String(item?.source || "candidate_database").replace(/_/g, " ")}</td>
+                    <td>{marketingSenderOptions.find((option) => String(option?.id || "") === String(item?.sender_user_id || ""))?.label || "-"}</td>
                     <td>{item?.status || "draft"}</td>
                     <td>{Number(item?.stats?.total || 0)}</td>
                     <td>{Number(item?.stats?.sent || 0)}</td>
@@ -9510,7 +9512,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                     <td>{item?.updated_at ? new Date(item.updated_at).toLocaleString() : "-"}</td>
                   </tr>
                 ))}
-                {!candidateCampaigns.length ? <tr><td colSpan="7"><div className="empty-state compact-empty">No candidate campaigns yet. Select candidates from Database Search or Captured Notes, then choose Email selected.</div></td></tr> : null}
+                {!candidateCampaigns.length ? <tr><td colSpan="8"><div className="empty-state compact-empty">No candidate campaigns yet. Select candidates from Database Search or Captured Notes, then choose Email selected.</div></td></tr> : null}
               </tbody>
             </table>
           </div>
@@ -10325,37 +10327,21 @@ function PortalApp({ token, onLogout }) {
     const currentUserId = String(state.user?.id || "").trim();
     const currentUserEmail = String(state.user?.email || "").trim();
     const currentUserName = String(state.user?.name || "").trim() || currentUserEmail || "Logged in user";
-    const adminUser = (Array.isArray(state.users) ? state.users : []).find((item) => String(item?.role || "").trim().toLowerCase() === "admin") || null;
-    const options = [];
-    if (currentUserId) {
-      options.push({
-        id: currentUserId,
-        label: `My email${currentUserEmail ? ` (${currentUserEmail})` : ""}`,
-        kind: "self"
-      });
-    }
-    const adminId = String(adminUser?.id || "").trim();
-    const adminEmail = String(adminUser?.email || "").trim();
-    if (adminId && adminId !== currentUserId) {
-      options.push({
-        id: adminId,
-        label: `Admin email${adminEmail ? ` (${adminEmail})` : ""}`,
-        kind: "admin"
-      });
-    } else if (!options.length && adminId) {
-      options.push({
-        id: adminId,
-        label: `Admin email${adminEmail ? ` (${adminEmail})` : ""}`,
-        kind: "admin"
-      });
-    } else if (!options.length && currentUserId) {
-      options.push({
-        id: currentUserId,
-        label: currentUserName,
-        kind: "self"
-      });
-    }
-    return options;
+    const isAdmin = String(state.user?.role || "").trim().toLowerCase() === "admin";
+    const isCompanyEmail = /@kompatibleminds\.com$/i.test(currentUserEmail);
+    const ownOption = currentUserId && isCompanyEmail ? [{ id: currentUserId, label: `My email — ${currentUserName}${currentUserEmail ? ` (${currentUserEmail})` : ""}`, kind: "self" }] : [];
+    if (!isAdmin) return ownOption;
+    const teamOptions = (Array.isArray(state.users) ? state.users : [])
+      .map((user) => ({
+        id: String(user?.id || "").trim(),
+        email: String(user?.email || "").trim(),
+        name: String(user?.name || "").trim() || String(user?.email || "").trim(),
+        role: String(user?.role || "").trim()
+      }))
+      .filter((user) => user.id && /@kompatibleminds\.com$/i.test(user.email))
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map((user) => ({ id: user.id, label: `${user.id === currentUserId ? "My email — " : ""}${user.name} (${user.email})${user.role ? ` · ${user.role}` : ""}`, kind: user.id === currentUserId ? "self" : "team" }));
+    return teamOptions.length ? teamOptions : ownOption;
   }, [state.user, state.users]);
   useEffect(() => {
     const defaultSenderId = String(marketingSenderOptions?.[0]?.id || "").trim();
@@ -22161,6 +22147,7 @@ function PortalApp({ token, onLogout }) {
 
   async function loadMarketingBulkMailTemplates() {
     const currentUserId = String(state.user?.id || "").trim();
+    const isAdmin = String(state.user?.role || "").trim().toLowerCase() === "admin";
     const [campaignResult, templateResult] = await Promise.all([
       api("/company/marketing/campaigns", token).catch(() => ({ items: [] })),
       api("/company/marketing/templates", token).catch(() => ({ items: [] }))
@@ -22168,7 +22155,7 @@ function PortalApp({ token, onLogout }) {
     const campaigns = (Array.isArray(campaignResult?.items) ? campaignResult.items : []).filter((item) => {
       if (!/candidate|captured|recruiter_portal/i.test(String(item?.source || "")) && String(item?.audience_type || "").toLowerCase() !== "candidate") return false;
       const senderUserId = String(item?.sender_user_id || item?.senderUserId || "").trim();
-      if (!currentUserId) return true;
+      if (!currentUserId || isAdmin) return true;
       return senderUserId === currentUserId;
     });
     const templates = Array.isArray(templateResult?.items) ? templateResult.items : [];

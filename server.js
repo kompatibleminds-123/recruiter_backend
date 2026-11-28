@@ -6101,6 +6101,10 @@ function normalizeMarketingEmail(value = "") {
   return String(value || "").trim().toLowerCase();
 }
 
+function isKompatibleMindsMarketingEmail(value = "") {
+  return /^[^\s@]+@kompatibleminds\.com$/i.test(normalizeMarketingEmail(value));
+}
+
 function getBrevoCandidateCampaignConfig() {
   const apiKey = String(process.env.BREVO_API_KEY || "").trim();
   const senderEmail = normalizeMarketingEmail(process.env.BREVO_SENDER_EMAIL || "");
@@ -6173,7 +6177,8 @@ async function createAndSendBrevoMarketingCampaign(config, senderActor = {}, cam
   }
   const senderName = String(senderActor?.name || config.senderName).trim() || config.senderName;
   const requestedSenderEmail = normalizeMarketingEmail(senderActor?.email || "");
-  const senderEmail = isValidEmail(requestedSenderEmail) ? requestedSenderEmail : config.senderEmail;
+  const senderEmail = isKompatibleMindsMarketingEmail(requestedSenderEmail) ? requestedSenderEmail : config.senderEmail;
+  if (!isKompatibleMindsMarketingEmail(senderEmail)) throw new Error("A verified @kompatibleminds.com sender is required for marketing campaigns.");
   const replyToEmail = senderEmail;
   const campaignBodyTemplate = sanitizeBrevoEmailHtml(convertRecruitDeskPlaceholdersForBrevo(String(template?.body_text || template?.bodyText || ""))).cleanBody
     .replace(/{{\s*(?:candidate_?name|name|first_?name)\s*}}/gi, "there");
@@ -6229,7 +6234,8 @@ async function sendBrevoCandidateCampaignEmail(config, senderActor = {}, { to, s
     return { name: String(item?.filename || "attachment").trim() || "attachment", content };
   }).filter(Boolean);
   const requestedSenderEmail = normalizeMarketingEmail(senderActor?.email || "");
-  const senderEmail = isValidEmail(requestedSenderEmail) ? requestedSenderEmail : config.senderEmail;
+  const senderEmail = isKompatibleMindsMarketingEmail(requestedSenderEmail) ? requestedSenderEmail : config.senderEmail;
+  if (!isKompatibleMindsMarketingEmail(senderEmail)) throw new Error("A verified @kompatibleminds.com sender is required for marketing campaigns.");
   const replyToEmail = senderEmail;
   return callBrevoCandidateCampaignApi(config, "/smtp/email", {
     sender: { email: senderEmail, name: String(senderActor?.name || config.senderName).trim() || config.senderName },
@@ -6832,13 +6838,17 @@ async function resolveAllowedMarketingSenderUserId(actor = null, requestedSender
   const companyId = String(actor?.companyId || "").trim();
   const requestedId = String(requestedSenderUserId || "").trim();
   if (!actorId || !companyId) throw new Error("Sender context missing.");
-  if (!requestedId || requestedId === actorId) return actorId;
+  if (!requestedId || requestedId === actorId) {
+    if (!isKompatibleMindsMarketingEmail(actor?.email || "")) throw new Error("Choose a verified @kompatibleminds.com sender for marketing emails.");
+    return actorId;
+  }
   const rows = await supabaseTableFetch(
     "users",
-    `?select=id,role&company_id=eq.${encodeURIComponent(companyId)}&id=eq.${encodeURIComponent(requestedId)}&limit=1`
+    `?select=id,role,email&company_id=eq.${encodeURIComponent(companyId)}&id=eq.${encodeURIComponent(requestedId)}&limit=1`
   ).catch(() => []);
   const match = Array.isArray(rows) && rows.length ? rows[0] : null;
   if (!match?.id) throw new Error("Selected sender not found.");
+  if (!isKompatibleMindsMarketingEmail(match?.email || "")) throw new Error("Only verified @kompatibleminds.com users can be selected as marketing senders.");
   if (!isAdminActor(actor)) throw new Error("You can only send using your own verified email address.");
   return String(match.id || "").trim();
 }
