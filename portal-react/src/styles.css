@@ -2331,6 +2331,70 @@ textarea { min-height: 92px; resize: vertical; }
   flex: 0 0 auto;
   min-width: 48px;
 }
+
+.campaign-workspace {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid #d7e4f6;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, #fbfdff 0%, #f4f8ff 100%);
+}
+
+.campaign-picker { display: grid; gap: 0.38rem; }
+.campaign-empty { margin: 0.15rem 0; }
+.campaign-summary-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid #cbdcf5;
+  border-radius: var(--radius-md);
+  background: #fff;
+}
+.campaign-summary-eyebrow {
+  color: #2563eb;
+  font-size: 0.69rem;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  margin-bottom: 0.28rem;
+}
+.campaign-summary-title { color: #10264a; font-size: 1rem; font-weight: 750; }
+.campaign-action-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+.campaign-action-card {
+  min-height: 82px;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 0.25rem;
+  padding: 0.85rem 1rem;
+  text-align: left;
+  border-radius: var(--radius-md);
+}
+.campaign-action-card strong { font-size: 0.91rem; }
+.campaign-action-card span { font-size: 0.77rem; opacity: 0.84; font-weight: 500; }
+.campaign-action-card.ghost-btn { background: #fff; border-color: #cbdcf5; color: #1c3b68; }
+.campaign-send-action { background: linear-gradient(135deg, #168bb5, #2563eb); }
+.campaign-paste-card {
+  padding: 1rem 1.1rem;
+  border: 1px solid #d7e4f6;
+  border-radius: var(--radius-md);
+  background: #fff;
+}
+.campaign-paste-heading p { margin: 0.35rem 0 0; }
+.campaign-paste-card textarea { background: #fbfdff; border-color: #cbdcf5; }
+
+@media (max-width: 760px) {
+  .campaign-summary-card { align-items: flex-start; flex-direction: column; }
+  .campaign-action-grid { grid-template-columns: 1fr; }
+}
 .form-label {
   display: inline-block;
   font-weight: 700;

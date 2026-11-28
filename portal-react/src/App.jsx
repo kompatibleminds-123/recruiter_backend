@@ -9868,25 +9868,32 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             </select>
           </label>
         </div>
-        <label><span>Select campaign</span><select value={selectedCampaignId} onChange={(e) => setSelectedCampaignId(e.target.value)}>
-          <option value="">Select</option>
+        <div className="campaign-workspace">
+        <label className="campaign-picker"><span>Select campaign</span><select value={selectedCampaignId} onChange={(e) => setSelectedCampaignId(e.target.value)}>
+          <option value="">Select a sales campaign</option>
           {filteredSalesCampaigns.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.status})</option>)}
         </select></label>
-        {!activeCampaign ? <p className="muted">Create or select a campaign, then upload or paste its contacts below.</p> : null}
+        {!activeCampaign ? <p className="muted campaign-empty">Create a campaign above, or select one to add contacts, prepare the email and send.</p> : null}
         {activeCampaign ? (
-          <div className="item-card compact-card">
-            <div className="item-subtitle">{`Label: ${activeCampaign.category || "-"} | Sender: ${marketingSenderOptions.find((item) => String(item?.id || "") === String(activeCampaign?.sender_user_id || ""))?.label || "Default sender"}`}</div>
-            <div className="muted" style={{ marginTop: 6 }}>
-              Upload or paste contacts for this campaign, add the email template, then send through Brevo.
+          <div className="campaign-summary-card">
+            <div>
+              <div className="campaign-summary-eyebrow">Selected sales campaign</div>
+              <div className="campaign-summary-title">{activeCampaign.name || "Untitled campaign"}</div>
+              <div className="muted">{`Tag: ${activeCampaign.category || "No tag"}  ·  Sender: ${marketingSenderOptions.find((item) => String(item?.id || "") === String(activeCampaign?.sender_user_id || ""))?.label || "Default sender"}`}</div>
             </div>
+            <button className="ghost-btn" type="button" disabled={saving} onClick={() => void duplicateSalesCampaign(activeCampaign)}>Duplicate campaign</button>
           </div>
         ) : null}
         {activeCampaign ? (
           <>
-          <div className="button-row tight">
-            <button type="button" onClick={() => campaignCsvFileInputRef.current?.click()} disabled={saving}>Upload contacts (CSV / Excel)</button>
-            <button className="ghost-btn" type="button" onClick={() => navigate(`/marketing/templates?campaignId=${encodeURIComponent(String(activeCampaign?.id || ""))}`)}>Add or edit template</button>
-            <button disabled={saving} onClick={() => void (async () => {
+          <div className="campaign-action-grid">
+            <button type="button" className="campaign-action-card" onClick={() => campaignCsvFileInputRef.current?.click()} disabled={saving}>
+              <strong>1. Add contacts</strong><span>Upload CSV or Excel</span>
+            </button>
+            <button className="campaign-action-card ghost-btn" type="button" onClick={() => navigate(`/marketing/templates?campaignId=${encodeURIComponent(String(activeCampaign?.id || ""))}`)}>
+              <strong>2. Email template</strong><span>Create or edit message</span>
+            </button>
+            <button className="campaign-action-card campaign-send-action" disabled={saving} onClick={() => void (async () => {
               setSaving(true);
               try {
                 await launchSelectedProspectsNow();
@@ -9895,7 +9902,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
               } finally {
                 setSaving(false);
               }
-            })()}>{saving ? "Creating campaign..." : "Create Brevo campaign & send"}</button>
+            })()}><strong>{saving ? "Creating campaign..." : "3. Send with Brevo"}</strong><span>Creates a new Brevo send</span></button>
             <input
               ref={campaignCsvFileInputRef}
               type="file"
@@ -9918,9 +9925,10 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
               }}
             />
           </div>
-          <div className="item-card compact-card" style={{ marginTop: 12 }}>
-            <div className="item-subtitle">Or paste contacts</div>
-            <p className="muted" style={{ marginTop: 6 }}>Paste CSV rows with a header. Minimum required columns: <code>name,email</code>. Optional: <code>phone,company,designation,category</code>.</p>
+          <div className="campaign-paste-card">
+            <div className="campaign-paste-heading">
+              <div><div className="campaign-summary-title">Or paste contacts</div><p className="muted">Paste CSV rows with a header. Required: <code>name,email</code>. Optional: <code>phone,company,designation,category</code>.</p></div>
+            </div>
             <textarea
               value={campaignContactsPaste}
               onChange={(e) => setCampaignContactsPaste(e.target.value)}
@@ -9938,6 +9946,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           </div>
           </>
         ) : null}
+        </div>
         <div className="table-wrap">
           <table className="dashboard-table">
             <thead>
