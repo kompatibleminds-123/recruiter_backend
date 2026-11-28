@@ -10343,6 +10343,21 @@ function PortalApp({ token, onLogout }) {
       .map((user) => ({ id: user.id, label: `${user.id === currentUserId ? "My email — " : ""}${user.name} (${user.email})${user.role ? ` · ${user.role}` : ""}`, kind: user.id === currentUserId ? "self" : "team" }));
     return teamOptions.length ? teamOptions : ownOption;
   }, [state.user, state.users]);
+
+  async function refreshMarketingSenderUsers() {
+    try {
+      const result = await api("/company/users", token);
+      const users = Array.isArray(result?.users) ? result.users : [];
+      setState((current) => ({ ...current, users }));
+      return users;
+    } catch {
+      return [];
+    }
+  }
+
+  useEffect(() => {
+    void refreshMarketingSenderUsers();
+  }, [token]);
   useEffect(() => {
     const defaultSenderId = String(marketingSenderOptions?.[0]?.id || "").trim();
     if (!defaultSenderId) return;
@@ -22301,6 +22316,7 @@ function PortalApp({ token, onLogout }) {
       setStatus("captured", "Select at least one candidate first.", "error");
       return;
     }
+    void refreshMarketingSenderUsers();
     const cachedTemplates = Array.isArray(dbCampaignTemplatesCacheRef.current) ? dbCampaignTemplatesCacheRef.current : [];
     setDbCampaignAttachModal({
       ...createEmptyDbCampaignAttachModal(),
