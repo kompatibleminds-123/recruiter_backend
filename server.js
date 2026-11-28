@@ -17893,8 +17893,11 @@ const server = http.createServer(async (req, res) => {
       );
       const filtered = (Array.isArray(rows) ? rows : []).filter((item) => {
         if (categoryFilter) {
-          const currentCategory = String(item?.category || "").trim().toLowerCase();
-          if (currentCategory !== categoryFilter) return false;
+          const contactCategories = Array.isArray(item?.categories) && item.categories.length
+            ? item.categories
+            : [item?.category || ""];
+          const matchesCategory = contactCategories.some((category) => String(category || "").trim().toLowerCase() === categoryFilter);
+          if (!matchesCategory) return false;
         }
         if (!q) return true;
         const hay = `${item?.name || ""} ${item?.email || ""} ${item?.company_name || ""} ${item?.designation || ""} ${item?.category || ""}`.toLowerCase();
@@ -17911,6 +17914,43 @@ const server = http.createServer(async (req, res) => {
           total,
           totalPages: Math.max(1, Math.ceil(total / limit)),
           hasMore: (offset + items.length) < total
+        }
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: String(error?.message || error) });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/company/marketing/prospects/summary") {
+    try {
+      const actor = await requireSessionUser(getBearerToken(req));
+      const companyId = encodeURIComponent(String(actor.companyId || "").trim());
+      const rows = await supabaseTableFetch(
+        "marketing_prospects",
+        `?select=id,category,categories,status,email&company_id=eq.${companyId}${buildMarketingOwnerFilter(actor, "created_by")}&source=neq.db_campaign_only&limit=5000`
+      );
+      const statusCounts = {};
+      const categoryCounts = new Map();
+      (Array.isArray(rows) ? rows : []).forEach((prospect) => {
+        const status = String(prospect?.status || "unknown").trim().toLowerCase() || "unknown";
+        statusCounts[status] = Number(statusCounts[status] || 0) + 1;
+        const categories = Array.isArray(prospect?.categories) && prospect.categories.length
+          ? prospect.categories
+          : [prospect?.category || "Uncategorised"];
+        Array.from(new Set(categories.map((item) => String(item || "").trim() || "Uncategorised"))).forEach((category) => {
+          const current = categoryCounts.get(category) || { category, total: 0, active: 0 };
+          current.total += 1;
+          if (status === "active" && normalizeMarketingEmail(prospect?.email || "")) current.active += 1;
+          categoryCounts.set(category, current);
+        });
+      });
+      sendJson(res, 200, {
+        ok: true,
+        result: {
+          total: Array.isArray(rows) ? rows.length : 0,
+          statusCounts,
+          categories: Array.from(categoryCounts.values()).sort((a, b) => Number(b.active || 0) - Number(a.active || 0) || String(a.category).localeCompare(String(b.category)))
         }
       });
     } catch (error) {
@@ -18426,11 +18466,26 @@ const server = http.createServer(async (req, res) => {
       if (/candidate|captured|recruiter[\s_-]*portal/.test(sourceType)) {
         throw new Error("Candidate campaigns must be duplicated from RecruitDesk, not Sales Campaigns.");
       }
+      const baseCampaignName = (() => {
+        let value = String(source.name || "Sales campaign").trim() || "Sales campaign";
+        while (/^copy\s+of\s+/i.test(value)) value = value.replace(/^copy\s+of\s+/i, "").trim();
+        return value.replace(/_\d+$/, "").trim() || "Sales campaign";
+      })();
+      const nameRows = await supabaseTableFetch(
+        "marketing_campaigns",
+        `?select=name&company_id=eq.${companyId}&limit=5000`
+      ).catch(() => []);
+      const escapedBaseName = baseCampaignName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const suffixPattern = new RegExp(`^${escapedBaseName}_(\\d+)$`, "i");
+      const nextSuffix = (Array.isArray(nameRows) ? nameRows : []).reduce((highest, row) => {
+        const match = String(row?.name || "").trim().match(suffixPattern);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0) + 1;
       const now = toIsoNow();
       const draft = {
         id: crypto.randomUUID(),
         company_id: actor.companyId,
-        name: `Copy of ${String(source.name || "Sales campaign").trim()}`.slice(0, 180),
+        name: `${baseCampaignName}_${nextSuffix}`.slice(0, 180),
         category: String(source.category || "").trim(),
         source: String(source.source || "marketing_portal").trim() || "marketing_portal",
         status: "draft",

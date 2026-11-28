@@ -752,6 +752,35 @@ textarea { min-height: 92px; resize: vertical; }
 .metric-grid--tight { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 0.6rem; }
 .dashboard-metric-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
 .dashboard-metric-grid .metric-label { white-space: normal; font-size: 0.74rem; line-height: 1.2; }
+.contact-library-metrics { margin-bottom: 1rem; }
+.contact-category-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+  gap: 0.75rem;
+}
+.contact-category-card {
+  display: grid;
+  gap: 0.18rem;
+  min-height: 108px;
+  padding: 0.9rem;
+  text-align: left;
+  border: 1px solid #cfe0f7;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f5faff 100%);
+  color: #16345f;
+  box-shadow: none;
+}
+.contact-category-card:hover:not(:disabled),
+.contact-category-card.is-selected {
+  border-color: #1594c7;
+  background: #eaf8ff;
+  box-shadow: 0 8px 20px rgba(21, 148, 199, 0.12);
+  transform: translateY(-1px);
+}
+.contact-category-card span { font-weight: 800; line-height: 1.25; }
+.contact-category-card strong { font-size: 1.55rem; line-height: 1; color: #0787bc; }
+.contact-category-card small { color: var(--muted); font-weight: 700; }
+.contact-category-card.is-muted { cursor: default; opacity: 0.72; }
 .client-portal-content { width: min(1380px, calc(100vw - 2rem)); margin: 0 auto; align-content: start; }
 .client-portal-header { align-items: center; padding: 0.2rem 0.15rem; }
 .portal-footer {

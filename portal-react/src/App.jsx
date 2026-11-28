@@ -8559,6 +8559,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [saving, setSaving] = useState(false);
   const [overview, setOverview] = useState(null);
   const [prospects, setProspects] = useState([]);
+  const [contactSummary, setContactSummary] = useState({ total: 0, statusCounts: {}, categories: [] });
   const [campaigns, setCampaigns] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [campaignProspects, setCampaignProspects] = useState([]);
@@ -8751,6 +8752,11 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     setProspectsTotalPages(Math.max(1, Number(result?.totalPages || 1)));
   }, [prospectsPage, prospectSearch, prospectCategoryFilter, token]);
 
+  const loadContactSummary = useCallback(async () => {
+    const result = await api("/company/marketing/prospects/summary", token);
+    setContactSummary(result || { total: 0, statusCounts: {}, categories: [] });
+  }, [token]);
+
   const loadCampaigns = useCallback(async () => {
     const params = new URLSearchParams();
     if (marketingDateFrom) params.set("dateFrom", marketingDateFrom);
@@ -8779,7 +8785,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     try {
       await loadOverview();
       if (activeTab === "prospects") {
-        await loadProspects();
+        await Promise.all([loadProspects(), loadContactSummary()]);
         return;
       }
       if (activeTab === "templates") {
@@ -8796,13 +8802,13 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     } finally {
       setLoading(false);
     }
-  }, [activeTab, loadCampaigns, loadOverview, loadProspects, loadTemplates]);
+  }, [activeTab, loadCampaigns, loadContactSummary, loadOverview, loadProspects, loadTemplates]);
 
   const refreshLight = useCallback(async (tabOverride = "") => {
     const tab = String(tabOverride || activeTab || "").trim();
     await loadOverview();
     if (tab === "prospects") {
-      await loadProspects(1);
+      await Promise.all([loadProspects(1), loadContactSummary()]);
       return;
     }
     if (tab === "templates") {
@@ -8812,7 +8818,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     if (tab === "candidate-campaigns" || tab === "campaigns" || tab === "queue") {
       await loadCampaigns();
     }
-  }, [activeTab, loadCampaigns, loadOverview, loadProspects, loadTemplates]);
+  }, [activeTab, loadCampaigns, loadContactSummary, loadOverview, loadProspects, loadTemplates]);
 
   useEffect(() => {
     void refresh();
@@ -8906,17 +8912,21 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const candidateEmailSentCount = candidateCampaigns.reduce((total, item) => total + Math.max(0, Number(item?.stats?.sent || 0)), 0);
   const salesEmailSentCount = salesCampaigns.reduce((total, item) => total + Math.max(0, Number(item?.stats?.sent || 0)), 0);
   const isCandidateCampaignView = activeTab === "candidate-campaigns";
-  const marketingPageTitle = isCandidateCampaignView ? "Candidate Campaigns" : "Campaign Hub";
+  const isContactLibraryView = activeTab === "prospects";
+  const marketingPageTitle = isCandidateCampaignView ? "Candidate Campaigns" : (isContactLibraryView ? "Contact Library" : "Campaign Hub");
   const marketingPageDescription = isCandidateCampaignView
     ? "Candidate outreach created from Database Search and Captured Notes."
-    : "Create and track candidate or sales outreach campaigns in one place.";
-  const categories = Array.from(new Set(
-    prospects.flatMap((item) => {
+    : (isContactLibraryView
+      ? "Manage saved sales contacts, review category coverage and use active segments in campaigns."
+      : "Create and track candidate or sales outreach campaigns in one place.");
+  const categories = Array.from(new Set([
+    ...(Array.isArray(contactSummary?.categories) ? contactSummary.categories.map((item) => String(item?.category || "").trim()) : []),
+    ...prospects.flatMap((item) => {
       const primary = String(item?.category || "").trim();
-      const multi = Array.isArray(item?.categories) ? item.categories.map((c) => String(c || "").trim()).filter(Boolean) : [];
+      const multi = Array.isArray(item?.categories) ? item.categories.map((category) => String(category || "").trim()).filter(Boolean) : [];
       return [primary, ...multi].filter(Boolean);
     })
-  )).sort((a, b) => a.localeCompare(b));
+  ].filter(Boolean))).sort((a, b) => a.localeCompare(b));
   const filteredProspects = prospects;
   const selectedProspectsCount = selectedProspectIds.length;
   const selectedProspectsWithEmailCount = selectedProspectIds.reduce((count, id) => {
@@ -9467,7 +9477,31 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       ) : null}
       {activeTab === "prospects" ? (
         <>
-      <Section kicker="Sales outreach" title="Add a prospect" sectionRef={prospectFormSectionRef}>
+      <Section kicker="Contact library" title="Your saved sales contacts">
+        <div className="metric-grid dashboard-metric-grid contact-library-metrics">
+          <div className="metric-card"><div className="metric-label">Total contacts</div><div className="metric-value">{Number(contactSummary?.total || 0)}</div></div>
+          <div className="metric-card"><div className="metric-label">Active contacts</div><div className="metric-value">{Number(contactSummary?.statusCounts?.active || 0)}</div></div>
+          <div className="metric-card"><div className="metric-label">Categories</div><div className="metric-value">{Array.isArray(contactSummary?.categories) ? contactSummary.categories.length : 0}</div></div>
+        </div>
+        <div className="contact-category-overview">
+          {(Array.isArray(contactSummary?.categories) ? contactSummary.categories : []).map((item) => {
+            const category = String(item?.category || "Uncategorised");
+            return (
+              <button key={`contact-category-${category}`} type="button" disabled={category === "Uncategorised"} className={`${String(prospectCategoryFilter || "").toLowerCase() === category.toLowerCase() ? "contact-category-card is-selected" : "contact-category-card"}${category === "Uncategorised" ? " is-muted" : ""}`} onClick={() => {
+                setProspectCategoryFilter(category === "Uncategorised" ? "" : category);
+                setProspectSearch("");
+                setProspectsPage(1);
+              }}>
+                <span>{category}</span>
+                <strong>{Number(item?.active || 0)}</strong>
+                <small>active contacts</small>
+              </button>
+            );
+          })}
+          {!Array.isArray(contactSummary?.categories) || !contactSummary.categories.length ? <div className="empty-state compact-empty">No contacts have been saved yet.</div> : null}
+        </div>
+      </Section>
+      <Section kicker="Add contacts" title="Add a contact" sectionRef={prospectFormSectionRef}>
         <p className="muted">Use this only for company-side sales contacts, not recruitment candidates.</p>
         <div className="form-grid two-col">
           <label><span>Name</span><input ref={prospectNameInputRef} value={prospectDraft.name} onChange={(e) => setProspectDraft((c) => ({ ...c, name: e.target.value }))} /></label>
@@ -9601,7 +9635,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         </div>
       </Section>
 
-      <Section kicker="Prospects" title="Prospect List + Selection">
+      <Section kicker="Saved contacts" title="Contacts in this library">
         <div className="form-grid three-col">
           <label><span>Search</span><input value={prospectSearch} onChange={(e) => setProspectSearch(e.target.value)} placeholder="name, email, company..." /></label>
           <label><span>Category filter</span>
@@ -36066,6 +36100,7 @@ function formatWorkspaceUserRoleLabel(roleValue = "") {
 const MARKETING_NAV_ITEMS = [
   { to: "/marketing/candidate-campaigns", label: "Candidate Campaigns", tab: "candidate-campaigns" },
   { to: "/marketing/campaigns", label: "Sales Campaigns", tab: "campaigns" },
+  { to: "/marketing/contacts", label: "Contact Library", tab: "prospects" },
   { to: "/marketing/templates", label: "Templates", tab: "templates" }
 ];
 
@@ -36129,7 +36164,8 @@ function MarketingPortalApp({ token, onLogout }) {
       <main className="main-panel">
         <Routes>
           <Route path="/marketing/candidate-campaigns" element={<MarketingModulePage token={token} initialTab="candidate-campaigns" showInternalTabs={false} currentUser={currentUser} users={workspaceUsers} />} />
-          <Route path="/marketing/prospects" element={<Navigate to="/marketing/campaigns" replace />} />
+          <Route path="/marketing/contacts" element={<MarketingModulePage token={token} initialTab="prospects" showInternalTabs={false} currentUser={currentUser} users={workspaceUsers} />} />
+          <Route path="/marketing/prospects" element={<Navigate to="/marketing/contacts" replace />} />
           <Route path="/marketing/templates" element={<MarketingModulePage token={token} initialTab="templates" showInternalTabs={false} currentUser={currentUser} users={workspaceUsers} />} />
           <Route path="/marketing/campaigns" element={<MarketingModulePage token={token} initialTab="campaigns" showInternalTabs={false} currentUser={currentUser} users={workspaceUsers} />} />
           <Route path="/marketing/queue" element={<Navigate to="/marketing/candidate-campaigns" replace />} />
