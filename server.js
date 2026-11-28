@@ -6172,9 +6172,9 @@ async function createAndSendBrevoMarketingCampaign(config, senderActor = {}, cam
     })));
   }
   const senderName = String(senderActor?.name || config.senderName).trim() || config.senderName;
-  const senderEmail = config.senderEmail;
-  const requestedReplyTo = normalizeMarketingEmail(senderActor?.email || "");
-  const replyToEmail = isValidEmail(requestedReplyTo) ? requestedReplyTo : senderEmail;
+  const requestedSenderEmail = normalizeMarketingEmail(senderActor?.email || "");
+  const senderEmail = isValidEmail(requestedSenderEmail) ? requestedSenderEmail : config.senderEmail;
+  const replyToEmail = senderEmail;
   const campaignBodyTemplate = sanitizeBrevoEmailHtml(convertRecruitDeskPlaceholdersForBrevo(String(template?.body_text || template?.bodyText || ""))).cleanBody
     .replace(/{{\s*(?:candidate_?name|name|first_?name)\s*}}/gi, "there");
   const baseBody = renderMarketingTemplate(campaignBodyTemplate, {}, {
@@ -6205,7 +6205,7 @@ async function createAndSendBrevoMarketingCampaign(config, senderActor = {}, cam
   const brevoCampaignId = Number(created?.id || 0);
   if (!brevoCampaignId) throw new Error("Brevo campaign could not be created.");
   await callBrevoCandidateCampaignApi(config, `/emailCampaigns/${encodeURIComponent(brevoCampaignId)}/sendNow`, {});
-  return { brevoCampaignId, audienceListId, recipientCount: audience.length, subject: baseSubject };
+  return { brevoCampaignId, audienceListId, recipientCount: audience.length, subject: baseSubject, senderEmail, replyToEmail };
 }
 
 async function syncBrevoCandidateContact(config, prospect = {}) {
@@ -6228,10 +6228,11 @@ async function sendBrevoCandidateCampaignEmail(config, senderActor = {}, { to, s
     const content = Buffer.isBuffer(item.content) ? item.content.toString("base64") : Buffer.from(item.content).toString("base64");
     return { name: String(item?.filename || "attachment").trim() || "attachment", content };
   }).filter(Boolean);
-  const requestedReplyTo = normalizeMarketingEmail(senderActor?.email || "");
-  const replyToEmail = isValidEmail(requestedReplyTo) ? requestedReplyTo : config.senderEmail;
+  const requestedSenderEmail = normalizeMarketingEmail(senderActor?.email || "");
+  const senderEmail = isValidEmail(requestedSenderEmail) ? requestedSenderEmail : config.senderEmail;
+  const replyToEmail = senderEmail;
   return callBrevoCandidateCampaignApi(config, "/smtp/email", {
-    sender: { email: config.senderEmail, name: config.senderName },
+    sender: { email: senderEmail, name: String(senderActor?.name || config.senderName).trim() || config.senderName },
     replyTo: {
       email: replyToEmail,
       name: String(senderActor?.name || config.senderName).trim() || config.senderName
@@ -6838,9 +6839,7 @@ async function resolveAllowedMarketingSenderUserId(actor = null, requestedSender
   ).catch(() => []);
   const match = Array.isArray(rows) && rows.length ? rows[0] : null;
   if (!match?.id) throw new Error("Selected sender not found.");
-  if (String(match?.role || "").trim().toLowerCase() !== "admin") {
-    throw new Error("Only logged-in user or admin can be selected as sender.");
-  }
+  if (!isAdminActor(actor)) throw new Error("You can only send using your own verified email address.");
   return String(match.id || "").trim();
 }
 

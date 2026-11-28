@@ -8629,37 +8629,20 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     const currentUserId = String(currentUser?.id || "").trim();
     const currentUserEmail = String(currentUser?.email || "").trim();
     const currentUserName = String(currentUser?.name || "").trim() || currentUserEmail || "Logged in user";
-    const adminUser = (Array.isArray(users) ? users : []).find((item) => String(item?.role || "").trim().toLowerCase() === "admin") || null;
-    const options = [];
-    if (currentUserId) {
-      options.push({
-        id: currentUserId,
-        label: `My email${currentUserEmail ? ` (${currentUserEmail})` : ""}`,
-        kind: "self"
-      });
-    }
-    const adminId = String(adminUser?.id || "").trim();
-    const adminEmail = String(adminUser?.email || "").trim();
-    if (adminId && adminId !== currentUserId) {
-      options.push({
-        id: adminId,
-        label: `Admin email${adminEmail ? ` (${adminEmail})` : ""}`,
-        kind: "admin"
-      });
-    } else if (!options.length && adminId) {
-      options.push({
-        id: adminId,
-        label: `Admin email${adminEmail ? ` (${adminEmail})` : ""}`,
-        kind: "admin"
-      });
-    } else if (!options.length && currentUserId) {
-      options.push({
-        id: currentUserId,
-        label: currentUserName,
-        kind: "self"
-      });
-    }
-    return options;
+    const isAdmin = String(currentUser?.role || "").trim().toLowerCase() === "admin";
+    const ownOption = currentUserId ? [{ id: currentUserId, label: `My email — ${currentUserName}${currentUserEmail ? ` (${currentUserEmail})` : ""}`, kind: "self" }] : [];
+    if (!isAdmin) return ownOption;
+    const teamOptions = (Array.isArray(users) ? users : [])
+      .map((user) => ({
+        id: String(user?.id || "").trim(),
+        email: String(user?.email || "").trim(),
+        name: String(user?.name || "").trim() || String(user?.email || "").trim(),
+        role: String(user?.role || "").trim()
+      }))
+      .filter((user) => user.id && user.email)
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map((user) => ({ id: user.id, label: `${user.id === currentUserId ? "My email — " : ""}${user.name} (${user.email})${user.role ? ` · ${user.role}` : ""}`, kind: user.id === currentUserId ? "self" : "team" }));
+    return teamOptions.length ? teamOptions : ownOption;
   }, [currentUser, users]);
 
   useEffect(() => {
@@ -10146,6 +10129,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
               <tr>
                 <th>Name</th>
                 <th>Category</th>
+                <th>Sender / replies to</th>
                 <th>Status</th>
                 <th>Sent</th>
                 <th>Bounced</th>
@@ -10159,6 +10143,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                 <tr key={String(item?.id || "")}>
                   <td>{item?.name || "-"}</td>
                   <td>{item?.category || "-"}</td>
+                  <td>{marketingSenderOptions.find((option) => String(option?.id || "") === String(item?.sender_user_id || ""))?.label || "-"}</td>
                   <td>{item?.status || "-"}</td>
                   <td>{Number(item?.stats?.sent || 0)}</td>
                   <td>{Number(item?.stats?.bounced || 0)}</td>
@@ -10183,7 +10168,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                   </td>
                 </tr>
               ))}
-              {!filteredSalesCampaigns.length ? <tr><td colSpan="8"><div className="empty-state compact-empty">{salesCampaigns.length ? "No sales campaigns match this filter." : "No sales campaigns yet."}</div></td></tr> : null}
+              {!filteredSalesCampaigns.length ? <tr><td colSpan="9"><div className="empty-state compact-empty">{salesCampaigns.length ? "No sales campaigns match this filter." : "No sales campaigns yet."}</div></td></tr> : null}
             </tbody>
           </table>
         </div>
