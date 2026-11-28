@@ -2318,6 +2318,20 @@ textarea { min-height: 92px; resize: vertical; }
   box-shadow: var(--ring);
   border-color: #8fb3ff;
 }
+.template-design-textarea {
+  min-height: 220px;
+  resize: vertical;
+  line-height: 1.55;
+  background: #fff;
+}
+.template-html-textarea {
+  min-height: 260px;
+  resize: vertical;
+  line-height: 1.5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  background: #fbfdff;
+}
 .jd-rich-editor {
   min-height: 260px;
 }

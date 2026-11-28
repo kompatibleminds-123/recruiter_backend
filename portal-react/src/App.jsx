@@ -35,6 +35,33 @@ const EXTENSION_PROMPT_STORAGE_KEY_PREFIX = "recruitdesk_extension_prompt_v1";
 const RECRUITDESK_EXTENSION_URL = "https://chromewebstore.google.com/detail/recruitdesk-ai/ihkjpmlpnobojigfdencaafegjidbnah";
 const APP_VERSION_RELOAD_GUARD_PREFIX = "recruitdesk_portal_version_reload_once_v1:";
 const CAMPAIGN_CONTACT_CSV_HEADER = "name,email,company,designation,phone,category";
+const MARKETING_GREETING_MARKER = "RECRUITDESK_GREETING_V1";
+
+function splitMarketingHybridBody(value = "") {
+  const raw = String(value || "");
+  const marker = new RegExp(`^<!--${MARKETING_GREETING_MARKER}:([\\s\\S]*?)-->`);
+  const match = raw.match(marker);
+  if (!match) {
+    return /<\/?[a-z][\s\S]*>/i.test(raw)
+      ? { greeting: "", html: raw }
+      : { greeting: raw, html: "" };
+  }
+  let greeting = "";
+  try { greeting = decodeURIComponent(match[1] || ""); } catch { greeting = ""; }
+  const rest = raw.slice(match[0].length)
+    .replace(/^<div data-recruitdesk-greeting="true"[^>]*>[\s\S]*?<\/div>/i, "");
+  return { greeting, html: rest };
+}
+
+function composeMarketingHybridBody(greeting = "", html = "") {
+  const text = String(greeting || "").trim();
+  const htmlBlock = String(html || "").trim();
+  const marker = `<!--${MARKETING_GREETING_MARKER}:${encodeURIComponent(text)}-->`;
+  const greetingBlock = text
+    ? `<div data-recruitdesk-greeting="true" style="font-family:Arial,sans-serif;font-size:15px;line-height:1.65;color:#1f2937;margin:0 0 20px;">${escapeHtml(text).replace(/\n/g, "<br/>")}</div>`
+    : "";
+  return `${marker}${greetingBlock}${htmlBlock}`.trim();
+}
 const APP_VERSION_PROMPT_GUARD_PREFIX = "recruitdesk_portal_version_prompt_v1:";
 const APP_VERSION_POLL_INTERVAL_MS = 15 * 60 * 1000;
 
@@ -8545,7 +8572,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [sendBatchSize, setSendBatchSize] = useState(3);
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [templateDraft, setTemplateDraft] = useState({ subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam", targetCategoriesText: "" });
-  const [templateEditorMode, setTemplateEditorMode] = useState("design");
+  const [templateGreeting, setTemplateGreeting] = useState("Hi {{name}},\n\n\nRegards,\nTeam");
+  const [templateHtmlContent, setTemplateHtmlContent] = useState("");
   const [editingTemplateId, setEditingTemplateId] = useState("");
   const [templateAttachment, setTemplateAttachment] = useState(null);
   const [templateAttachmentDirty, setTemplateAttachmentDirty] = useState(false);
@@ -8564,6 +8592,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [csvFileName, setCsvFileName] = useState("");
   const [campaignContactsPaste, setCampaignContactsPaste] = useState("");
   const [campaignContactsDefaultCategory, setCampaignContactsDefaultCategory] = useState("");
+  const [campaignCsvImportMode, setCampaignCsvImportMode] = useState("attach");
   const [savedContactsCategory, setSavedContactsCategory] = useState("");
   const [prospectSearch, setProspectSearch] = useState("");
   const [prospectCategoryFilter, setProspectCategoryFilter] = useState("");
@@ -8809,15 +8838,20 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         .then((row) => {
           if (!row) {
             setTemplateDraft({ subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam", targetCategoriesText: "" });
+            setTemplateGreeting("Hi {{name}},\n\n\nRegards,\nTeam");
+            setTemplateHtmlContent("");
             setTemplateAttachment(null);
             setTemplateAttachmentDirty(false);
             return;
           }
+          const parts = splitMarketingHybridBody(String(row.body_text || ""));
           setTemplateDraft({
             subject: String(row.subject || ""),
             bodyText: String(row.body_text || ""),
             targetCategoriesText: ""
           });
+          setTemplateGreeting(parts.greeting);
+          setTemplateHtmlContent(parts.html);
           setTemplateAttachment(row?.attachment ? {
             filename: String(row.attachment.filename || "").trim(),
             mimeType: String(row.attachment.mimeType || "application/octet-stream").trim(),
@@ -8933,25 +8967,13 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     if (!token) return;
     const isSubject = field === "subject";
     const input = isSubject ? templateSubjectInputRef.current : templateBodyInputRef.current;
-    if (!isSubject && templateBodyInputRef.current && templateBodyInputRef.current.isContentEditable) {
-      templateBodyInputRef.current.focus();
-      try {
-        document.execCommand("insertText", false, token);
-      } catch {
-        const currentHtml = String(templateDraft?.bodyText || "");
-        setTemplateDraft((current) => ({ ...current, bodyText: `${currentHtml}${token}` }));
-        return;
-      }
-      setTemplateDraft((current) => ({ ...current, bodyText: String(templateBodyInputRef.current?.innerHTML || current.bodyText || "") }));
-      return;
-    }
-    const draftKey = isSubject ? "subject" : "bodyText";
-    const currentText = String(templateDraft?.[draftKey] || "");
+    const currentText = isSubject ? String(templateDraft?.subject || "") : String(templateGreeting || "");
     const start = Number.isFinite(input?.selectionStart) ? input.selectionStart : currentText.length;
     const end = Number.isFinite(input?.selectionEnd) ? input.selectionEnd : currentText.length;
     const nextText = `${currentText.slice(0, start)}${token}${currentText.slice(end)}`;
     const nextCaret = start + token.length;
-    setTemplateDraft((current) => ({ ...current, [draftKey]: nextText }));
+    if (isSubject) setTemplateDraft((current) => ({ ...current, subject: nextText }));
+    else setTemplateGreeting(nextText);
     requestAnimationFrame(() => {
       const node = isSubject ? templateSubjectInputRef.current : templateBodyInputRef.current;
       if (!node) return;
@@ -9047,8 +9069,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     await api(`/company/marketing/campaigns/${encodeURIComponent(selectedCampaignId)}/prospects`, token, "POST", { prospectIds: selectedProspectIds });
   }
 
-  async function handleCampaignCsvFileImport(file) {
-    if (!selectedCampaignId) throw new Error("Select campaign first.");
+  async function handleCampaignCsvFileImport(file, { attachToCampaign = true } = {}) {
+    if (attachToCampaign && !selectedCampaignId) throw new Error("Select campaign first.");
     const picked = file || null;
     if (!picked) return;
     const payload = {};
@@ -9078,11 +9100,12 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     const invalid = Number(preview?.invalidRows || 0);
     const fresh = Number(preview?.newCount || 0);
     const existing = Number(preview?.existingCount || 0);
+    const destination = attachToCampaign ? "selected campaign" : "saved contact library";
     const proceed = window.confirm(
-      `Import summary for selected campaign:\nTotal rows: ${total}\nValid: ${valid}\nInvalid: ${invalid}\nNew prospects: ${fresh}\nAlready existing: ${existing}\n\nProceed with import and attach?`
+      `Import summary for ${destination}:\nTotal rows: ${total}\nValid: ${valid}\nInvalid: ${invalid}\nNew prospects: ${fresh}\nAlready existing: ${existing}\n\nProceed with import?`
     );
     if (!proceed) return;
-    const includeExistingForCampaign = existing > 0
+    const includeExistingForCampaign = attachToCampaign && existing > 0
       ? window.confirm(`${existing} prospects already exist in system.\nAttach existing ones also to selected campaign?`)
       : false;
     const result = await api("/company/marketing/prospects/import", token, "POST", {
@@ -9090,17 +9113,19 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       mode: "commit",
       importAction: includeExistingForCampaign ? "new_and_use_existing" : "new_only",
       includeExistingForCampaign,
-      campaignId: selectedCampaignId,
+      campaignId: attachToCampaign ? selectedCampaignId : "",
       defaultCategory: campaignContactsDefaultCategory
     });
     const inserted = Number(result?.inserted || 0);
     const linked = Number(result?.campaignLinked || 0);
-    setOk(`Campaign import done. New inserted: ${inserted}. Campaign linked: ${linked}.`);
+    setOk(attachToCampaign
+      ? `Campaign import done. New inserted: ${inserted}. Campaign linked: ${linked}.`
+      : `Contacts saved to the library. New inserted: ${inserted}.`);
     await refreshLight("campaigns");
   }
 
-  async function importPastedCampaignContacts() {
-    if (!selectedCampaignId) throw new Error("Create or select a campaign first.");
+  async function importPastedCampaignContacts({ attachToCampaign = true } = {}) {
+    if (attachToCampaign && !selectedCampaignId) throw new Error("Create or select a campaign first.");
     const pastedRows = String(campaignContactsPaste || "").trim();
     if (!pastedRows) throw new Error("Paste contact rows first.");
     const pastedLines = pastedRows.split(/\r?\n/);
@@ -9115,9 +9140,10 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     const invalid = Number(preview?.invalidRows || 0);
     const fresh = Number(preview?.newCount || 0);
     const existing = Number(preview?.existingCount || 0);
-    const proceed = window.confirm(`Contact check:\nTotal: ${total}\nValid: ${valid}\nInvalid: ${invalid}\nNew: ${fresh}\nExisting: ${existing}\n\nAdd these contacts only to the selected campaign?`);
+    const destination = attachToCampaign ? "selected campaign" : "saved contact library";
+    const proceed = window.confirm(`Contact check:\nTotal: ${total}\nValid: ${valid}\nInvalid: ${invalid}\nNew: ${fresh}\nExisting: ${existing}\n\nAdd these contacts to the ${destination}?`);
     if (!proceed) return;
-    const includeExistingForCampaign = existing > 0
+    const includeExistingForCampaign = attachToCampaign && existing > 0
       ? window.confirm(`${existing} contacts already exist. Also add them to this campaign?`)
       : false;
     const result = await api("/company/marketing/prospects/import", token, "POST", {
@@ -9125,11 +9151,13 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
       mode: "commit",
       importAction: includeExistingForCampaign ? "new_and_use_existing" : "new_only",
       includeExistingForCampaign,
-      campaignId: selectedCampaignId,
+      campaignId: attachToCampaign ? selectedCampaignId : "",
       defaultCategory: campaignContactsDefaultCategory
     });
     setCampaignContactsPaste("");
-    setOk(`Contacts added to this campaign: ${Number(result?.campaignLinked || 0)} linked.`);
+    setOk(attachToCampaign
+      ? `Contacts added to this campaign: ${Number(result?.campaignLinked || 0)} linked.`
+      : `Contacts saved to the library: ${Number(result?.inserted || 0)} new contact(s).`);
     await refreshLight("campaigns");
   }
 
@@ -9305,11 +9333,14 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     if (!item) return;
     setEditingTemplateId(String(item.id || ""));
     setSelectedCampaignId(String(item.campaign_id || selectedCampaignId || ""));
+    const parts = splitMarketingHybridBody(String(item.body_text || ""));
     setTemplateDraft({
       subject: String(item.subject || ""),
       bodyText: String(item.body_text || ""),
       targetCategoriesText: ""
     });
+    setTemplateGreeting(parts.greeting);
+    setTemplateHtmlContent(parts.html);
     setTemplateAttachment(item?.attachment ? {
       filename: String(item.attachment.filename || "").trim(),
       mimeType: String(item.attachment.mimeType || "application/octet-stream").trim(),
@@ -9321,6 +9352,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   function cancelTemplateEdit() {
     setEditingTemplateId("");
     setTemplateDraft({ subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam", targetCategoriesText: "" });
+    setTemplateGreeting("Hi {{name}},\n\n\nRegards,\nTeam");
+    setTemplateHtmlContent("");
     setTemplateAttachment(null);
     setTemplateAttachmentDirty(false);
     if (templateAttachmentInputRef.current) templateAttachmentInputRef.current.value = "";
@@ -9353,7 +9386,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   async function generateTemplatePreview() {
     const result = await api("/company/marketing/templates/preview", token, "POST", {
       subject: templateDraft.subject,
-      bodyText: templateDraft.bodyText,
+      bodyText: composeMarketingHybridBody(templateGreeting, templateHtmlContent),
       prospectId: templatePreviewProspectId
     });
     setTemplatePreviewResult(result || null);
@@ -9676,30 +9709,26 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         <div className="form-grid">
           <label><span>Subject</span><input ref={templateSubjectInputRef} value={templateDraft.subject} onChange={(e) => setTemplateDraft((c) => ({ ...c, subject: e.target.value }))} /></label>
           <label>
-            <span>Email body</span>
-            <div className="button-row tight" style={{ margin: "6px 0 8px" }}>
-              <button type="button" className={templateEditorMode === "design" ? "" : "ghost-btn"} onClick={() => setTemplateEditorMode("design")}>Design editor</button>
-              <button type="button" className={templateEditorMode === "html" ? "" : "ghost-btn"} onClick={() => setTemplateEditorMode("html")}>HTML code</button>
-            </div>
-            {templateEditorMode === "html" ? (
-              <textarea
-                ref={templateBodyInputRef}
-                value={templateDraft.bodyText}
-                onChange={(e) => setTemplateDraft((c) => ({ ...c, bodyText: e.target.value }))}
-                placeholder="Paste complete email HTML here..."
-                rows={16}
-                style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" }}
-              />
-            ) : (
-              <RichTextEditor
-                editorRef={templateBodyInputRef}
-                value={templateDraft.bodyText}
-                onChange={(html) => setTemplateDraft((c) => ({ ...c, bodyText: html }))}
-                placeholder="Write email body..."
-                minHeight={220}
-              />
-            )}
-            <span className="field-help">Design editor keeps pasted content clean and easy to edit. HTML code accepts complete email HTML. Scripts, popups and calculator code are removed automatically because email clients do not support them.</span>
+            <span>Greeting and normal message</span>
+            <textarea
+              ref={templateBodyInputRef}
+              value={templateGreeting}
+              onChange={(e) => setTemplateGreeting(e.target.value)}
+              placeholder={"Hi {{name}},\n\nWrite your normal message here...\n\nRegards,"}
+              rows={7}
+              className="template-design-textarea"
+            />
+          </label>
+          <label>
+            <span>Optional HTML content block</span>
+            <textarea
+              value={templateHtmlContent}
+              onChange={(e) => setTemplateHtmlContent(e.target.value)}
+              placeholder="Paste a complete email card, landing-page style content or CTA HTML here..."
+              rows={14}
+              className="template-html-textarea"
+            />
+            <small className="field-help">The greeting appears first, then this HTML block. Email clients do not support scripts, popups or live calculators.</small>
           </label>
         </div>
         <div className="button-row tight" style={{ marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -9753,7 +9782,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           <button disabled={!selectedCampaignId} onClick={() => void (async () => {
             const payload = {
               subject: templateDraft.subject,
-              bodyText: templateDraft.bodyText,
+              bodyText: composeMarketingHybridBody(templateGreeting, templateHtmlContent),
               campaignId: selectedCampaignId
             };
             if (templateAttachmentDirty) {
@@ -9939,10 +9968,13 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           </label>
           </>
         ) : null}
-        {activeCampaign ? (
-          <>
+        <>
           <div className="campaign-action-grid">
-            <button type="button" className="campaign-action-card" onClick={() => campaignCsvFileInputRef.current?.click()} disabled={saving}>
+            {activeCampaign ? <>
+            <button type="button" className="campaign-action-card" onClick={() => {
+              setCampaignCsvImportMode("attach");
+              campaignCsvFileInputRef.current?.click();
+            }} disabled={saving}>
               <strong>1. Add contacts</strong><span>Upload CSV or Excel</span>
             </button>
             <button className="campaign-action-card ghost-btn" type="button" onClick={() => navigate(`/marketing/templates?campaignId=${encodeURIComponent(String(activeCampaign?.id || ""))}`)}>
@@ -9958,6 +9990,12 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                 setSaving(false);
               }
             })()}><strong>{saving ? "Creating campaign..." : "3. Send with Brevo"}</strong><span>Creates a new Brevo send</span></button>
+            </> : <button type="button" className="campaign-action-card" onClick={() => {
+              setCampaignCsvImportMode("library");
+              campaignCsvFileInputRef.current?.click();
+            }} disabled={saving}>
+              <strong>Save contacts to library</strong><span>Upload CSV or Excel without attaching a campaign</span>
+            </button>}
             <input
               ref={campaignCsvFileInputRef}
               type="file"
@@ -9969,7 +10007,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                 void (async () => {
                   setSaving(true);
                   try {
-                    await handleCampaignCsvFileImport(file);
+                    await handleCampaignCsvFileImport(file, { attachToCampaign: campaignCsvImportMode !== "library" });
                   } catch (error) {
                     setErr(error);
                   } finally {
@@ -9992,7 +10030,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           </div>
           <div className="campaign-paste-card">
             <div className="campaign-paste-heading">
-              <div><div className="campaign-summary-title">Or paste contacts</div><p className="muted">Header is fixed below. Paste only contact rows—one contact per line.</p></div>
+              <div><div className="campaign-summary-title">{activeCampaign ? "Or paste contacts" : "Or paste contacts into the library"}</div><p className="muted">Header is fixed below. Paste only contact rows—one contact per line.</p></div>
             </div>
             <div className="campaign-fixed-header" aria-label="Fixed contact column headers">{CAMPAIGN_CONTACT_CSV_HEADER}</div>
             <textarea
@@ -10006,10 +10044,10 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             <div className="button-row tight" style={{ marginTop: 8 }}>
               <button type="button" disabled={saving || !String(campaignContactsPaste || "").trim()} onClick={() => void (async () => {
                 setSaving(true);
-                try { await importPastedCampaignContacts(); } catch (error) { setErr(error); } finally { setSaving(false); }
-              })()}>{saving ? "Adding contacts..." : "Add pasted contacts"}</button>
+                try { await importPastedCampaignContacts({ attachToCampaign: Boolean(activeCampaign) }); } catch (error) { setErr(error); } finally { setSaving(false); }
+              })()}>{saving ? "Adding contacts..." : (activeCampaign ? "Add to campaign" : "Save contacts to library")}</button>
             </div>
-            <div className="campaign-saved-segment">
+            {activeCampaign ? <div className="campaign-saved-segment">
               <div>
                 <div className="campaign-summary-title">Use saved contacts by category</div>
                 <p className="muted">For a new campaign, attach every active saved contact with one exact category, such as <code>GCC HR</code>.</p>
@@ -10021,10 +10059,9 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                 </datalist>
                 <button type="button" className="ghost-btn" disabled={saving || !String(savedContactsCategory || "").trim()} onClick={() => void attachSavedContactsByCategory()}>Add saved contacts</button>
               </div>
-            </div>
+            </div> : null}
           </div>
           </>
-        ) : null}
         </div>
         <div className="table-wrap">
           <table className="dashboard-table">
