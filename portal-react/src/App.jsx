@@ -8739,7 +8739,8 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   }, [marketingDateFrom, marketingDateTo, token]);
 
   const loadProspects = useCallback(async (pageOverride = null) => {
-    const pageToLoad = Number.isFinite(Number(pageOverride)) ? Number(pageOverride) : prospectsPage;
+    const hasPageOverride = pageOverride !== null && pageOverride !== undefined && String(pageOverride).trim() !== "";
+    const pageToLoad = hasPageOverride && Number.isFinite(Number(pageOverride)) ? Number(pageOverride) : prospectsPage;
     const params = new URLSearchParams();
     params.set("limit", "10");
     params.set("page", String(pageToLoad));
