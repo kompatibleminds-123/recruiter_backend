@@ -8568,6 +8568,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [prospectsPage, setProspectsPage] = useState(1);
   const [prospectsHasMore, setProspectsHasMore] = useState(false);
   const [prospectsTotalPages, setProspectsTotalPages] = useState(1);
+  const prospectsRequestRef = useRef(0);
   const [queuePage, setQueuePage] = useState(1);
   const [queueHasMore, setQueueHasMore] = useState(false);
   const [sendBatchSize, setSendBatchSize] = useState(3);
@@ -8732,7 +8733,9 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     params.set("page", String(pageToLoad));
     if (prospectSearch) params.set("q", String(prospectSearch || "").trim());
     if (prospectCategoryFilter) params.set("category", String(prospectCategoryFilter || "").trim());
+    const requestId = ++prospectsRequestRef.current;
     const result = await api(`/company/marketing/prospects?${params.toString()}`, token);
+    if (requestId !== prospectsRequestRef.current) return;
     const items = Array.isArray(result?.items) ? result.items : [];
     setProspects(items);
     setProspectsHasMore(Boolean(result?.hasMore));
@@ -8772,7 +8775,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     try {
       await loadOverview();
       if (activeTab === "prospects") {
-        await Promise.all([loadProspects(), loadContactSummary()]);
+        await loadContactSummary();
         return;
       }
       if (activeTab === "templates") {
@@ -8789,7 +8792,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     } finally {
       setLoading(false);
     }
-  }, [activeTab, loadCampaigns, loadContactSummary, loadOverview, loadProspects, loadTemplates]);
+  }, [activeTab, loadCampaigns, loadContactSummary, loadOverview, loadTemplates]);
 
   const refreshLight = useCallback(async (tabOverride = "") => {
     const tab = String(tabOverride || activeTab || "").trim();
@@ -8810,6 +8813,14 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (activeTab !== "prospects") return undefined;
+    const timer = window.setTimeout(() => {
+      void loadProspects().catch((error) => setErr(error));
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, loadProspects]);
 
   useEffect(() => {
     if (!selectedCampaignId) return;
