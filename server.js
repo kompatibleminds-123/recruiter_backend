@@ -18509,7 +18509,7 @@ const server = http.createServer(async (req, res) => {
       const duplicateId = String(duplicate.id || draft.id).trim();
       const templateRows = await supabaseTableFetch(
         "marketing_templates",
-        `?select=subject,body_text,target_categories&company_id=eq.${companyId}&campaign_id=eq.${encodeURIComponent(sourceCampaignId)}&limit=1`
+        `?select=template_name,subject,body_text,target_categories&company_id=eq.${companyId}&campaign_id=eq.${encodeURIComponent(sourceCampaignId)}&limit=1`
       );
       const template = Array.isArray(templateRows) && templateRows.length ? templateRows[0] : null;
       if (template) {
@@ -18517,6 +18517,7 @@ const server = http.createServer(async (req, res) => {
           method: "POST",
           body: {
             id: crypto.randomUUID(), company_id: actor.companyId, campaign_id: duplicateId,
+            template_name: String(template.template_name || template.subject || "").trim(),
             subject: String(template.subject || "").trim(), body_text: String(template.body_text || "").trim(),
             target_categories: template.target_categories || [], updated_by: actor.id,
             created_at: now, updated_at: now
@@ -18724,6 +18725,7 @@ const server = http.createServer(async (req, res) => {
         id: crypto.randomUUID(),
         company_id: actor.companyId,
         campaign_id: campaignId,
+        template_name: String(body.templateName || body.template_name || body.subject || "").trim(),
         subject: String(body.subject || "").trim(),
         body_text: bodyWithAttachment,
         target_categories: normalizeMarketingCategories(body.targetCategories || body.target_categories || ""),
@@ -18731,7 +18733,7 @@ const server = http.createServer(async (req, res) => {
         created_at: now,
         updated_at: now
       };
-      if (!item.subject || !bodyTextClean) throw new Error("Template subject and body are required.");
+      if (!item.template_name || !item.subject || !bodyTextClean) throw new Error("Template name, subject and body are required.");
       const saved = await supabaseTableFetch("marketing_templates", "?on_conflict=campaign_id&select=*", {
         method: "POST",
         body: item,
@@ -18752,7 +18754,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const actor = await requireSessionUser(getBearerToken(req));
       const companyId = encodeURIComponent(String(actor.companyId || "").trim());
-      const rows = await supabaseTableFetch("marketing_templates", `?select=id,campaign_id,subject,body_text,target_categories,updated_at,created_at,updated_by&company_id=eq.${companyId}${buildMarketingOwnerFilter(actor, "updated_by")}&order=updated_at.desc&limit=100`);
+      const rows = await supabaseTableFetch("marketing_templates", `?select=id,campaign_id,template_name,subject,body_text,target_categories,updated_at,created_at,updated_by&company_id=eq.${companyId}${buildMarketingOwnerFilter(actor, "updated_by")}&order=updated_at.desc&limit=100`);
       const items = (Array.isArray(rows) ? rows : []).map((row) => normalizeMarketingTemplateRow(row));
       sendJson(res, 200, { ok: true, result: { items } });
     } catch (error) {
@@ -19146,7 +19148,7 @@ const server = http.createServer(async (req, res) => {
       const body = await readJsonBody(req);
       const currentRows = await supabaseTableFetch(
         "marketing_templates",
-        `?id=eq.${encodeURIComponent(templateId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=id,body_text&limit=1`
+        `?id=eq.${encodeURIComponent(templateId)}&company_id=eq.${encodeURIComponent(actor.companyId)}&select=id,body_text,template_name&limit=1`
       );
       const currentTemplate = Array.isArray(currentRows) && currentRows.length ? currentRows[0] : null;
       if (!currentTemplate?.id) throw new Error("Template not found.");
@@ -19158,6 +19160,7 @@ const server = http.createServer(async (req, res) => {
       const bodyTextFromPatch = body.bodyText !== undefined ? String(body.bodyText || "").trim() : currentParsed.cleanBody;
       const patch = {
         campaign_id: body.campaignId !== undefined ? String(body.campaignId || "").trim() : undefined,
+        template_name: body.templateName !== undefined ? String(body.templateName || "").trim() : undefined,
         subject: body.subject !== undefined ? String(body.subject || "").trim() : undefined,
         body_text: (body.bodyText !== undefined || body.attachment !== undefined) ? applyMarketingTemplateAttachment(bodyTextFromPatch, nextAttachment) : undefined,
         target_categories: body.targetCategories !== undefined ? normalizeMarketingCategories(body.targetCategories || "") : undefined,
@@ -19166,6 +19169,7 @@ const server = http.createServer(async (req, res) => {
       };
       Object.keys(patch).forEach((key) => patch[key] === undefined && delete patch[key]);
       if (patch.campaign_id !== undefined && !patch.campaign_id) throw new Error("campaignId cannot be empty.");
+      if (patch.template_name !== undefined && !patch.template_name) throw new Error("Template name cannot be empty.");
       if (!Object.keys(patch).length) throw new Error("Nothing to update.");
       const updated = await supabaseTableFetch(
         "marketing_templates",

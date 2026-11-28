@@ -8572,7 +8572,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [queueHasMore, setQueueHasMore] = useState(false);
   const [sendBatchSize, setSendBatchSize] = useState(3);
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
-  const [templateDraft, setTemplateDraft] = useState({ subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam", targetCategoriesText: "" });
+  const [templateDraft, setTemplateDraft] = useState({ name: "", subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam", targetCategoriesText: "" });
   const [templateGreeting, setTemplateGreeting] = useState("Hi {{name}},\n\n\nRegards,\nTeam");
   const [templateHtmlContent, setTemplateHtmlContent] = useState("");
   const [editingTemplateId, setEditingTemplateId] = useState("");
@@ -8894,7 +8894,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     if (templateLabelFilter && campaignLabel !== String(templateLabelFilter || "").trim().toLowerCase()) return false;
     const q = String(templateSearchText || "").trim().toLowerCase();
     if (!q) return true;
-    const hay = `${campaign?.name || ""} ${campaign?.category || ""} ${item?.subject || ""}`.toLowerCase();
+    const hay = `${item?.template_name || ""} ${campaign?.name || ""} ${campaign?.category || ""} ${item?.subject || ""}`.toLowerCase();
     return hay.includes(q);
   });
   const filteredCampaigns = campaigns.filter((item) => {
@@ -9345,6 +9345,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     setSelectedCampaignId(String(item.campaign_id || selectedCampaignId || ""));
     const parts = splitMarketingHybridBody(String(item.body_text || ""));
     setTemplateDraft({
+      name: String(item.template_name || item.subject || ""),
       subject: String(item.subject || ""),
       bodyText: String(item.body_text || ""),
       targetCategoriesText: ""
@@ -9361,7 +9362,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
 
   function cancelTemplateEdit() {
     setEditingTemplateId("");
-    setTemplateDraft({ subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam", targetCategoriesText: "" });
+    setTemplateDraft({ name: "", subject: "", bodyText: "Hi {{name}},\n\n\nRegards,\nTeam", targetCategoriesText: "" });
     setTemplateGreeting("Hi {{name}},\n\n\nRegards,\nTeam");
     setTemplateHtmlContent("");
     setTemplateAttachment(null);
@@ -9727,7 +9728,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
 
       {activeTab === "templates" ? (
       <Section kicker="Email Templates" title="Template Library">
-        <p className="muted">Select campaign, then create template. Template filters below are only for templates list.</p>
+        <p className="muted">Give each template a clear reusable name. The campaign is only where this template will be used.</p>
         <div className="form-grid two-col">
           <label>
             <span>Select campaign</span>
@@ -9741,6 +9742,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           </div>
         </div>
         <div className="form-grid">
+          <label><span>Template name</span><input value={templateDraft.name} onChange={(e) => setTemplateDraft((current) => ({ ...current, name: e.target.value }))} placeholder="e.g. GCC HR vacancy-cost outreach" /></label>
           <label><span>Subject</span><input ref={templateSubjectInputRef} value={templateDraft.subject} onChange={(e) => setTemplateDraft((c) => ({ ...c, subject: e.target.value }))} /></label>
           <label>
             <span>Greeting and normal message</span>
@@ -9815,6 +9817,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         <div className="button-row tight">
           <button disabled={!selectedCampaignId} onClick={() => void (async () => {
             const payload = {
+              templateName: templateDraft.name,
               subject: templateDraft.subject,
               bodyText: composeMarketingHybridBody(templateGreeting, templateHtmlContent),
               campaignId: selectedCampaignId
@@ -9863,7 +9866,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         <div className="form-grid two-col" style={{ marginTop: 12 }}>
           <label>
             <span>Search templates</span>
-            <input value={templateSearchText} onChange={(e) => setTemplateSearchText(e.target.value)} placeholder="subject, campaign, label..." />
+            <input value={templateSearchText} onChange={(e) => setTemplateSearchText(e.target.value)} placeholder="template name, subject, campaign..." />
           </label>
           <label>
             <span>Filter by campaign label</span>
@@ -9890,6 +9893,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
           <table className="dashboard-table">
             <thead>
               <tr>
+                <th>Template name</th>
                 <th>Campaign</th>
                 <th>Subject</th>
                 <th>Updated</th>
@@ -9901,6 +9905,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                 const campaign = campaigns.find((row) => String(row?.id || "") === String(item?.campaign_id || ""));
                 return (
                   <tr key={String(item?.id || "")}>
+                    <td>{item?.template_name || item?.subject || "Untitled template"}</td>
                     <td>{campaign?.name || item?.campaign_id || "-"}</td>
                     <td>{item?.subject || "-"}</td>
                     <td>{item?.updated_at ? new Date(item.updated_at).toLocaleString() : "-"}</td>
@@ -9919,7 +9924,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
                   </tr>
                 );
               })}
-              {!filteredTemplates.length ? <tr><td colSpan="4"><div className="empty-state compact-empty">{templates.length ? "No templates match this filter." : "No templates saved yet."}</div></td></tr> : null}
+              {!filteredTemplates.length ? <tr><td colSpan="5"><div className="empty-state compact-empty">{templates.length ? "No templates match this filter." : "No templates saved yet."}</div></td></tr> : null}
             </tbody>
           </table>
         </div>
