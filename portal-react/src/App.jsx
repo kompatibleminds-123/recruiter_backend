@@ -8581,6 +8581,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   const [templatePreviewProspectId, setTemplatePreviewProspectId] = useState("");
   const [templatePreviewProspects, setTemplatePreviewProspects] = useState([]);
   const [templatePreviewResult, setTemplatePreviewResult] = useState(null);
+  const [templatePreviewLoading, setTemplatePreviewLoading] = useState(false);
   const [templateSearchText, setTemplateSearchText] = useState("");
   const [templateLabelFilter, setTemplateLabelFilter] = useState("");
   const [campaignSearchText, setCampaignSearchText] = useState("");
@@ -8885,6 +8886,38 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     if (activeTab !== "templates") return;
     void loadTemplatePreviewProspects().catch(() => {});
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "templates") return undefined;
+    const subject = String(templateDraft?.subject || "").trim();
+    const bodyText = composeMarketingHybridBody(templateGreeting, templateHtmlContent);
+    if (!subject && !bodyText.trim()) {
+      setTemplatePreviewResult(null);
+      return undefined;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setTemplatePreviewLoading(true);
+      api("/company/marketing/templates/preview", token, "POST", {
+        subject,
+        bodyText,
+        prospectId: templatePreviewProspectId
+      })
+        .then((result) => {
+          if (!cancelled) setTemplatePreviewResult(result || null);
+        })
+        .catch(() => {
+          if (!cancelled) setTemplatePreviewResult(null);
+        })
+        .finally(() => {
+          if (!cancelled) setTemplatePreviewLoading(false);
+        });
+    }, 450);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [activeTab, templateDraft.subject, templateGreeting, templateHtmlContent, templatePreviewProspectId, token]);
 
   const activeCampaign = campaigns.find((item) => String(item.id) === String(selectedCampaignId)) || null;
   const templateLabelOptions = Array.from(new Set(
@@ -9431,7 +9464,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
     <div className="page-grid">
       <Section kicker="Marketing" title={marketingPageTitle}>
         <p className="muted">{marketingPageDescription}</p>
-        <div className="button-row tight">
+        <div className="button-row tight template-save-actions">
           <button className="ghost-btn" onClick={() => void refresh().catch(setErr)} disabled={loading}>Refresh</button>
         </div>
         <div className="form-grid two-col" style={{ marginTop: 10 }}>
@@ -9845,7 +9878,6 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             await refreshLight("templates");
           })().catch(setErr)}>{editingTemplateId ? "Update template" : "Create template"}</button>
           {editingTemplateId ? <button className="ghost-btn" type="button" onClick={cancelTemplateEdit}>Cancel edit</button> : null}
-          <button className="ghost-btn" type="button" onClick={() => void generateTemplatePreview().catch(setErr)}>Preview email</button>
         </div>
         {editingTemplateId ? (
           <div className="muted" style={{ marginTop: 6 }}>
@@ -9865,9 +9897,20 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             </select>
           </label>
           <div className="muted" style={{ alignSelf: "end" }}>
-            Sender placeholders use current logged-in recruiter profile.
+            Sender placeholders use current logged-in recruiter profile. Preview updates automatically.
           </div>
         </div>
+        {templatePreviewLoading ? <div className="muted template-preview-updating">Updating preview...</div> : null}
+        {templatePreviewResult ? (
+          <div className="item-card compact-card template-live-preview">
+            <div className="item-subtitle">Live email preview</div>
+            <div style={{ marginTop: 8 }}><strong>Subject:</strong> {String(templatePreviewResult?.subject || "").trim() || "-"}</div>
+            <div style={{ marginTop: 10 }}>
+              <strong>Body:</strong>
+              <div className="input-like" style={{ marginTop: 6, minHeight: 140 }} dangerouslySetInnerHTML={{ __html: String(templatePreviewResult?.bodyHtml || "") }} />
+            </div>
+          </div>
+        ) : null}
         <div className="form-grid two-col" style={{ marginTop: 12 }}>
           <label>
             <span>Search templates</span>
@@ -9884,16 +9927,6 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
         <div className="muted" style={{ marginTop: 6 }}>
           Showing {filteredTemplates.length} of {templates.length} template(s)
         </div>
-        {templatePreviewResult ? (
-          <div className="item-card compact-card" style={{ marginTop: 12 }}>
-            <div className="item-subtitle">Preview output</div>
-            <div style={{ marginTop: 8 }}><strong>Subject:</strong> {String(templatePreviewResult?.subject || "").trim() || "-"}</div>
-            <div style={{ marginTop: 10 }}>
-              <strong>Body:</strong>
-              <div className="input-like" style={{ marginTop: 6, minHeight: 140 }} dangerouslySetInnerHTML={{ __html: String(templatePreviewResult?.bodyHtml || "") }} />
-            </div>
-          </div>
-        ) : null}
         <div className="table-wrap">
           <table className="dashboard-table">
             <thead>

@@ -3830,6 +3830,20 @@ textarea { min-height: 92px; resize: vertical; }
 .button-row.tight {
   margin-top: 0;
 }
+.template-save-actions {
+  margin-top: 1rem !important;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.template-preview-updating {
+  margin-top: 0.65rem;
+  font-weight: 700;
+}
+.template-live-preview {
+  margin-top: 0.85rem;
+  border-color: #b9daf0;
+  background: linear-gradient(180deg, #fbfdff 0%, #f3f9ff 100%);
+}
 .drilldown-toolbar {
   border: 1px solid var(--border);
   border-radius: 16px;
