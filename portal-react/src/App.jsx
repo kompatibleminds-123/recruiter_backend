@@ -34,7 +34,7 @@ const SIDEBAR_PREF_KEY = "recruitdesk_sidebar_collapsed_v1";
 const EXTENSION_PROMPT_STORAGE_KEY_PREFIX = "recruitdesk_extension_prompt_v1";
 const RECRUITDESK_EXTENSION_URL = "https://chromewebstore.google.com/detail/recruitdesk-ai/ihkjpmlpnobojigfdencaafegjidbnah";
 const APP_VERSION_RELOAD_GUARD_PREFIX = "recruitdesk_portal_version_reload_once_v1:";
-const CAMPAIGN_CONTACT_CSV_HEADER = "name,email,company,designation,phone,category";
+const CAMPAIGN_CONTACT_CSV_HEADER = "name,email,company,designation,category";
 const MARKETING_GREETING_MARKER = "RECRUITDESK_GREETING_V1";
 
 function splitMarketingHybridBody(value = "") {
@@ -9073,9 +9073,9 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
 
   function downloadProspectCsvSample() {
     const sample = [
-      "name,email,phone,company,designation,category,categories",
-      "\"Ravi Kumar\",ravi@abc.com,9876543210,\"ABC Pvt Ltd\",\"HR Manager\",\"Finance HR\",\"Finance HR, Fintech HR\"",
-      "\"Neha Singh\",neha@xyz.com,9898989898,\"XYZ Logistics\",\"Talent Partner\",\"Logistics HR\",\"Logistics HR, Real Estate HR\""
+      "name,email,company,designation,category,categories",
+      "\"Ravi Kumar\",ravi@abc.com,\"ABC Pvt Ltd\",\"HR Manager\",\"Finance HR\",\"Finance HR, Fintech HR\"",
+      "\"Neha Singh\",neha@xyz.com,\"XYZ Logistics\",\"Talent Partner\",\"Logistics HR\",\"Logistics HR, Real Estate HR\""
     ].join("\n");
     const blob = new Blob([sample], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -9362,7 +9362,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
   }
 
   function downloadCampaignContactExcelTemplate() {
-    const columns = ["name", "email", "company", "designation", "phone", "category"];
+    const columns = ["name", "email", "company", "designation", "category"];
     const worksheet = XLSX.utils.aoa_to_sheet([
       columns,
       ["Priya Shah", "priya@company.com", "Acme Pvt Ltd", "HR Director", "9876543210", "GCC HR"]
@@ -9604,7 +9604,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
             <span>Download the template, replace the example row with your contacts, then upload it to the Contact Library.</span>
           </div>
           <div className="campaign-header-chips">
-            {['name', 'email', 'company', 'designation', 'phone', 'category'].map((field) => <code key={`library-column-${field}`}>{field}</code>)}
+            {['name', 'email', 'company', 'designation', 'category'].map((field) => <code key={`library-column-${field}`}>{field}</code>)}
             <button className="ghost-btn" type="button" onClick={downloadCampaignContactExcelTemplate}>Download Excel template</button>
             <button type="button" onClick={() => csvFileInputRef.current?.click()} disabled={saving}>Upload CSV / Excel</button>
           </div>
@@ -10086,7 +10086,7 @@ function MarketingModulePage({ token, initialTab = "prospects", showInternalTabs
               <span>Download the template, replace the example row with your contacts, then upload it.</span>
             </div>
             <div className="campaign-header-chips">
-              {['name', 'email', 'company', 'designation', 'phone', 'category'].map((field) => <code key={`campaign-column-${field}`}>{field}</code>)}
+              {['name', 'email', 'company', 'designation', 'category'].map((field) => <code key={`campaign-column-${field}`}>{field}</code>)}
               <button className="ghost-btn" type="button" onClick={downloadCampaignContactExcelTemplate}>Download Excel template</button>
             </div>
           </div>
